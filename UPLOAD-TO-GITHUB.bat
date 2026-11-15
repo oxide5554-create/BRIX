@@ -42,13 +42,19 @@ if errorlevel 1 (
 set "REPO_URL="
 set "EXISTING_URL="
 
-rem --- если репозиторий уже привязан, ссылку не спрашиваем ---
+rem --- читаем привязку напрямую из конфига git ---
+rem (git remote get-url врёт: при пустой ссылке печатает слово "origin")
 if exist ".git" (
-    for /f "delims=" %%u in ('git remote get-url origin 2^>nul') do set "EXISTING_URL=%%u"
+    for /f "delims=" %%u in ('git config --get remote.origin.url 2^>nul') do set "EXISTING_URL=%%u"
 )
 
+rem --- доверяем только настоящей ссылке GitHub ---
 if not defined EXISTING_URL goto ASK_URL
-if "%EXISTING_URL%"=="" goto ASK_URL
+set "OKURL="
+if "%EXISTING_URL:~0,19%"=="https://github.com/" set "OKURL=1"
+if "%EXISTING_URL:~0,18%"=="http://github.com/" set "OKURL=1"
+if "%EXISTING_URL:~0,15%"=="git@github.com:" set "OKURL=1"
+if not defined OKURL goto ASK_URL
 set "REPO_URL=%EXISTING_URL%"
 echo Репозиторий уже привязан: %REPO_URL%
 goto HAVE_URL
@@ -67,7 +73,11 @@ if "%REPO_URL%"=="" (
 )
 rem --- убираем случайные пробелы при вставке ---
 set "REPO_URL=%REPO_URL: =%"
-if not "%REPO_URL:~0,19%"=="https://github.com/" (
+set "OKURL="
+if "%REPO_URL:~0,19%"=="https://github.com/" set "OKURL=1"
+if "%REPO_URL:~0,18%"=="http://github.com/" set "OKURL=1"
+if "%REPO_URL:~0,15%"=="git@github.com:" set "OKURL=1"
+if not defined OKURL (
     echo [ОШИБКА] Это не похоже на ссылку репозитория GitHub.
     echo Должно быть так: https://github.com/ЛОГИН/ИМЯ.git
     echo Скопируй ссылку со страницы репозитория: зелёная кнопка
