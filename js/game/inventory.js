@@ -2,9 +2,9 @@
 //  brix • js/game/inventory.js
 //  ХОТБАР + ИНВЕНТАРЬ BRIX — собственный стиль (rust-дизайн игры),
 //  механика портирована из репозитория (scr/ui/hotbar.js и
-//  scr/ui/inventory.js): 6 слотов быстрого доступа + сетка 6x3,
-//  drag & drop, стеки, клавиши 1-6, колесо мыши, E — открыть/закрыть.
-//  Открывается поверх игры без всяких меню.
+//  scr/ui/inventory.js): ✅ v0.4.6 — 7 слотов быстрого доступа (7-й —
+//  «План строителя») + сетка 5x4, drag & drop, стеки, клавиши 1-7,
+//  колесо мыши, E — открыть/закрыть. Открывается поверх игры.
 // ============================================================
 // пробивка кэша браузера: к пути добавляется ?v=<версия> (см. index.html)
 function BrixAx(u) { return window.BrixAsset ? window.BrixAsset(u) : u; }
@@ -32,6 +32,13 @@ window.BrixItems = {
   revolver: {
     id: 'revolver', name: 'Револьвер', nameEn: 'Revolver',
     icon: BrixAx('assets/icons/revolver.png'), stackable: false, tool: 'revolver'
+  },
+  /* ✅ v0.4.6 ПЛАН СТРОИТЕЛЯ: держи в руках (слот 7) и жми Z —
+     откроется меню строительства (фундамент/стена/потолок),
+     ЛКМ ставит деталь. Без плана в руках Z не работает */
+  buildingPlan: {
+    id: 'buildingPlan', name: 'План строителя', nameEn: 'Building Plan',
+    icon: BrixAx('assets/icons/building_plan.png'), stackable: false, tool: 'plan'
   },
   /* ✅ v0.4.5 патроны для револьвера (штабелируются; выпадают из военных ящиков) */
   ammo: {
@@ -89,7 +96,9 @@ window.BrixItems = {
 window.BrixInventory = (function () {
   'use strict';
 
-  var HOTBAR_SIZE = 6;
+  // ✅ v0.4.6: хотбар РАСШИРЕН до 7 слотов — 7-й под «План строителя»
+  // (в руках синий ватман; Z открывает меню строительства)
+  var HOTBAR_SIZE = 7;
   var COLS = 5;            // ✅ v0.3.2: сетка 5x4 как в референсе (Rust)
   var ROWS = 4;
   var instance = null;
@@ -116,18 +125,18 @@ window.BrixInventory = (function () {
     this.dom = null;
     this._dragging = false;
 
-    // стартовый набор ✅ v0.4.5: РЕВОЛЬВЕР в слоте 1 (обойма полная — 6)
-    // и 50 ПАТРОНОВ в слоте 2; инструменты сдвинулись вправо,
-    // дерево/камень ушли в рюкзак
+    // стартовый набор ✅ v0.4.6: + ПЛАН СТРОИТЕЛЯ в слоте 7 (Z — меню стройки);
+    // револьвер/патроны/инструменты — как в v0.4.5, дерево/камень в рюкзаке
     this.slots[0] = { item: BrixItems.revolver, count: 1, mag: 6 };
     this.slots[1] = { item: BrixItems.ammo, count: 50 };
     this.slots[2] = { item: BrixItems.stoneAxe, count: 1 };
     this.slots[3] = { item: BrixItems.stonePickaxe, count: 1 };
     this.slots[4] = { item: BrixItems.ironPickaxe, count: 1 };
     this.slots[5] = { item: BrixItems.ironAxe, count: 1 };
+    this.slots[6] = { item: BrixItems.buildingPlan, count: 1 };
     // рюкзак: немного ресурсов на старт
-    this.slots[6] = { item: BrixItems.wood, count: 10 };
-    this.slots[7] = { item: BrixItems.stone, count: 5 };
+    this.slots[7] = { item: BrixItems.wood, count: 10 };
+    this.slots[8] = { item: BrixItems.stone, count: 5 };
 
     this._mount();
     this._bind();

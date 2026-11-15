@@ -126,7 +126,7 @@ window.BrixGameWorld = (function () {
        ✅ v0.3.9: groundAt — высота земли С УЧЁТОМ ровных площадок
        чекблоков: по насыпи можно подняться и ХОДИТЬ по плоской
        вершине (коллайдер ходьбы, как просил игрок) */
-    var groundAt = function (x, z) {
+    var groundAt = function (x, z, feetY) {
       var h = T.heightAt(x, z);
       if (window.BrixProps) {
         var pad = BrixProps.padAt(x, z);
@@ -139,6 +139,12 @@ window.BrixGameWorld = (function () {
             if (target > h) h = target;
           }
         }
+      }
+      // ✅ v0.4.6 СТРОИТЕЛЬСТВО: по палубе фундамента и по потолку
+      // можно ХОДИТЬ (если верх в пределах ступеньки от ног игрока)
+      if (window.BrixBuilding) {
+        var bf = BrixBuilding.floorAt(x, z, feetY);
+        if (bf !== null && bf > h) h = bf;
       }
       return h;
     };
@@ -258,8 +264,9 @@ window.BrixGameWorld = (function () {
     // выбор в хотбаре → показать/спрятать руки с нужным инструментом
     inventory.onSelect = function (item) {
       var tool = (item && item.tool) || null;
+      // ✅ v0.4.6: 'plan' — план строителя (синий ватман в руках)
       hands.setWeapon(tool === 'axe' || tool === 'pickaxe' || tool === 'ironPickaxe' ||
-        tool === 'ironAxe' || tool === 'revolver' ? tool : null);
+        tool === 'ironAxe' || tool === 'revolver' || tool === 'plan' ? tool : null);
       // смена оружия сбрасывает прицеливание
       if (tool !== 'revolver' && aiming) stopAim();
       updateCrosshair();
@@ -304,7 +311,9 @@ window.BrixGameWorld = (function () {
       getDecor: function () { return decor; },
       hitWithTool: hitWithTool,
       remotes: remotes,           // ✅ v0.3.0: чужие игроки (для автотестов)
-      scene: scene
+      scene: scene,
+      // ✅ v0.4.6: система строительства (для автотестов)
+      getBuilding: function () { return window.BrixBuilding; }
     };
 
     /* ---------- ЛКМ — удар топором ---------- */
@@ -627,6 +636,12 @@ window.BrixGameWorld = (function () {
       if (e.code === 'KeyF') tryPickup();
       // ✅ v0.4.5: R — перезарядка револьвера (собирает 6 патронов из запаса)
       if (e.code === 'KeyR') tryReload();
+      /* ✅ v0.4.6 СТРОИТЕЛЬСТВО: Z — открыть/закрыть меню выбора детали.
+         Работает ТОЛЬКО если план строителя в руках (проверка внутри
+         BrixBuilding.toggleMenu) и не открыты другие меню */
+      if (e.code === 'KeyZ' && !isInvOpen() && !isLootOpen() && window.BrixBuilding) {
+        BrixBuilding.toggleMenu();
+      }
     });
 
     /* ✅ v0.3.8: лут-меню — клик по предмету = заявка серверу */
@@ -1335,6 +1350,17 @@ window.BrixGameWorld = (function () {
       if (BrixGame.state.phase !== 'playing' || !lockedRef) return;
       if (isInvOpen()) return;
       if (e.button === 0) {
+        /* ✅ v0.4.6 СТРОИТЕЛЬСТВО: меню открыто — ЛКМ выбирает деталь;
+           план строителя в руках — ЛКМ ставит выбранную деталь
+           (обычный замах/выстрел при плане не происходит) */
+        if (window.BrixBuilding && BrixBuilding.isMenuOpen()) {
+          BrixBuilding.menuClick();
+          return;
+        }
+        if (window.BrixBuilding && BrixBuilding.holdingPlan()) {
+          BrixBuilding.tryPlace();
+          return;
+        }
         // ✅ v0.4.5: револьвер в руках — стреляем, иначе машем инструментом
         if (revSlot()) tryShoot();
         else hitWithTool();
@@ -1529,6 +1555,11 @@ window.BrixGameWorld = (function () {
           if (msg.world) applyWorldState(msg.world);
           // ✅ v0.3.6: бочки/чекблоки/дропы (позиции и состояние сервера)
           if (msg.objs) buildObjects(msg.objs);
+          // ✅ v0.4.6: ПОСТРОЙКИ (фундаменты/стены/потолки) — новый игрок
+          //    сразу видит дом; хранятся у сервера в world-objs.json
+          if (msg.objs && msg.objs.bd && window.BrixBuilding) {
+            BrixBuilding.applySnapshot(msg.objs.bd);
+          }
         });
         if (!window.__brixObjLocalInit) {
           window.__brixObjLocalInit = true;
@@ -1617,7 +1648,7 @@ window.BrixGameWorld = (function () {
         (hudEl || mount).appendChild(diagEl);
         var serverAlive = null;   // null = ещё не проверяли, true/false = pong
         function renderDiag() {
-          var ver = 'BRIX v0.4.5';
+          var ver = 'BRIX v0.4.6';
           var net = BrixNet.mode === 'server' ? 'СЕТЬ: сервер' : 'СЕТЬ: вкладки';
           var hp;
           if (BrixNet.mode !== 'server') hp = '· сервер не нужен';
@@ -1703,6 +1734,23 @@ window.BrixGameWorld = (function () {
         // ✅ v0.2.9: коллайдеры деревьев и рудных жил (стволы и камни
         // больше не проходимы насквозь)
         if (controls.setColliders && decor.colliders) controls.setColliders(decor.colliders);
+
+        /* ✅ v0.4.6 СТРОИТЕЛЬСТВО: система дома (фундамент/стена/потолок).
+           Инициализация ПОСЛЕ террейна и декора; коллайдеры стен и палуб
+           отдаются контроллеру, снимок построек приходит в welcome
+           (objs.bd от server.js v0.4.6), вкладки — BroadcastChannel+localStorage */
+        if (window.BrixBuilding) {
+          BrixBuilding.init({
+            scene: scene,
+            camera: camera,
+            terrainMesh: terrain,
+            groundY: T.heightAt,
+            controls: controls,
+            quality: quality,
+            getPos: function () { return controls.position; }
+          });
+          if (controls.setBoxColliders) controls.setBoxColliders(BrixBuilding.wallBoxes());
+        }
 
         /* 4 — вода, небо, свет */
         setStage('load.step.sky', 84);
@@ -1792,6 +1840,9 @@ window.BrixGameWorld = (function () {
 
           // деревья: тряска и падение
           if (decor) decor.tick(dt);
+
+          // ✅ v0.4.6: призрак постройки, кулдаун установки, подсказка плана
+          if (window.BrixBuilding) BrixBuilding.tick(dt);
 
           /* МУЛЬТИПЛЕЕР: чужие игроки + отправка своего состояния 12 Гц */
           BrixNet.tick(dt, null);
@@ -1884,6 +1935,8 @@ window.BrixGameWorld = (function () {
       cancelled = true;
       // ✅ v0.4.3: мини-меню/карта закрываются вместе с миром
       if (window.BrixMiniMenu) BrixMiniMenu.shutdown();
+      // ✅ v0.4.6: система строительства выключается вместе с миром
+      if (window.BrixBuilding) BrixBuilding.shutdown();
       window.removeEventListener('resize', onResize);
       document.removeEventListener('pointerlockchange', onLockChange);
       renderer.domElement.removeEventListener('click', onCanvasClick);

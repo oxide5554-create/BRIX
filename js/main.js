@@ -9,7 +9,7 @@
 
   // маркер сборки: если этой строки нет в консоли — браузер загрузил СТАРЫЕ файлы
   // (нажми Ctrl+Shift+R, чтобы обновить кэш)
-  console.log('%cBRIX v0.4.2 — мгновенный лут без «фокусов», 20 ячеек рюкзака, дропы с падением, точка-прицел',
+  console.log('%cBRIX v0.4.6 — СТРОИТЕЛЬСТВО: план строителя (слот 7, Z — меню), фундамент на 4 ногах, стены и потолок, магнит к фундаменту, коллизии, постройки на сервере',
     'background:#e2572b;color:#fff;padding:2px 8px;border-radius:3px;font-weight:bold');
 
   var currentLayer = null;
@@ -92,7 +92,7 @@
 
     // 1) новые скрипты вообще загружены? (если index.html старый — их нет)
     var scriptsOk = !!(window.BrixInventory && window.BrixFirstPerson &&
-                       window.BrixGLB && window.BrixSfx);
+                       window.BrixGLB && window.BrixSfx && window.BrixBuilding);
     if (!scriptsOk) {
       paint('✗ нет новых скриптов — старый index.html в кэше. Нажми «обновить кэш» справа или Ctrl+Shift+R', '#ff6b5e');
       return;
@@ -140,7 +140,12 @@
       'assets/sfx/boch/barrel_break.ogg',
       'assets/textures/grass.png',
       'assets/sfx/stone/stone_hit_1.wav',
-      'assets/sfx/stone/stone_break.ogg'
+      'assets/sfx/stone/stone_break.ogg',
+      /* ✅ v0.4.6: стройка — иконка плана и 3 звука строительства */
+      'assets/icons/building_plan.png',
+      'assets/sfx/build/Construction_Wooden_Build_03.wav',
+      'assets/sfx/build/Construction_Wooden_Build_04.wav',
+      'assets/sfx/build/Construction_Wooden_PickUp_04.wav'
     ];
     var bust = function (u) { return window.BrixAsset ? window.BrixAsset(u) : u; };
     var head = function (u) {
@@ -154,7 +159,7 @@
       if (missing.length) {
         paint('✗ сервер не отдаёт: ' + missing.join(' , ') + ' — в папке игры нет assets/ из архива', '#ff6b5e');
       } else {
-        paint('✓ сборка v0.4.2 — все файлы на месте', '#8fd07a');
+        paint('✓ сборка v0.4.6 — все файлы на месте', '#8fd07a');
       }
     });
   }

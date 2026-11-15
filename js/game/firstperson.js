@@ -30,7 +30,7 @@
 //  Публичный API (совместим со старым BrixFirstPerson):
 //    new BrixFirstPerson(camera, renderer)
 //    .loaded, .visible, .camera
-//    .setWeapon('axe'|'pickaxe'|'ironPickaxe'|'ironAxe'|null) — оружие из хотбара
+//    .setWeapon('axe'|'pickaxe'|'ironPickaxe'|'ironAxe'|'plan'|null) — оружие из хотбара
 //    .setVisible(bool)      — совместимость: топор вкл/выкл
 //    .triggerSwing('atk1'|'atk2')
 //    .update(dt, opts)
@@ -647,6 +647,35 @@ window.BrixFirstPerson = (function () {
     /* ✅ ЖЕЛЕЗНЫЙ ТОПОР (v0.2.9) — одна правая рука, левая скрыта */
     this.ironAxe = makeTool(iag, IRON_AXE_TARGET_LEN, IRON_AXE_YAW, 0);
 
+    /* ✅ v0.4.6 ПЛАН СТРОИТЕЛЯ — процедурный синий ватман-свиток
+       (как на референсе: голубой лист с белой сеткой-чертежом,
+       края скручены в рулоны). Правая рука держит снизу, левая
+       подхватывает край — лист читается как чертёж */
+    (function () {
+      var tex = self._makePlanTexture();
+      var g = new THREE.Group();
+      var sheet = new THREE.Mesh(
+        new THREE.BoxGeometry(0.42, 0.008, 0.3),
+        new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0 }));
+      sheet.rotation.x = -0.12;
+      g.add(sheet);
+      var rollGeo = new THREE.CylinderGeometry(0.022, 0.022, 0.3, 10);
+      var rollMat = new THREE.MeshStandardMaterial({ color: 0x8ba4b6, roughness: 0.92, metalness: 0 });
+      var r1 = new THREE.Mesh(rollGeo, rollMat);
+      r1.rotation.x = Math.PI / 2; r1.position.set(-0.21, 0.014, 0); g.add(r1);
+      var r2 = new THREE.Mesh(rollGeo, rollMat);
+      r2.rotation.x = Math.PI / 2; r2.position.set(0.21, 0.014, 0); g.add(r2);
+      walkMat(g);
+      var wrap = new THREE.Group();
+      wrap.add(g);
+      wrap.rotation.x = -0.55;          // лист наклонён к глазам — видна сетка
+      var holder = new THREE.Group();
+      holder.add(wrap);
+      B.RightHand.add(holder);
+      holder.visible = false;
+      self.plan = { holder: holder, wrap: wrap };
+    })();
+
     /* ✅ v0.4.6 РЕВОЛЬВЕР — своя сборка: fitGun сам находит ствол и рукоять
        (ствол → вперёд, рукоять → в ладонь), размер задаёт REV.len.
        Сборку вызывает конструктор после отдельной загрузки модели */
@@ -776,6 +805,10 @@ window.BrixFirstPerson = (function () {
     this.placeIronPick = function (roll) { placeLikeAxe(roll, self.ironPick.holder, self.ironPick.wrap, GRIP_PICKAXE); };
     // ✅ v0.2.9 железный топор — тот же хват, одна правая рука
     this.placeIronAxe = function (roll) { placeLikeAxe(roll, self.ironAxe.holder, self.ironAxe.wrap, GRIP_IRONAXE); };
+    // ✅ v0.4.6 план строителя — тот же хват ладони, лист наклонён самим wrap
+    this.placePlan = function (roll) {
+      if (self.plan) placeLikeAxe(roll, self.plan.holder, self.plan.wrap, GRIP);
+    };
 
     // ✅ v0.4.6 хват РЕВОЛЬВЕРА: рукоять в правой ладони (сбоку), ствол строго
     // ВПЕРЁД. Ориентация берётся не от предплечья, а от «вперёд» торса
@@ -921,6 +954,7 @@ window.BrixFirstPerson = (function () {
       else if (self.currentWeapon === 'pickaxe') self.placeStonePick(p.roll !== undefined ? p.roll : 90);
       else if (self.currentWeapon === 'ironAxe') self.placeIronAxe(p.roll !== undefined ? p.roll : 90);
       else if (self.currentWeapon === 'ironPickaxe') self.placeIronPick(p.roll !== undefined ? p.roll : 90);
+      else if (self.currentWeapon === 'plan' && self.plan) self.placePlan(p.roll !== undefined ? p.roll : 90);
       else if (self.currentWeapon === 'revolver' && self.revolver) self.placeRevolver();
     };
   };
@@ -940,12 +974,66 @@ window.BrixFirstPerson = (function () {
 
   /** ✅ Выбор оружия: 'axe' | 'pickaxe' (каменная) | 'ironPickaxe' (железная) |
    *  'ironAxe' (железный топор, v0.2.9) | 'revolver' (v0.4.5) | null */
+  /* ✅ v0.4.6: текстура ватмана — голубая бумага, белая сетка-чертёж,
+     эскиз домика (фундамент/стены/потолок) и штамп «BRIX» в углу */
+  FirstPersonPlayer.prototype._makePlanTexture = function () {
+    var c = document.createElement('canvas');
+    c.width = 256; c.height = 192;
+    var x = c.getContext('2d');
+    x.fillStyle = '#9db6c9';
+    x.fillRect(0, 0, 256, 192);
+    // лёгкие возрастные пятна
+    for (var i = 0; i < 14; i++) {
+      x.fillStyle = 'rgba(120,140,155,' + (0.05 + Math.random() * 0.08).toFixed(3) + ')';
+      x.beginPath();
+      x.arc(Math.random() * 256, Math.random() * 192, 6 + Math.random() * 22, 0, Math.PI * 2);
+      x.fill();
+    }
+    // белая сетка чертежа
+    x.strokeStyle = 'rgba(255,255,255,0.5)';
+    x.lineWidth = 1;
+    for (var gx = 0; gx <= 256; gx += 16) {
+      x.beginPath(); x.moveTo(gx, 0); x.lineTo(gx, 192); x.stroke();
+    }
+    for (var gy = 0; gy <= 192; gy += 16) {
+      x.beginPath(); x.moveTo(0, gy); x.lineTo(256, gy); x.stroke();
+    }
+    x.strokeStyle = 'rgba(255,255,255,0.8)';
+    for (var g4 = 0; g4 <= 256; g4 += 64) {
+      x.beginPath(); x.moveTo(g4, 0); x.lineTo(g4, 192); x.stroke();
+      x.beginPath(); x.moveTo(0, g4); x.lineTo(256, g4); x.stroke();
+    }
+    // эскиз домика: фундамент (штриховка), стены, крыша-потолок
+    x.strokeStyle = 'rgba(255,255,255,0.95)';
+    x.lineWidth = 2;
+    x.strokeRect(84, 92, 88, 44);                       // стены
+    x.beginPath();                                      // крыша/потолок
+    x.moveTo(84, 92); x.lineTo(128, 62); x.lineTo(172, 92); x.stroke();
+    x.lineWidth = 1;
+    for (var hx = 86; hx < 172; hx += 8) {              // штриховка фундамента
+      x.beginPath(); x.moveTo(hx, 136); x.lineTo(hx + 6, 142); x.stroke();
+    }
+    x.strokeRect(84, 136, 88, 6);                       // фундамент
+    x.strokeRect(118, 110, 18, 26);                     // дверь
+    // штамп
+    x.fillStyle = 'rgba(255,255,255,0.9)';
+    x.font = 'bold 13px Consolas,monospace';
+    x.fillText('BRIX', 14, 26);
+    x.font = '9px Consolas,monospace';
+    x.fillText('FOUNDATION / WALL / CEILING', 14, 40);
+    var t = new THREE.CanvasTexture(c);
+    if (THREE.SRGBColorSpace !== undefined) t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    return t;
+  };
+
   FirstPersonPlayer.prototype.setWeapon = function (type) {
     this.currentWeapon = type || 'none';
     var showArms = this.currentWeapon === 'axe' ||
                    this.currentWeapon === 'pickaxe' ||
                    this.currentWeapon === 'ironPickaxe' ||
                    this.currentWeapon === 'ironAxe' ||
+                   this.currentWeapon === 'plan' ||
                    this.currentWeapon === 'revolver';
     // запоминаем состояние ВСЕГДА: если модели ещё грузятся,
     // оно применится в _init после загрузки
@@ -959,6 +1047,7 @@ window.BrixFirstPerson = (function () {
     if (this.stonePick) this.stonePick.holder.visible = showArms && this.currentWeapon === 'pickaxe';
     if (this.ironPick) this.ironPick.holder.visible = showArms && this.currentWeapon === 'ironPickaxe';
     if (this.ironAxe) this.ironAxe.holder.visible = showArms && this.currentWeapon === 'ironAxe';
+    if (this.plan) this.plan.holder.visible = showArms && this.currentWeapon === 'plan';
     if (this.revolver) this.revolver.holder.visible = showArms && this.currentWeapon === 'revolver';
   };
 

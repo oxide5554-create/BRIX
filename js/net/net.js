@@ -151,6 +151,15 @@ window.BrixNet = (function () {
       case 'brespawn':
         if (handlers.brespawn) handlers.brespawn(msg);
         break;
+      /* ✅ v0.4.6 СТРОИТЕЛЬСТВО: сервер подтвердил постройку (bnew — всем,
+         в т.ч. поставившему: он применяет повтором по ключу без задвоения)
+         или отказал (bdeny — откат оптимистичной установки) */
+      case 'bnew':
+        if (handlers.bnew) handlers.bnew(msg);
+        break;
+      case 'bdeny':
+        if (handlers.bdeny) handlers.bdeny(msg);
+        break;
       case 'cnt':
         // счётчик онлайна пушит сервер — мгновенно, каждому.
         // ✅ v0.4.1: g — сколько из них В ИГРЕ (state) vs в меню
@@ -380,13 +389,27 @@ window.BrixNet = (function () {
     send({ t: 'cbput', id: id, item: item, amt: Math.max(1, Math.floor(amt || 1)) });
   }
 
-  /* ✅ v0.4.5 БОЙ: звук выстрела/перезарядки (x/z — где звук случился,
+  /* ✅ v0.4.6 БОЙ: звук выстрела/перезарядки (x/z — где звук случился,
      слушатели гасят громкость по дистанции), попадание по игроку
      (ХП решает сервер), возрождение */
   function sendSnd(kind, pos) {
     if (mode === 'off') return;
     send({ t: 'snd', k: kind,
       x: pos ? +pos.x.toFixed(1) : 0, z: pos ? +pos.z.toFixed(1) : 0 });
+  }
+
+  /* ✅ v0.4.6 СТРОИТЕЛЬСТВО: заявка установки постройки.
+     ty: 'f' фундамент | 'w' стена | 'c' потолок;
+     gx/gz — клетка сетки 3 м, e — край (стены), top — высота
+     (только фундамент: высоту палубы считает клиент по рельефу,
+     стена/потолок берут высоту фундамента у СЕРВЕРА) */
+  function sendBplace(ty, gx, gz, e, top, tid) {
+    if (mode === 'off') return;
+    var m = { t: 'bplace', ty: ty, gx: gx, gz: gz };
+    if (e !== undefined && e !== null) m.e = e;
+    if (top !== undefined && top !== null) m.top = top;
+    if (tid) m.tid = tid;
+    send(m);
   }
   function sendPhit(tid, dmg, kind) {
     if (mode === 'off') return;
@@ -426,6 +449,8 @@ window.BrixNet = (function () {
     sendSnd: sendSnd,
     sendPhit: sendPhit,
     sendRespawn: sendRespawn,
+    /* ✅ v0.4.6: строительство — заявка установки */
+    sendBplace: sendBplace,
     sendSocial: sendSocial,
     sendWorldTo: sendWorldTo,
     setStatusEl: setStatusEl,

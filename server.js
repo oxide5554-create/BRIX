@@ -1,5 +1,5 @@
 /* ============================================================
- *  brix • server.js — АВТОРИТЕТНЫЙ СЕРВЕР МУЛЬТИПЛЕЕРА (v0.3.1)
+ *  brix • server.js — АВТОРИТЕТНЫЙ СЕРВЕР МУЛЬТИПЛЕЕРА (v0.4.6)
  *  Как в Rust/Oxide: сервер — хозяин мира.
  *
  *  Ноль зависимостей: чистый Node.js.
@@ -359,11 +359,11 @@ const OBJS_FILE = path.join(ROOT, 'world-objs.json');
 let saveTimer = null;
 function markDirty() {
   if (saveTimer) return;
-  saveTimer = setTimeout(() => {
+    saveTimer = setTimeout(() => {
     saveTimer = null;
     try {
       const data = {
-        v: 3,
+        v: 4,
         dropSeq: worldObjs.dropSeq,
         cb: worldObjs.cb.map((c) => ({
           id: c.id, x: c.x, z: c.z, rot: c.rot, item: c.item, seed: c.seed, mil: c.mil,
@@ -371,7 +371,10 @@ function markDirty() {
           barrels: c.barrels.map((b) => ({ id: b.id, lx: b.lx, lz: b.lz, wy: b.wy,
             lying: b.lying, hp: b.hp, brk: b.brk }))
         })),
-        drops: Array.from(worldObjs.drops.values())
+        drops: Array.from(worldObjs.drops.values()),
+        // ✅ v0.4.6: ПОСТРОЙКИ (фундаменты/стены/потолки) — переживают
+        //    перезапуск сервера, как и весь остальной мир
+        builds: worldObjs.builds
       };
       fs.writeFile(OBJS_FILE, JSON.stringify(data), () => {});
     } catch (e) { console.log('[objs] не сохранил мир: ' + e.message); }
@@ -381,17 +384,21 @@ function markDirty() {
 function freshWorldObjs() {
   const cb = buildCheckblockLayout(OBJ_SEED);
   cb.forEach((c) => { c.gone = false; c.loot = rollLoot(c.mil); });
-  return { cb, drops: new Map(), dropSeq: 0 };
+  return { cb, drops: new Map(), dropSeq: 0, builds: [] };
 }
 
 function loadWorldObjs() {
   try {
     if (!fs.existsSync(OBJS_FILE)) return null;
     const j = JSON.parse(fs.readFileSync(OBJS_FILE, 'utf8'));
-    if (!j || j.v !== 3 || !Array.isArray(j.cb)) return null;
+    // ✅ v0.4.6: v3 (старый файл без построек) читаем и апгрейдим до v4
+    if (!j || (j.v !== 3 && j.v !== 4) || !Array.isArray(j.cb)) return null;
     const drops = new Map();
     (j.drops || []).forEach((d) => { if (d && d.id) drops.set(d.id, d); });
-    return { cb: j.cb, drops, dropSeq: j.dropSeq || 0 };
+    const builds = Array.isArray(j.builds) ? j.builds.filter((b) =>
+      b && (b.ty === 'f' || b.ty === 'w' || b.ty === 'c') &&
+      Number.isFinite(b.gx) && Number.isFinite(b.gz) && Number.isFinite(b.top)) : [];
+    return { cb: j.cb, drops, dropSeq: j.dropSeq || 0, builds };
   } catch (e) { return null; }
 }
 
@@ -431,6 +438,117 @@ worldObjs.cb.forEach((c) => {
 const barrelIndex = new Map();
 worldObjs.cb.forEach((c) => c.barrels.forEach((b) => barrelIndex.set(b.id, { cb: c, bar: b })));
 
+/* ============================================================
+   ✅ v0.4.6 СТРОИТЕЛЬСТВО (как в Rust: план строителя)
+   - фундамент: клетка сетки 3×3 м, ставится на 4 ноги, следует
+     рельефу (высоту считает КЛИЕНТ — рельеф у всех одинаковый,
+     детерминированный noise); рядом с фундаментом МАГНИТИТСЯ
+     по его высоте (клиент шлёт готовую высоту соседа)
+   - стена: ставится на ОДИН из 4 КРАЁВ фундамента; сервер
+     проверяет, что фундамент существует, и берёт высоту ИЗ него
+   - потолок: накрывает клетку, у которой ЕСТЬ СТЕНА; высота —
+     тоже из фундамента сервера
+   Канонизация краёв (важно для дедупликации): у клетки 4 края,
+   но южный край = северный край клетки сверху, восточный =
+   западный клетки правее. Поэтому каждая стена хранится один раз:
+   ключ (gx, gz, e), e ∈ {0: северный, 3: западный}. */
+const CELL = 3;               // размер клетки сетки, м
+const WALL_H = 3;             // высота стены, м
+function canonicalEdge(gx, gz, e) {
+  if (e === 2) return { gx: gx, gz: gz + 1, e: 0 };   // южный край клетки → северный край клетки (gz+1)
+  if (e === 1) return { gx: gx + 1, gz: gz, e: 3 };   // восточный край клетки → западный край клетки (gx+1)
+  return { gx: gx, gz: gz, e: (e === 3 ? 3 : 0) };
+}
+/* индексы построек: клетка -> запись (фундамент/потолок), край -> стена */
+const buildCell = new Map();   // 'gx,gz' -> {f: rec, c: rec}
+const buildEdge = new Map();   // 'gx,gz,e' -> rec стены
+worldObjs.builds.forEach((b) => {
+  if (b.ty === 'w') {
+    const ce = canonicalEdge(b.gx, b.gz, b.e);
+    b.gx = ce.gx; b.gz = ce.gz; b.e = ce.e;
+    buildEdge.set(b.gx + ',' + b.gz + ',' + b.e, b);
+  } else {
+    const key = b.gx + ',' + b.gz;
+    if (!buildCell.has(key)) buildCell.set(key, {});
+    buildCell.get(key)[b.ty === 'f' ? 'f' : 'c'] = b;
+  }
+});
+let buildSeq = worldObjs.builds.reduce((m, b) => Math.max(m, Number(String(b.id).slice(1)) || 0), 0);
+
+function hasWallOnCell(gx, gz) {
+  return !!(buildEdge.get(gx + ',' + gz + ',0') || buildEdge.get(gx + ',' + gz + ',3') ||
+            buildEdge.get(gx + ',' + (gz + 1) + ',0') || buildEdge.get((gx + 1) + ',' + gz + ',3'));
+}
+
+/** АВТОРИТЕТНАЯ установка постройки. Возвращает {b} или строку-причину отказа */
+function applyPlace(p, msg) {
+  const ty = String(msg.ty || '');
+  const gx = Math.round(Number(msg.gx) | 0);
+  const gz = Math.round(Number(msg.gz) | 0);
+  if (!Number.isFinite(gx) || !Number.isFinite(gz)) return 'bad';
+  const now = Date.now();
+  if (p.lastPlace && now - p.lastPlace < 200) return 'spam';   // не чаще 5/с
+  p.lastPlace = now;
+
+  if (ty === 'f') {
+    const key = gx + ',' + gz;
+    const cell = buildCell.get(key);
+    if (cell && cell.f) return 'busy';
+    // высоту палубы даёт клиент (рельеф детерминированный и одинаков у всех);
+    // соседние фундаменты клиент уже сам «примагнитил» по высоте соседа
+    const top = Math.max(-20, Math.min(300, Number(msg.top) || 0));
+    const rec = { id: 'b' + (++buildSeq), ty: 'f', gx, gz, top,
+      by: p.name, at: now };
+    worldObjs.builds.push(rec);
+    if (!buildCell.has(key)) buildCell.set(key, {});
+    buildCell.get(key).f = rec;
+    markDirty();
+    console.log('[build] ' + p.name + ' поставил ФУНДАМЕНТ (' + gx + ',' + gz +
+      ') высота ' + top.toFixed(1));
+    return { b: rec };
+  }
+
+  if (ty === 'w') {
+    // клиент шлёт КЛЕТКУ-АНКЕР (где стоит фундамент) + край относительно неё.
+    // Дедупликация — по ФИЗИЧЕСКОМУ краю: канонический ключ одинаков
+    // для «юг клетки A» и «север клетки B», постройка не задвоится
+    const e = Math.max(0, Math.min(3, Number(msg.e) | 0));
+    const key = gx + ',' + gz;
+    const cell = buildCell.get(key);
+    if (!cell || !cell.f) return 'nofound';           // стена требует фундамент
+    const ce = canonicalEdge(gx, gz, e);
+    const ekey = ce.gx + ',' + ce.gz + ',' + ce.e;
+    if (buildEdge.get(ekey)) return 'busy';           // край занят
+    const rec = { id: 'b' + (++buildSeq), ty: 'w', gx: gx, gz: gz, e: e,
+      top: cell.f.top,                // ВЫСОТА ИЗ ФУНДАМЕНТА СЕРВЕРА — у всех одинаково
+      by: p.name, at: now };
+    worldObjs.builds.push(rec);
+    buildEdge.set(ekey, rec);
+    markDirty();
+    console.log('[build] ' + p.name + ' поставил СТЕНУ (' + gx + ',' + gz +
+      ', край ' + e + ') на фундамент ' + key);
+    return { b: rec };
+  }
+
+  if (ty === 'c') {
+    const key = gx + ',' + gz;
+    const cell = buildCell.get(key);
+    if (!cell || !cell.f) return 'nofound';           // потолок ставится над фундаментом
+    if (cell.c) return 'busy';
+    if (!hasWallOnCell(gx, gz)) return 'nowall';      // потолок требует СТЕНУ
+    const rec = { id: 'b' + (++buildSeq), ty: 'c', gx, gz,
+      top: cell.f.top + WALL_H,       // низ потолка = верх фундамента + стена
+      by: p.name, at: now };
+    worldObjs.builds.push(rec);
+    cell.c = rec;
+    markDirty();
+    console.log('[build] ' + p.name + ' поставил ПОТОЛОК (' + gx + ',' + gz +
+      ') на высоте ' + rec.top.toFixed(1));
+    return { b: rec };
+  }
+  return 'bad';
+}
+
 /* мировые координаты бочки: локальные (lx, lz) внутри чекблока + поворот */
 function barrelWorld(c, b) {
   const cos = Math.cos(c.rot), sin = Math.sin(c.rot);
@@ -449,7 +567,10 @@ function objsSnapshot() {
         lying: b.lying, hp: b.hp, brk: b.brk }))
     })),
     dr: Array.from(worldObjs.drops.values()).map((d) =>
-      ({ id: d.id, kind: d.kind, x: d.x, z: d.z, amt: d.amt }))
+      ({ id: d.id, kind: d.kind, x: d.x, z: d.z, amt: d.amt })),
+    // ✅ v0.4.6: постройки в снапшоте — новый игрок сразу видит дом
+    bd: worldObjs.builds.map((b) => ({ id: b.id, ty: b.ty, gx: b.gx, gz: b.gz,
+      e: b.e !== undefined ? b.e : undefined, top: b.top }))
   };
 }
 
@@ -589,7 +710,7 @@ server.on('upgrade', (req, sock) => {
         // АВТОРИТЕТНЫЙ welcome: свой id + ВСЕ игроки с позициями + мир
         p.send({
           t: 'welcome',
-          ver: 44,               // ✅ v0.4.5: протокол боя (snd/phit/pdeath/prespawn), hp в ростере
+          ver: 45,               // ✅ v0.4.6: протокол строительства (bplace/bnew/bdeny, bd в снапшоте)
           id: p.id,
           players: rosterFor().filter(function (r) { return r.id !== p.id; }),
           world: world ? {
@@ -822,6 +943,20 @@ server.on('upgrade', (req, sock) => {
           p.dead = false;
           p.hp = 100;
           broadcast({ t: 'prespawn', tid: p.id }, p.id);
+          break;
+        }
+        /* ✅ v0.4.6 СТРОИТЕЛЬСТВО: заявка установки (фундамент/стена/потолок).
+           Сервер проверяет правила (стена — только на край фундамента,
+           потолок — только где есть стена) и рассылает результат ВСЕМ,
+           включая поставившего (тот уже поставил у себя оптимистично —
+           повтор не задвоится: ключ клетки/края тот же) */
+        case 'bplace': {
+          const res = applyPlace(p, msg);
+          if (res && res.b) {
+            broadcast({ t: 'bnew', pid: p.id, b: res.b }, null);
+          } else {
+            p.send({ t: 'bdeny', tid: msg.tid || '', why: res || 'bad' });
+          }
           break;
         }
       }

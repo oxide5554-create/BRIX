@@ -21,6 +21,7 @@ window.BrixControls = (function () {
     this.enabled = false;
     this.onPointerLockLost = null;
     this._colliders = [];    // ✅ v0.2.9: цилиндры деревьев и камней
+    this._boxes = [];        // ✅ v0.4.6: AABB стен построек
 
     this._dom = dom;
     this._keys = new Set();
@@ -72,6 +73,44 @@ window.BrixControls = (function () {
   /** ✅ v0.2.9: список коллайдеров мира [{x, z, r, active}] (из BrixWorld.buildDecor) */
   FpsController.prototype.setColliders = function (list) {
     this._colliders = list || [];
+  };
+
+  /**
+   * ✅ v0.4.6: КОРОБЧАТЫЕ коллайдеры стен (AABB) — [{minX, maxX, minY, maxY, minZ, maxZ, active}].
+   * Стены осевые (yaw 0/90°), поэтому прямоугольник точен. Игрок
+   * выталкивается по самой глубокой оси проникновения (X или Z),
+   * но ТОЛЬКО если его ноги в пределах высоты стены: через стену
+   * не пройти, а ПОД потолком и НА фундаменте ходить можно.
+   */
+  FpsController.prototype.setBoxColliders = function (list) {
+    this._boxes = list || [];
+  };
+
+  FpsController.prototype._resolveBoxes = function () {
+    var bs = this._boxes;
+    if (!bs || !bs.length) return;
+    var feet = this.position.y - EYE_HEIGHT;
+    for (var i = 0; i < bs.length; i++) {
+      var b = bs[i];
+      if (b.active === false) continue;
+      if (feet + 0.25 < b.minY) continue;          // бокс целиком ниже ног
+      // ✅ верх бокса в пределах ступеньки (0.55) — не блокируем:
+      // groundAt поднимет игрока, он ЗАЙДЁТ сверху (угол фундамента
+      // на склоне, палуба чуть выше земли) — как Rust
+      if (feet + 0.55 >= b.maxY) continue;
+      var minX = b.minX - PLAYER_RADIUS, maxX = b.maxX + PLAYER_RADIUS;
+      var minZ = b.minZ - PLAYER_RADIUS, maxZ = b.maxZ + PLAYER_RADIUS;
+      if (this.position.x <= minX || this.position.x >= maxX ||
+          this.position.z <= minZ || this.position.z >= maxZ) continue;
+      // проникновения по каждой оси — выталкиваем по меньшей
+      var pxL = this.position.x - minX, pxR = maxX - this.position.x;
+      var pzL = this.position.z - minZ, pzR = maxZ - this.position.z;
+      var m = Math.min(pxL, pxR, pzL, pzR);
+      if (m === pxL) this.position.x = minX;
+      else if (m === pxR) this.position.x = maxX;
+      else if (m === pzL) this.position.z = minZ;
+      else this.position.z = maxZ;
+    }
   };
 
   /**
@@ -131,8 +170,9 @@ window.BrixControls = (function () {
     // ✅ v0.4.5: slowFactor < 1 — перезарядка револьвера (медленно даже бегом)
     var speed = (sprint ? SPRINT_SPEED : WALK_SPEED) * (this.slowFactor || 1);
 
-    // по колено в воде — медленнее
-    var floorH = this._getHeight(this.position.x, this.position.z);
+    // по колено в воде — медленнее (✅ v0.4.6: feetY — по палубе фундамента
+    // вода под домом не замедляет)
+    var floorH = this._getHeight(this.position.x, this.position.z, this.position.y - EYE_HEIGHT);
     if (floorH < 2.9) speed *= 0.55;
 
     if (moving) {
@@ -150,9 +190,12 @@ window.BrixControls = (function () {
     // ✅ v0.2.9: стволы деревьев и камни — сквозь них не пройти
     // (и после прыжка тоже: разрешаем коллизии каждый кадр)
     this._resolveColliders();
+    // ✅ v0.4.6: стены построек — сквозь них не пройти
+    this._resolveBoxes();
 
-    // вертикальная физика
-    var ground = this._getHeight(this.position.x, this.position.z) + EYE_HEIGHT;
+    // вертикальная физика (✅ v0.4.6: feetY — ходьба по фундаментам/потолкам)
+    var ground = this._getHeight(this.position.x, this.position.z,
+      this.position.y - EYE_HEIGHT) + EYE_HEIGHT;
     if (this.enabled && this._grounded && this._keys.has('Space')) {
       this._vy = JUMP_SPEED;
       this._grounded = false;
