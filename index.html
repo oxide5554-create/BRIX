@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script>
+/* ============================================================
+   АНТИ-КЭШ (почему после замены файлов ничего не менялось):
+   python -m http.server и npm-серверы НЕ шлют заголовки запрета
+   кэша, и браузер продолжает показывать СТАРЫЕ js-файлы.
+   1) Ко всем скриптам/стилям ниже добавлен ?v=042 — браузер
+      считает их новыми адресами и качает заново.
+   2) Если в адресе нет ?v= — страница один раз перезагружается
+      с ?v=042 (свежий index.html гарантированно).
+   3) В меню есть ссылка «обновить кэш» (js/main.js).
+   ============================================================ */
+(function () {
+  var V = '042';
+  window.BRIX_V = V;
+  window.BrixAsset = function (u) { return u + (u.indexOf('?') < 0 ? '?' : '&') + 'v=' + V; };
+  try {
+    var p = window.location.protocol;
+    if (p === 'http:' || p === 'https:') {
+      if (/[?&]v=/.test(window.location.search)) {
+        sessionStorage.removeItem('brixVjump');
+      } else if (!sessionStorage.getItem('brixVjump')) {
+        sessionStorage.setItem('brixVjump', '1');
+        var s = window.location.search;
+        window.location.replace(
+          window.location.pathname + (s ? s + '&v=' + V : '?v=' + V) + window.location.hash
+        );
+      }
+    }
+  } catch (e) { /* file:// — работаем как есть */ }
+})();
+</script>
+<meta name="theme-color" content="#101312">
+<title>BRIX v0.4.2 — Главное меню</title>
+<link rel="icon" href="assets/icon.png">
+<!-- Стили (перенос старой версии 1:1) -->
+<link rel="stylesheet" href="css/fonts.css?v=042">
+<link rel="stylesheet" href="css/base.css?v=042">
+<link rel="stylesheet" href="css/menu.css?v=042">
+<link rel="stylesheet" href="css/screens.css?v=042">
+<link rel="stylesheet" href="css/modals.css?v=042">
+<link rel="stylesheet" href="css/game.css?v=042">
+</head>
+<body>
+
+<!-- быстрый сплэш до загрузки сохранений -->
+<div id="splash" style="position:fixed;inset:0;z-index:200;display:grid;place-items-center;background:#0b0d0c">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:16px;opacity:.6">
+    <img src="assets/icon.png" alt="" style="width:46px;height:46px;object-fit:contain">
+    <div class="font-h" style="font-size:12px;letter-spacing:.35em;color:#8b918a">BRIX</div>
+  </div>
+</div>
+
+<div class="app">
+
+  <!-- ================= МЕНЮ ================= -->
+  <div id="menuChrome" style="position:absolute;inset:0">
+    <!-- живой 3D-фон: ночная сцена -->
+    <div id="bgScene"></div>
+    <div class="rust-vignette overlay"></div>
+    <div class="rust-grain overlay"></div>
+
+    <!-- шапка -->
+    <header class="topbar" id="topbar"></header>
+
+    <!-- десктопный сайдбар -->
+    <div class="sidebar-col">
+      <nav id="mainNav"></nav>
+      <div class="sidebar-version" id="sidebarVersion"></div>
+    </div>
+
+    <!-- слои экранов -->
+    <div id="screenHost"></div>
+
+    <!-- соц-панель справа -->
+    <div class="social-rail" id="socialRail"></div>
+
+    <!-- версия на мобильных -->
+    <div class="mobile-version" id="mobileVersion"></div>
+  </div>
+
+  <!-- ================= ИГРА ================= -->
+  <div id="gameLayer" class="game-layer hidden">
+    <div id="gameMount"></div>
+
+    <!-- HUD -->
+    <div id="gameHud" class="hud hidden">
+      <div class="cross-wrap"><div class="hud-crosshair"></div></div>
+      <div class="hud-server">
+        <div class="name" id="hudServerName"></div>
+        <div class="info" id="hudServerInfo"></div>
+      </div>
+      <div class="hud-stats">
+        <div><span id="hudFpsCap"></span><span class="v" id="hudFps">0</span></div>
+        <div style="margin-top:2px"><span id="hudPosCap"></span><span class="v" id="hudPos">0 · 0 · 0</span></div>
+      </div>
+      <div class="hud-hint" id="hudHint"></div>
+    </div>
+
+    <!-- пауза / ожидание захвата мыши -->
+    <div id="pauseOverlay" class="pause-overlay hidden">
+      <div class="rust-card pause-card">
+        <h3 class="font-h" id="pauseTitle"></h3>
+        <p class="hint" id="pauseHint"></p>
+        <div class="btns">
+          <button class="btn-rust-primary" id="btnResume"></button>
+          <button class="btn-rust" id="btnDisconnect"></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= ЭКРАН ЗАГРУЗКИ ================= -->
+  <div id="loadingScreen" class="loading-screen hidden">
+    <div class="rust-grain"></div>
+    <div class="rust-vignette"></div>
+    <img class="logo" src="assets/icon.png" alt="">
+    <h2 class="font-h" id="loadingTitle"></h2>
+    <p class="srv" data-server></p>
+    <p class="stage" id="loadingStage"></p>
+    <div class="loadbar loading-bar"><div class="fill" id="loadingFill" style="width:0%"></div></div>
+    <div class="pct font-h" id="loadingPct">0%</div>
+    <p class="tip" id="loadingTip"></p>
+  </div>
+
+  <!-- диалог выхода и прощание -->
+  <div id="quitRoot"></div>
+
+  <!-- тосты -->
+  <div id="toastRoot" style="pointer-events:none"></div>
+</div>
+
+<!-- Скрипты: порядок важен! -->
+<script src="js/lib/three.min.js?v=042"></script>
+<script src="js/core/i18n.js?v=042"></script>
+<script src="js/core/state.js?v=042"></script>
+<script src="js/core/audio.js?v=042"></script>
+<script src="js/core/icons.js?v=042"></script>
+<script src="js/data/servers.js?v=042"></script>
+<script src="js/data/friends.js?v=042"></script>
+<script src="js/data/skins.js?v=042"></script>
+<script src="js/data/news.js?v=042"></script>
+<script src="js/data/itemicons.js?v=042"></script>
+<script src="js/ui/toast.js?v=042"></script>
+<script src="js/ui/modals.js?v=042"></script>
+<script src="js/ui/topbar.js?v=042"></script>
+<script src="js/ui/sidebar.js?v=042"></script>
+<script src="js/ui/screens.js?v=042"></script>
+<script src="js/ui/loading.js?v=042"></script>
+<script src="js/game/noise.js?v=042"></script>
+<script src="js/game/embeddata.js?v=042"></script>
+<script src="js/game/glb.js?v=042"></script>
+<script src="js/game/sfx.js?v=042"></script>
+<script src="js/game/terrain.js?v=042"></script>
+<script src="js/game/world.js?v=042"></script>
+<script src="js/game/controls.js?v=042"></script>
+<script src="js/game/props.js?v=042"></script>
+<script src="js/game/firstperson.js?v=042"></script>
+<script src="js/game/inventory.js?v=042"></script>
+<script src="js/game/lootmenu.js?v=042"></script>
+<script src="js/game/background.js?v=042"></script>
+<script src="js/net/net.js?v=042"></script>
+<script src="js/social/social.js?v=042"></script>
+<script src="js/game/remoteplayer.js?v=042"></script>
+<script src="js/game/gameworld.js?v=042"></script>
+<script src="js/main.js?v=042"></script>
+</body>
+</html>

@@ -1,0 +1,364 @@
+/* ============================================================
+ *  brix • js/net/net.js — СЕТЬ МУЛЬТИПЛЕЕРА (v0.3.1)
+ *
+ *  Два транспорта (выбираются автоматически):
+ *   1. WebSocket на ws://<хост>:8787 — АВТОРИТЕТНЫЙ сервер brix
+ *      (server.js): сервер назначает id, держит ростер игроков и
+ *      общее состояние мира (запасы деревьев/руд) как в Rust/Oxide.
+ *      Работает между РАЗНЫМИ компьютерами/браузерами.
+ *   2. BroadcastChannel — резерв для двух вкладок одного браузера
+ *      (даже с file://, без сервера).
+ *  Если ни то, ни другое недоступно — одиночная игра.
+ *
+ *  События для игры (BrixNet.on(...)):
+ *   welcome(msg) — от сервера: {id, players:[{id,n,c,s}...], world:{trees,ores}}
+ *   join(id, name, color) / leave(id) — ростер изменился
+ *   state(msg) — состояние чужого игрока 12 Гц
+ *   hit(msg) — результат удара по ресурсу (СЕРВЕР решил): {k,ty,i,l,d,fd,by}
+ * ============================================================ */
+window.BrixNet = (function () {
+  'use strict';
+
+  var ID = null;            // назначается сервером в welcome
+  // ✅ v0.3.4: настоящий ник из профиля (не «Игрок-J1V»)
+  function profileNick() {
+    try {
+      var n = window.BrixState && BrixState.data.settings && BrixState.data.settings.nick;
+      return (n && String(n).trim()) || '';
+    } catch (e) { return ''; }
+  }
+  var NAME = profileNick() || 'Игрок';
+  // цвет игрока для плашки имени (тёплые игровые тона)
+  var HUES = [210, 20, 130, 280, 45, 170, 330, 90];
+  var COLOR = 'hsl(' + HUES[Math.floor(Math.random() * HUES.length)] + ',55%,55%)';
+
+  var ws = null;          // WebSocket или null
+  var bc = null;          // BroadcastChannel или null
+  var mode = 'off';
+  var serverVer = 0;   // ✅ v0.4.2: версия протокола сервера (welcome.ver)       // 'server' | 'tabs' | 'off'
+  var statusEl = null;
+  var handlers = {
+    welcome: null,        // (msg) — ростер + мир от сервера
+    state: null,          // (msg)
+    hit: null,            // (msg)
+    join: null,           // (id, name, c)
+    leave: null           // (id)
+  };
+  var seen = {};          // id -> время последнего «пинга» (режим вкладок)
+
+  function peersCount() {
+    var n = 0;
+    var now = performance.now();
+    for (var k in seen) {
+      if (now - seen[k] < 3000) n++;
+      else delete seen[k];
+    }
+    return n;
+  }
+
+  /* ---------- приём ---------- */
+
+  function handle(msg) {
+    if (!msg || !msg.t) return;
+    if (msg.id && ID && msg.id === ID) return;   // своё эхо (режим вкладок)
+    switch (msg.t) {
+      case 'welcome':
+        serverVer = msg.ver || 0;   // ✅ v0.4.2
+        ID = msg.id;
+        // свой ник не перебиваем выдуманным — шлём из профиля
+        if (!NAME || NAME === 'Игрок') NAME = profileNick() || NAME;
+        if (handlers.welcome) handlers.welcome(msg);
+        break;
+      case 'join':
+        if (msg.id) seen[msg.id] = performance.now();
+        if (handlers.join) handlers.join(msg.id, msg.n, msg.c);
+        break;
+      case 'leave':
+        delete seen[msg.id];
+        if (handlers.leave) handlers.leave(msg.id);
+        break;
+      case 's':
+        seen[msg.id] = performance.now();
+        if (handlers.state) handlers.state(msg);
+        break;
+      case 'hit':
+        if (handlers.hit) handlers.hit(msg);
+        break;
+      /* ✅ v0.3.3: соцсеть — входящие заявки в друзья через сервер */
+      case 'fsoc':
+        if (handlers.social) handlers.social(msg);
+        break;
+      case 'fsoc-miss':
+        if (handlers.socialMiss) handlers.socialMiss(msg);
+        break;
+      /* ✅ v0.3.6: мир объектов — всё авторитетно от сервера */
+      case 'bhp':
+        if (handlers.bhp) handlers.bhp(msg);
+        break;
+      /* ✅ v0.4.0: ответ на ping — «сервер отвечает ✓» на HUD */
+      case 'pong':
+        if (handlers.pong) handlers.pong(msg);
+        break;
+      case 'brk':
+        if (handlers.brk) handlers.brk(msg);
+        break;
+      case 'btaken':
+        if (handlers.btaken) handlers.btaken(msg);
+        break;
+      case 'cbtaken':
+        if (handlers.cbtaken) handlers.cbtaken(msg);
+        break;
+      /* ✅ v0.3.8: лут-меню ящика и респавн бочек — всё от сервера */
+      case 'cbopen':
+        if (handlers.cbopen) handlers.cbopen(msg);
+        break;
+      case 'cbloot':
+        if (handlers.cbloot) handlers.cbloot(msg);
+        break;
+      case 'cbrespawn':
+        if (handlers.cbrespawn) handlers.cbrespawn(msg);
+        break;
+      case 'brespawn':
+        if (handlers.brespawn) handlers.brespawn(msg);
+        break;
+      case 'cnt':
+        // счётчик онлайна пушит сервер — мгновенно, каждому.
+        // ✅ v0.4.1: g — сколько из них В ИГРЕ (state) vs в меню
+        if (handlers.cnt) handlers.cnt(msg.n, msg.g);
+        break;
+      case 'bhit':
+        // режим вкладок: заявка удара от другой вкладки (сервер-режим
+        // обрабатывает 'bhit' сам и назад не пересылает)
+        if (handlers.bhitReq) handlers.bhitReq(msg);
+        break;
+      /* --- режим вкладок (без сервера) --- */
+      case 'hi':
+        seen[msg.id] = performance.now();
+        if (handlers.join) handlers.join(msg.id, msg.n, msg.c);
+        if (msg.need && handlers.worldReq) handlers.worldReq(msg.id);
+        break;
+      case 'world':
+        if (handlers.world) handlers.world(msg);
+        break;
+      case 'need':
+        if (handlers.worldReq) handlers.worldReq(msg.id);
+        break;
+      case 'bye':
+        delete seen[msg.id];
+        if (handlers.leave) handlers.leave(msg.id);
+        break;
+    }
+  }
+
+  function onRaw(text) {
+    var msg;
+    try { msg = JSON.parse(text); } catch (e) { return; }
+    handle(msg);
+  }
+
+  /* ---------- отправка ---------- */
+
+  function send(obj) {
+    var text;
+    try { text = JSON.stringify(obj); } catch (e) { return; }
+    if (mode === 'server' && ws && ws.readyState === 1) { ws.send(text); return; }
+    if (mode === 'tabs' && bc) {
+      obj.id = obj.id || ID || 'local';
+      bc.postMessage(JSON.stringify(obj));
+    }
+  }
+
+  /* ---------- подключение ---------- */
+
+  function tryWebSocket(onDone) {
+    var host = location.hostname || 'localhost';
+    var sock;
+    try { sock = new WebSocket('ws://' + host + ':8787'); }
+    catch (e) { onDone(null); return; }
+    var settled = false;
+    var timer = setTimeout(function () {
+      if (!settled) { settled = true; try { sock.close(); } catch (e) {} onDone(null); }
+    }, 1500);
+    sock.onopen = function () {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      onDone(sock);
+    };
+    sock.onerror = function () {
+      if (!settled) { settled = true; clearTimeout(timer); onDone(null); }
+    };
+    sock.onclose = function () {
+      if (!settled) { settled = true; clearTimeout(timer); onDone(null); }
+      else if (mode === 'server') {
+        // сервер умер → пробуем вкладки
+        ws = null;
+        connectTabs();
+      }
+    };
+    sock.onmessage = function (ev) { onRaw(typeof ev.data === 'string' ? ev.data : ''); };
+  }
+
+  function connectTabs() {
+    if (typeof BroadcastChannel === 'undefined') { mode = 'off'; paint(); return; }
+    try { bc = new BroadcastChannel('brix-mp-v1'); }
+    catch (e) { mode = 'off'; paint(); return; }
+    bc.onmessage = function (ev) { onRaw(ev.data); };
+    mode = 'tabs';
+    if (!ID) ID = 'p' + Math.random().toString(36).slice(2, 8);
+    paint();
+  }
+
+  function connect(meta) {
+    tryWebSocket(function (sock) {
+      if (sock) {
+        ws = sock;
+        mode = 'server';
+        NAME = profileNick() || NAME;
+        send({ t: 'hello', n: NAME, c: COLOR, meta: meta || null });
+        paint();
+      } else {
+        connectTabs();
+        if (mode !== 'off') announce(true);
+      }
+    });
+  }
+
+  function announce(needWorld) {
+    NAME = profileNick() || NAME;
+    send({ t: 'hi', n: NAME, c: COLOR, need: !!needWorld });
+  }
+
+  function disconnect() {
+    send({ t: 'bye' });
+    if (ws) { try { ws.close(); } catch (e) {} ws = null; }
+    if (bc) { try { bc.close(); } catch (e) {} bc = null; }
+    mode = 'off';
+    seen = {};
+    paint();
+  }
+
+  /* ---------- строка статуса ---------- */
+
+  function label() {
+    // ✅ v0.4.1: «В ИГРЕ» вместо «игроков» — раньше рядом стояло
+    // «НА СЕРВЕРЕ СЕЙЧАС: 2» и было непонятно, что означают числа
+    if (mode === 'server') return 'СЕТЬ: сервер · В ИГРЕ: ' + (peersCount() + 1);
+    if (mode === 'tabs') return 'СЕТЬ: вкладки · В ИГРЕ: ' + (peersCount() + 1);
+    return 'СЕТЬ: одиночная игра';
+  }
+
+  function paint() {
+    if (statusEl) statusEl.textContent = label();
+  }
+
+  function setStatusEl(el) {
+    statusEl = el;
+    paint();
+  }
+
+  /* ---------- такт: пинги вкладок и статус ---------- */
+
+  var hbT = 0;
+  function tick(dt, myState) {
+    if (mode === 'off') return;
+    hbT -= dt;
+    if (hbT <= 0) {
+      hbT = 1;
+      if (mode === 'tabs') announce(false);   // пинг в режиме вкладок
+      paint();
+    }
+    if (myState) sendState(myState);
+  }
+
+  /** состояние игрока: {x,y,z,yaw,a,tool,ph} — a: idle|run|jump|atk1|atk2 */
+  function sendState(st) {
+    if (mode === 'off') return;
+    st.t = 's';
+    send(st);
+  }
+
+  /** ✅ v0.3.3: отправить соцсообщение (заявка в друзья) игроку по имени —
+   *  сервер пересылает адресату (см. 'fsend' в server.js) */
+  function sendSocial(to, kind, data) {
+    send({ t: 'fsend', to: to, fromId: (window.BrixState && BrixState.data.profileId) || '',
+      kind: kind, data: data || null });
+  }
+
+  /** ЗАПРОС удара по ресурсу + готовый РЕЗУЛЬТАТ (для вкладок без сервера):
+   *  сервер использует только y (сам решает всё остальное), а другие
+   *  вкладки берут готовые l/d/fd отправителя. */
+  function sendHit(kind, type, idx, y, l, d, fd) {
+    if (mode === 'off') return;
+    var msg = { t: 'hit', k: kind, ty: type || null, i: idx, y: y };
+    if (l !== undefined && l !== null) msg.l = l;
+    if (d) msg.d = 1;
+    if (fd !== undefined && fd !== null) msg.fd = fd;
+    send(msg);
+  }
+
+  /* ✅ v0.3.6: бочки/дропы/чекблоки — заявки серверу (решает сервер) */
+  function sendBhit(id, tool) {
+    if (mode === 'off') return;
+    send({ t: 'bhit', id: id, tool: tool || '' });
+  }
+  function sendBtake(id) {
+    if (mode === 'off') return;
+    send({ t: 'btake', id: id });
+  }
+  /* ✅ v0.3.8: открыть лут-меню ящика чекблока */
+  function sendCbOpen(id) {
+    if (mode !== 'server') return;
+    send({ t: 'cbopen', id: id });
+  }
+  /* ✅ v0.3.8: взять предмет из ящика (id чекблока + вид предмета).
+     ✅ v0.4.1: amt — сколько ВЗЯТЬ (клик = весь стек, драг в стек =
+     сколько влезает); без amt сервер отдаёт весь стек как раньше */
+  function sendCbTake(id, item, amt, tid) {
+    if (mode === 'off') return;
+    var m = { t: 'cbtake', id: id, item: item };
+    if (amt > 0) m.amt = Math.floor(amt);
+    if (tid) m.tid = tid;
+    send(m);
+  }
+  /* ✅ v0.4.1: положить свой предмет В ЯЩИК (drag&drop в обратную
+     сторону). Сервер добавляет в лут ящика и рассылает всем cbloot */
+  function sendCbPut(id, item, amt) {
+    if (mode === 'off') return;
+    send({ t: 'cbput', id: id, item: item, amt: Math.max(1, Math.floor(amt || 1)) });
+  }
+
+  /** снимок мира конкретному игроку (режим вкладок) */
+  function sendWorldTo(toId, snapshot) {
+    snapshot.t = 'world';
+    snapshot.to = toId;
+    send(snapshot);
+  }
+
+  return {
+    get NAME() { return NAME; },   // ✅ v0.3.4: живой ник (не снимок на момент загрузки)
+    COLOR: COLOR,
+    connect: connect,
+    disconnect: disconnect,
+    tick: tick,
+    sendState: sendState,
+    /* ✅ v0.3.8: send экспортирован — им пользовались objLocalDamage и
+       tryPickup в режиме вкладок, из-за отсутствия функции игра падала
+       с «BrixNet.send is not a function» и БОЧКИ НЕ ЛОМАЛИСЬ */
+    send: send,
+    sendHit: sendHit,
+    sendBhit: sendBhit,
+    sendBtake: sendBtake,
+    sendCbOpen: sendCbOpen,
+    sendCbTake: sendCbTake,
+    sendCbPut: sendCbPut,
+    sendSocial: sendSocial,
+    sendWorldTo: sendWorldTo,
+    setStatusEl: setStatusEl,
+    on: function (name, fn) { handlers[name] = fn; },
+    get mode() { return mode; },
+    get serverVer() { return serverVer; },
+    get id() { return ID; },
+    peersCount: peersCount
+  };
+})();

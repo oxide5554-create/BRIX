@@ -1,0 +1,315 @@
+/* ============================================================
+   brix • css/game.css — экран загрузки, HUD, пауза.
+   ============================================================ */
+
+.game-layer { position: fixed; inset: 0; z-index: 60; background: #000; }
+#gameMount { position: absolute; inset: 0; }
+#gameMount canvas { display: block; width: 100%; height: 100%; }
+
+/* ---------- экран загрузки ---------- */
+.loading-screen {
+  position: fixed; inset: 0;
+  z-index: 70;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(11, 13, 12, 0.97);
+  animation: fade-in .2s ease-out;
+}
+.loading-screen .rust-grain, .loading-screen .rust-vignette {
+  position: absolute; inset: 0; pointer-events: none;
+}
+.loading-screen img.logo { width: 64px; height: 64px; object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,.55)); }
+.loading-screen h2 {
+  margin-top: 24px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 30px; font-weight: 700;
+  letter-spacing: .3em; color: var(--bone);
+}
+.loading-screen .srv { margin-top: 8px; font-size: 14px; color: var(--ember); }
+.loading-screen .stage { margin-top: 16px; height: 20px; font-size: 14px; color: var(--dim); }
+.loading-bar {
+  margin-top: 24px;
+  height: 5px; width: 288px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.5);
+}
+.loading-bar .fill {
+  height: 100%;
+  background: linear-gradient(to right, var(--rust-dark), var(--rust));
+  transition: width .2s;
+}
+.loading-screen .pct {
+  margin-top: 8px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 12px; letter-spacing: .2em; color: var(--dim);
+}
+.loading-screen .tip {
+  margin-top: 40px;
+  max-width: 448px; padding: 0 24px;
+  text-align: center;
+  font-size: 14px; font-style: italic; color: var(--dim);
+}
+.loading-screen .tip.swap { animation: rise-in .35s ease-out; }
+
+/* ---------- HUD в игре ---------- */
+.hud { position: absolute; inset: 0; z-index: 62; pointer-events: none; transition: opacity .2s; }
+.hud.dimmed { opacity: .35; }
+.hud .cross-wrap { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.hud-server {
+  position: absolute; left: 16px; top: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  padding: 8px 12px;
+}
+.hud-server .name { font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: .2em; color: var(--rust-bright); }
+.hud-server .info { margin-top: 2px; font-size: 11px; color: var(--dim); }
+.hud-stats {
+  position: absolute; right: 16px; top: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  padding: 8px 12px;
+  text-align: right;
+  font-family: 'Oswald', sans-serif;
+  font-size: 11px; letter-spacing: .15em; color: var(--dim);
+}
+.hud-stats .v { color: var(--bone); }
+.hud-hint {
+  position: absolute; bottom: 86px; left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: 11px; letter-spacing: .03em;
+  color: rgba(139, 145, 138, 0.9);
+}
+
+/* ---------- пауза ---------- */
+.pause-overlay {
+  position: absolute; inset: 0;
+  z-index: 64;
+  display: grid; place-items: center;
+  background: rgba(0, 0, 0, 0.6);
+  animation: fade-in .15s ease-out;
+}
+.pause-card {
+  width: 100%; max-width: 380px;
+  background: var(--panel);
+  padding: 24px;
+  text-align: center;
+}
+.pause-card h3 {
+  font-family: 'Oswald', sans-serif;
+  font-size: 18px; font-weight: 600;
+  letter-spacing: .2em; color: var(--bone);
+}
+.pause-card .hint { margin-top: 8px; font-size: 14px; color: var(--dim); }
+.pause-card .btns { margin-top: 24px; display: flex; flex-direction: column; gap: 12px; }
+
+/* ============================================================
+   ХОТБАР + ИНВЕНТАРЬ BRIX — собственный стиль игры (rust-палитра:
+   --rust #cd412f, --ember, --panel). Острые углы, ржавые акценты,
+   Oswald для заголовков, Roboto Condensed для цифр.
+   ============================================================ */
+
+/* ---------- хотбар (низ, по центру) — v0.3.2: по референсу,
+   плоские слоты без цифр и подсветок ---------- */
+.bx-hotbar {
+  position: absolute;
+  left: 50%; bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  pointer-events: auto;
+  z-index: 5;
+}
+.bx-slot {
+  position: relative;
+  width: 56px; height: 56px;
+  background: rgba(58, 58, 55, 0.92);
+  cursor: pointer;
+}
+.bx-slot.empty { cursor: default; }
+.bx-slot.dragging { opacity: 0.35; }
+.bx-slot.drag-over { background: rgba(76, 76, 72, 0.95); }
+
+.bx-slot img {
+  position: absolute; inset: 6px;
+  width: calc(100% - 12px); height: calc(100% - 12px);
+  object-fit: contain;
+  z-index: 2; pointer-events: none;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6));
+}
+.bx-count {
+  position: absolute; right: 4px; bottom: 2px; z-index: 3;
+  font-family: 'Roboto Condensed', sans-serif;
+  font-weight: 700; font-size: 13px;
+  color: #e6e4de;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+  line-height: 1;
+}
+
+/* ---------- инвентарь (поверх игры, без меню) ---------- */
+.bx-inv {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  background: rgba(5, 6, 5, 0.55);
+  backdrop-filter: blur(3px);
+  pointer-events: auto;
+  z-index: 8;
+  animation: fade-in .15s ease-out;
+}
+.bx-inv-panel {
+  width: min(470px, calc(100vw - 48px));   /* v0.3.2: компактная панель как в референсе */
+  background: rgba(43, 43, 40, 0.96);      /* плоский тёмный фон без градиентов */
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  padding: 16px 18px 18px;
+  animation: modal-in .16s ease-out;
+}
+.bx-inv-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding-bottom: 10px; margin-bottom: 10px;
+}
+.bx-inv-title {
+  font-family: 'Oswald', sans-serif;
+  font-size: 17px; font-weight: 700;
+  letter-spacing: .18em;
+  color: #e6e4de;
+  text-transform: uppercase;
+}
+.bx-inv-close {
+  color: var(--dim);
+  font-size: 14px; line-height: 1;
+  padding: 4px 8px;
+  transition: color .12s ease;
+}
+.bx-inv-close:hover { color: var(--rust-bright); }
+
+.bx-inv-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);   /* v0.3.2: 5 столбцов как в референсе */
+  gap: 4px;
+}
+.bx-inv-hotrow {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  margin-top: 22px;    /* v0.3.2: хотбар ОТДЕЛЁН от сетки, как в референсе */
+}
+.bx-inv-hotrow .bx-slot { width: auto; height: 50px; }
+.bx-inv-hint {
+  margin-top: 14px;
+  font-size: 12px; color: var(--faint);
+  text-align: center;
+}
+.bx-inv-hint kbd, .bx-inv-hint b {
+  font-family: 'Oswald', sans-serif;
+  color: var(--ember);
+  font-weight: 400;
+}
+
+/* ---------- всплывающая добыча (+2 Дерево) ---------- */
+.bx-pickups {
+  position: absolute;
+  left: 50%; top: 38%;
+  transform: translateX(40px);
+  display: flex; flex-direction: column; gap: 6px;
+  align-items: flex-start;
+  pointer-events: none;
+  z-index: 6;
+}
+.bx-pickup {
+  display: flex; align-items: center; gap: 8px;
+  padding: 5px 12px 5px 8px;
+  background: rgba(11, 13, 12, 0.72);
+  border: 1px solid rgba(205, 65, 47, 0.4);
+  backdrop-filter: blur(4px);
+  font-family: 'Oswald', sans-serif;
+  font-size: 13px; letter-spacing: .06em;
+  color: var(--bone);
+  animation: bx-pickup-in .22s ease-out;
+  transition: opacity .4s ease, transform .4s ease;
+}
+.bx-pickup img { width: 22px; height: 22px; object-fit: contain; }
+.bx-pickup span { white-space: nowrap; }
+.bx-pickup.out { opacity: 0; transform: translateY(-14px); }
+@keyframes bx-pickup-in {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* заглушка, если иконка не загрузилась */
+.bx-icon-fallback { display: none; }
+
+/* ============================================================
+   ✅ v0.3.9: ЛУТ-МЕНЮ ЯЩИКА — порт сплит-панели из репозитория
+   (scr/ui/crateUI.js): сетка ящика + инвентарь + хотбар
+   ============================================================ */
+.crate-overlay {
+  position: fixed; inset: 0; z-index: 150;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .55);
+}
+.crate-overlay.hidden { display: none; }
+.crate-panel {
+  position: relative; display: flex; gap: 14px;
+  background: #2b2b2b; border: 1px solid #1a1a1a; border-radius: 2px;
+  padding: 12px 14px; box-shadow: 0 8px 32px rgba(0, 0, 0, .85);
+  user-select: none; min-width: 380px;
+}
+.crate-close-btn {
+  position: absolute; top: 6px; right: 8px; width: 26px; height: 26px;
+  border: 0; border-radius: 2px; background: #4a4a4a; color: #fff;
+  font-size: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.crate-close-btn:hover { background: #c0392b; }
+.crate-col { display: flex; flex-direction: column; }
+.crate-title {
+  color: #d0d0d0; font-size: 11px; font-weight: 700; letter-spacing: .12em;
+  text-transform: uppercase; margin-bottom: 8px; padding-bottom: 6px;
+  border-bottom: 1px solid #1a1a1a; white-space: nowrap;
+}
+.crate-grid {
+  display: grid; grid-template-columns: repeat(6, 50px); gap: 3px;
+  background: #1e1e1e; padding: 8px; border-radius: 2px; border: 1px solid #111;
+}
+.crate-slot {
+  width: 50px; height: 50px; background: #3a3a3a;
+  border: 1px solid #1a1a1a; border-radius: 2px;
+  position: relative; cursor: pointer; overflow: hidden;
+}
+.crate-slot:hover { background: #454545; border-color: #555; }
+.crate-slot .slot-icon {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+  pointer-events: none; user-select: none;
+}
+.crate-slot .slot-icon img { width: 26px; height: 26px; object-fit: contain; pointer-events: none; }
+.crate-slot .count {
+  position: absolute; right: 3px; bottom: 1px; color: #fff;
+  text-shadow: 1px 1px 0 #000; font-size: 11px; font-weight: 800; pointer-events: none;
+}
+.crate-close-hint {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  color: rgba(255, 255, 255, .45); font-size: 10px; letter-spacing: .1em; pointer-events: none;
+}
+
+/* ✅ v0.4.0: всплывающие подсказки-страховки (BrixHud.toast) */
+.brix-toast {
+  position: fixed; top: 14%; left: 50%; transform: translateX(-50%);
+  z-index: 400; max-width: 640px; padding: 10px 16px;
+  background: rgba(20, 14, 8, .92); border: 1px solid #7a5b33;
+  border-radius: 3px; color: #f2d9a6; font: 13px/1.5 Consolas, monospace;
+  text-align: center; opacity: 0; visibility: hidden;
+  transition: opacity .25s; pointer-events: none;
+}
+.brix-toast.show { opacity: 1; visibility: visible; }
+
+/* ✅ v0.4.1: drag&drop в лут-меню (как в основном инвентаре) */
+.crate-slot.drag-over { background: #56504a; border-color: #c8a464; }
+.crate-slot.dragging { opacity: .45; }
+.crate-grid-inv { grid-template-columns: repeat(5, 50px); }   /* как .bx-inv-grid — 5 колонок */
+.crate-grid-hot { grid-template-columns: repeat(6, 50px); }
+.crate-slot-own { cursor: grab; }
+.crate-slot-own.own-hot { background: #423e36; }              /* хотбар чуть темнее — как в инвентаре */

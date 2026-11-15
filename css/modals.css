@@ -1,0 +1,121 @@
+/* ============================================================
+   brix • css/modals.css — окна: бета-тест, профиль, ник,
+   подтверждение, чтение новости, прощание после выхода.
+   ============================================================ */
+
+.overlay {
+  position: fixed; inset: 0;
+  z-index: 70;
+  display: grid; place-items: center;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 16px;
+  animation: fade-in .15s ease-out;
+}
+
+.modal-box {
+  width: 100%;
+  background: var(--panel);
+  padding: 24px;
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.6);
+  animation: modal-in .16s ease-out;
+}
+
+.modal-title {
+  font-family: 'Oswald', sans-serif;
+  font-size: 18px; font-weight: 600;
+  letter-spacing: .1em; color: var(--bone);
+}
+.modal-text { margin-top: 12px; font-size: 14px; line-height: 1.6; color: var(--dim); }
+.modal-foot { margin-top: 24px; display: flex; justify-content: flex-end; gap: 12px; }
+
+/* ---------- окно бета-теста ---------- */
+.beta-box { max-width: 520px; }
+.beta-head {
+  display: flex; align-items: center; gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 16px;
+}
+.beta-head img { width: 44px; height: 44px; object-fit: contain; filter: drop-shadow(0 2px 6px rgba(0,0,0,.55)); }
+.beta-head .t1 { font-family: 'Oswald', sans-serif; font-size: 20px; font-weight: 700; letter-spacing: .18em; color: var(--bone); }
+.beta-head .t2 { font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: .3em; color: var(--rust-bright); }
+.beta-head .mini-badge { margin-left: auto; }
+.beta-hello { margin-top: 20px; font-family: 'Oswald', sans-serif; font-size: 16px; font-weight: 600; letter-spacing: .1em; color: var(--bone); }
+.beta-box p.body { margin-top: 8px; font-size: 14px; line-height: 1.6; color: var(--dim); }
+.beta-working {
+  margin-top: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.3);
+  padding: 14px;
+}
+.beta-working .cap { font-family: 'Oswald', sans-serif; font-size: 11px; letter-spacing: .25em; color: var(--ember); }
+.beta-working ul { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.beta-working li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: rgba(214, 217, 212, 0.9); }
+.beta-working li svg { flex-shrink: 0; color: var(--good); }
+.beta-foot { margin-top: 24px; display: flex; justify-content: flex-end; }
+.beta-foot .btn-rust-primary { padding-left: 32px; padding-right: 32px; }
+
+/* ---------- окно профиля ---------- */
+.profile-box { max-width: 420px; }
+.profile-head { display: flex; align-items: center; gap: 12px; }
+.profile-head .avatar-round { width: 48px; height: 48px; font-size: 18px; font-weight: 700; }
+.profile-head h3 { font-family: 'Oswald', sans-serif; font-size: 18px; font-weight: 600; letter-spacing: .1em; color: var(--bone); }
+.profile-head .sub { font-size: 12px; color: var(--faint); }
+.profile-rows { margin-top: 20px; }
+.profile-row {
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 12px 0;
+}
+.profile-row:last-child { border-bottom: 0; }
+.profile-row .lbl { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--dim); }
+.profile-row .lbl svg { color: var(--rust); }
+.profile-row .val { font-family: 'Oswald', sans-serif; font-size: 14px; letter-spacing: .04em; color: var(--bone); }
+
+/* ---------- окно смены ника ---------- */
+.nick-box { max-width: 420px; }
+.nick-label { margin-top: 20px; display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); }
+.nick-input {
+  margin-top: 8px;
+  height: 44px;
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.4);
+  padding: 0 12px;
+  font-size: 16px; color: var(--bone);
+  outline: none;
+}
+.nick-input::placeholder { color: var(--faint); }
+.nick-input:focus { border-color: var(--rust); }
+.nick-under { margin-top: 6px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; }
+.nick-under .err { color: var(--rust-bright); }
+.nick-under .hint { color: var(--faint); }
+.nick-under .counter.bad { color: var(--rust-bright); }
+
+/* ---------- чтение новости ---------- */
+.news-reader { max-width: 680px; max-height: 85vh; overflow-y: auto; }
+.news-reader .back {
+  margin-bottom: 20px;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; text-transform: uppercase; letter-spacing: .1em; color: var(--dim);
+  transition: color .15s;
+}
+.news-reader .back:hover { color: #fff; }
+.news-reader .meta { display: flex; align-items: center; gap: 8px; }
+.news-reader .meta .date { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--faint); }
+.news-reader h2 { margin-top: 16px; font-family: 'Oswald', sans-serif; font-size: 24px; font-weight: 600; line-height: 1.35; color: var(--bone); }
+.news-reader .quote { margin-top: 16px; border-left: 2px solid var(--rust); padding-left: 16px; font-size: 14px; font-style: italic; line-height: 1.6; color: var(--dim); }
+.news-reader .art { margin-top: 20px; }
+.news-reader .art svg { height: 140px; width: 100%; }
+.news-reader .paras { margin-top: 20px; display: flex; flex-direction: column; gap: 16px; }
+.news-reader .paras p { font-size: 14px; line-height: 1.7; color: rgba(214, 217, 212, 0.9); }
+
+/* ---------- прощание после выхода ---------- */
+.quit-done {
+  position: fixed; inset: 0;
+  z-index: 85;
+  display: grid; place-items: center;
+  background: #000;
+  animation: fade-in .25s ease-out;
+}
+.quit-done .inner { display: flex; flex-direction: column; align-items: center; gap: 32px; }
+.quit-done p { font-family: 'Oswald', sans-serif; font-size: 20px; letter-spacing: .25em; color: var(--dim); }
