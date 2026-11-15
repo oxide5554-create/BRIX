@@ -20,6 +20,13 @@ window.BrixRemotePlayer = (function () {
   'use strict';
 
   var SWING_DUR = 0.55;      // длительность удара — как в 1-м лице
+  // ✅ v0.4.5: длительности боевых анимаций (синхронно с 1-м лицом)
+  var ANIM_DUR = { atk1: 0.55, atk2: 0.55, shoot: 0.35, reload: 2.2 };
+  // ✅ v0.4.5: разворот револьвера в кисти (ствол вперёд, как в 1-м лице)
+  var REV_REMOTE = {
+    rot: { x: -0.15, y: Math.PI / 2 + 0.05, z: 0 },
+    pos: { x: 0.02, y: -0.03, z: -0.06 }
+  };
 
   // палитра «Rust-персонажа»
   var SKIN = 0xc9996f;       // кожа (посветлее, чтобы читалась)
@@ -272,13 +279,21 @@ window.BrixRemotePlayer = (function () {
       axe: ['assets/models/stone_axe.glb', 0.55],
       pickaxe: ['assets/models/stone_pickaxe.glb', 0.55],
       ironPickaxe: ['assets/models/pickaxe.glb', 0.58],
-      ironAxe: ['assets/models/iron_axe.glb', 0.58]
+      ironAxe: ['assets/models/iron_axe.glb', 0.58],
+      revolver: ['assets/models/revolver.glb', 0.30]   // ✅ v0.4.5
     };
-    var left = 4;
+    var left = Object.keys(defs).length;
     Object.keys(defs).forEach(function (key) {
       var url = window.BrixAsset ? window.BrixAsset(defs[key][0]) : defs[key][0];
-      BrixGLB.load(url, function (group) {
-        fitToolLikeAxe(group, defs[key][1]);   // рукоять вдоль +Y, голова вверх, низ в нуле
+      BrixGLB.load(url, function (group, size) {
+        if (key === 'revolver') {
+          // револьвер НЕ «топор»: не разворачиваем по длинной оси,
+          // просто масштабируем по габаритам — поворот в _applyTool
+          var sc = defs[key][1] / Math.max(size.x, size.y, size.z, 1e-6);
+          group.scale.setScalar(sc);
+        } else {
+          fitToolLikeAxe(group, defs[key][1]);   // рукоять вдоль +Y, голова вверх, низ в нуле
+        }
         var wrap = new THREE.Group();
         wrap.add(group);
         TOOLS[key] = wrap;
@@ -342,6 +357,14 @@ window.BrixRemotePlayer = (function () {
     this.tag = nameTag(name, this.color);
     g.add(this.tag);
 
+    // ✅ v0.4.5: полоска здоровья + боевое состояние
+    this.hpBar = makeHpBar();
+    g.add(this.hpBar.sp);
+    this.hp = 100;
+    this.dead = false;
+    this._sinkT = 0;
+    this._hpHideT = 0;
+
     // анимация
     this.animT = 0;
     this.swingT = -1;
@@ -372,6 +395,14 @@ window.BrixRemotePlayer = (function () {
     var proto = TOOLS[want];
     if (!proto) return;
     var m = proto.clone(true);
+    if (want === 'revolver') {
+      // ✅ v0.4.5: револьвер держится СВОЕЙ стороной — ствол вперёд
+      m.rotation.set(REV_REMOTE.rot.x, REV_REMOTE.rot.y, REV_REMOTE.rot.z);
+      m.position.set(REV_REMOTE.pos.x, REV_REMOTE.pos.y, REV_REMOTE.pos.z);
+      this.arms.R.holder.add(m);
+      this._pendingTool = false;
+      return;
+    }
     // лезвие модели смотрит в -Z (проверено по геометрии GLB):
     // наклон рукояти вперёд из кулака — лезвие сразу смотрит ВПЕРЁД
     m.rotation.set(-0.55, 0, 0);
@@ -436,6 +467,22 @@ window.BrixRemotePlayer = (function () {
     return sp;
   }
 
+  /** ✅ v0.4.5 ПОЛОСКА ЗДОРОВЬЯ над головой (появляется при уроне,
+      прячется через 4 с). Canvas-texture — перерисовка при каждом хите */
+  function makeHpBar() {
+    var cv = document.createElement('canvas');
+    cv.width = 128; cv.height = 16;
+    var tex = new THREE.CanvasTexture(cv);
+    var sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, depthTest: false, transparent: true
+    }));
+    sp.scale.set(0.62, 0.078, 1);
+    sp.position.y = 1.84;
+    sp.visible = false;
+    sp.renderOrder = 5;
+    return { sp: sp, cv: cv, tex: tex };
+  }
+
   RemotePlayer.prototype.update = function (dt, st) {
     if (st) this.tgt = st;
 
@@ -453,6 +500,22 @@ window.BrixRemotePlayer = (function () {
     g.position.set(this.cur.x, this.cur.y - 1.7, this.cur.z);
     g.rotation.y = this.cur.yaw;
 
+    // ✅ v0.4.5: смерть — игрок уходит под землю и исчезает
+    if (this.dead) {
+      this._sinkT += dt;
+      g.position.y -= Math.min(this._sinkT * 1.5, 1.9);
+      if (this._sinkT > 1.3) g.visible = false;
+      if (this._hpHideT > 0) { this._hpHideT -= dt; if (this._hpHideT <= 0) this.hpBar.sp.visible = false; }
+      return;
+    }
+    g.visible = true;
+
+    // полоска хп прячется сама через 4 с после последнего урона
+    if (this.hpBar.sp.visible) {
+      this._hpHideT -= dt;
+      if (this._hpHideT <= 0) this.hpBar.sp.visible = false;
+    }
+
     // ✅ v0.3.3: инструмент стоит в кисти, но ориентирован от корня
     g.updateMatrixWorld(true);
     this.arms.R.hand.getWorldPosition(this._tmpV);
@@ -460,12 +523,14 @@ window.BrixRemotePlayer = (function () {
       this.arms.R.holder.position.copy(g.worldToLocal(this._tmpV.clone()));
     }
 
-    // удар: новая фаза меньше прежней (или сменилась анимация) — перезапуск
+    // удар/выстрел/перезарядка: новая фаза меньше прежней (или сменилась
+    // анимация) — перезапуск
     var a = this.tgt.a || 'idle';
-    if (a === 'atk1' || a === 'atk2') {
+    if (a === 'atk1' || a === 'atk2' || a === 'shoot' || a === 'reload') {
+      var dur = ANIM_DUR[a] || SWING_DUR;
       if (a !== this.swingKind || this.tgt.ph < this.lastPh || this.swingT < 0) {
         this.swingKind = a;
-        this.swingT = Math.max(this.tgt.ph, 0.001) * SWING_DUR;
+        this.swingT = Math.max(this.tgt.ph, 0.001) * dur;
       }
       this.lastPh = this.tgt.ph;
     } else {
@@ -482,29 +547,81 @@ window.BrixRemotePlayer = (function () {
 
   RemotePlayer.prototype._pose = function () {
     var t = this.animT;
-    var swinging = this.swingT >= 0 && this.swingT < SWING_DUR;
+    var swinging = this.swingT >= 0 && this.swingT < (ANIM_DUR[this.swingKind] || SWING_DUR);
 
     var bob = 0, lean = 0;
     var armP = { L: 6, R: 6 }, armY = { L: 14, R: -14 }, armB = { L: 16, R: 16 };
     var legP = { L: 0, R: 0 }, legB = { L: 2, R: 2 };
 
     if (swinging) {
-      // удар: 0..0.4 замах вверх-назад, потом резкий мах вперёд-вниз
-      var ph = Math.min(this.swingT / SWING_DUR, 1);
-      var sw = ph < 0.4 ? ph / 0.4 : 1 - Math.min((ph - 0.4) / 0.35, 1);
-      var up = -88 * sw;
-      if (this.swingKind === 'atk1') {
-        armP.R = 25 + up * 0.9;
-        armY.R = -20 - sw * 10;
-        armB.R = 32 - sw * 26;
-        lean = -3 * sw;
+      if (this.swingKind === 'shoot') {
+        // ✅ v0.4.5 ВЫСТРЕЛ: руки вскинуты вперёд (ствол в цель), короткий
+        // кик отдачи вверх и плавный возврат
+        var sph = Math.min(this.swingT / ANIM_DUR.shoot, 1);
+        var kick = Math.sin(Math.min(sph * 1.7, 1) * Math.PI);
+        armP.R = -80 - kick * 14;
+        armY.R = -12;
+        armB.R = 12;
+        armP.L = -52 - kick * 6;
+        armY.L = 14;
+        armB.L = 48;
+      } else if (this.swingKind === 'reload') {
+        // ✅ v0.4.5 ПЕРЕЗАРЯДКА: опустил оружие вниз, возится с барабаном
+        var rph = Math.min(this.swingT / ANIM_DUR.reload, 1);
+        var dip = rph < 0.2 ? rph / 0.2 : rph > 0.85 ? Math.max(0, (1 - rph) / 0.15) : 1;
+        armP.R = 6 - dip * 4;
+        armY.R = -14;
+        armB.R = 16 + dip * 46;
+        armP.L = 4 + dip * 2;
+        armY.L = 12;
+        armB.L = 16 + dip * 40;
+        lean = dip * 12;
       } else {
-        armP.R = 25 + up * 0.5;
-        armY.R = -62 * sw + 20;
-        armB.R = 42 - sw * 32;
-        lean = -2 * sw;
+        // удар: 0..0.4 замах вверх-назад, потом резкий мах вперёд-вниз
+        var ph = Math.min(this.swingT / SWING_DUR, 1);
+        var sw = ph < 0.4 ? ph / 0.4 : 1 - Math.min((ph - 0.4) / 0.35, 1);
+        var up = -88 * sw;
+        if (this.swingKind === 'atk1') {
+          armP.R = 25 + up * 0.9;
+          armY.R = -20 - sw * 10;
+          armB.R = 32 - sw * 26;
+          lean = -3 * sw;
+        } else {
+          armP.R = 25 + up * 0.5;
+          armY.R = -62 * sw + 20;
+          armB.R = 42 - sw * 32;
+          lean = -2 * sw;
+        }
+        armP.L = 12; armB.L = 22;
       }
-      armP.L = 12; armB.L = 22;
+    } else if (this.curTool === 'revolver') {
+      // ✅ v0.4.5: С РЕВОЛЬВЕРОМ в руках — готовая стойка (руки вперёд),
+      // а не «руки по швам»; бег/прыжок ниже переопределяют
+      armP.R = -38; armY.R = -12; armB.R = 20;
+      armP.L = -22; armY.L = 12; armB.L = 32;
+      if (this.tgt.a === 'run') {
+        var u2 = t * 9.5;
+        legP.L = Math.sin(u2) * 42;
+        legP.R = Math.sin(u2 + Math.PI) * 42;
+        legB.L = Math.max(0, -Math.sin(u2)) * 55 + 8;
+        legB.R = Math.max(0, -Math.sin(u2 + Math.PI)) * 55 + 8;
+        armP.L = -18 + Math.sin(u2 + Math.PI) * 12;
+        armP.R = -34 + Math.sin(u2) * 12;
+        armB.L = 36; armB.R = 22;
+        bob = Math.abs(Math.sin(u2)) * 0.045;
+        lean = 9;
+      } else if (this.tgt.a === 'jump') {
+        legP.L = legP.R = -38;
+        legB.L = legB.R = 62;
+        armP.L = armP.R = -30;
+        armB.L = armB.R = 26;
+        lean = 6;
+      } else {
+        var br2 = Math.sin(t * 1.9);
+        armP.R = -38 + br2 * 1.5;
+        armP.L = -22 - br2 * 1.5;
+        bob = br2 * 0.012;
+      }
     } else if (this.tgt.a === 'run') {
       var u = t * 9.5;
       legP.L = Math.sin(u) * 42;
@@ -558,6 +675,44 @@ window.BrixRemotePlayer = (function () {
       seg.knee.position.set(p.ex, p.ey, p.ez);
       seg.foot.position.set(p.wx, p.wy + 0.045, p.wz - 0.055);
     });
+  };
+
+  /* ---------- ✅ v0.4.5: здоровье, смерть и возрождение ---------- */
+
+  /** обновить полоску здоровья над головой (вызывается при попадании) */
+  RemotePlayer.prototype.setHp = function (hp) {
+    this.hp = Math.max(0, Math.min(100, hp | 0));
+    var ctx = this.hpBar.cv.getContext('2d');
+    var w = 128, h = 16;
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = 'rgba(8,10,9,0.72)';
+    ctx.fillRect(0, 0, w, h);
+    var f = this.hp / 100;
+    ctx.fillStyle = f > 0.55 ? '#9fd47c' : f > 0.25 ? '#e0c25c' : '#e05c50';
+    ctx.fillRect(2, 2, Math.max(0, (w - 4) * f), h - 4);
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, w - 1, h - 1);
+    this.hpBar.tex.needsUpdate = true;
+    this.hpBar.sp.visible = this.hp < 100 && this.hp > 0 && !this.dead;
+    this._hpHideT = 4;
+  };
+
+  /** умер: уходит под землю и исчезает */
+  RemotePlayer.prototype.die = function () {
+    if (this.dead) return;
+    this.dead = true;
+    this._sinkT = 0;
+    this.hpBar.sp.visible = false;
+  };
+
+  /** возродился: снова видим, хп полное */
+  RemotePlayer.prototype.respawn = function () {
+    this.dead = false;
+    this._sinkT = 0;
+    this.hp = 100;
+    this.hpBar.sp.visible = false;
+    this.group.visible = true;
   };
 
   return RemotePlayer;

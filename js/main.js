@@ -281,12 +281,29 @@
     document.getElementById('pauseOverlay').classList.add('hidden');
   }
 
+  /* ✅ fix 0.4.5a: захват мыши с АВТО-ПОВТОРОМ. После выхода из pointer
+     lock по Esc браузер ~1.25 с отвечает SecurityError «Pointer lock
+     cannot be acquired immediately after the user has exited the lock» —
+     раньше это падало необработанной ошибкой «Uncaught (in promise)»
+     в консоль, а кнопка ПРОДОЛЖИТЬ не срабатывала с первого раза. */
+  function requestLockWithRetry(canvas, tries) {
+    if (!canvas || document.pointerLockElement === canvas) return;
+    tries = tries || 0;
+    try {
+      var p = canvas.requestPointerLock();
+      if (p && p.catch) p.catch(function () {
+        if (tries < 6) setTimeout(function () { requestLockWithRetry(canvas, tries + 1); }, 300);
+      });
+    } catch (e) {
+      if (tries < 6) setTimeout(function () { requestLockWithRetry(canvas, tries + 1); }, 300);
+    }
+  }
+
   function bindPauseButtons() {
     document.getElementById('btnResume').onmouseenter = function () { menuAudio.hover(); };
     document.getElementById('btnResume').onclick = function () {
       menuAudio.click();
-      var canvas = document.querySelector('#gameMount canvas');
-      if (canvas) canvas.requestPointerLock();
+      requestLockWithRetry(document.querySelector('#gameMount canvas'));
     };
     document.getElementById('btnDisconnect').onmouseenter = function () { menuAudio.hover(); };
     document.getElementById('btnDisconnect').onclick = function () {

@@ -46,6 +46,17 @@ window.BrixNet = (function () {
   };
   var seen = {};          // id -> время последнего «пинга» (режим вкладок)
 
+  /* ✅ v0.4.3: РОСТЕР для списка игроков (мини-меню, клавиша M):
+     id -> {id, n, c, lvl, aid, last} — ник, УРОВЕНЬ профиля и
+     BRIX-ID аккаунта. Наполняют welcome/join (сервер) и hi (вкладки) */
+  var roster = {};
+  function ownLvl() {
+    try { return (window.BrixState && BrixState.data.level) || 1; } catch (e) { return 1; }
+  }
+  function ownAid() {
+    try { return (window.BrixState && BrixState.data.profileId) || ''; } catch (e) { return ''; }
+  }
+
   function peersCount() {
     var n = 0;
     var now = performance.now();
@@ -63,22 +74,41 @@ window.BrixNet = (function () {
     if (msg.id && ID && msg.id === ID) return;   // своё эхо (режим вкладок)
     switch (msg.t) {
       case 'welcome':
-        serverVer = msg.ver || 0;   // ✅ v0.4.2
+        serverVer = msg.ver || 0;   // ✅ v0.4.2: версия протокола сервера (welcome.ver)
         ID = msg.id;
+        // ✅ v0.4.3: ростер от сервера — истина для списка игроков
+        roster = {};
+        (msg.players || []).forEach(function (p) {
+          roster[p.id] = { id: p.id, n: p.n, c: p.c, lvl: p.lvl, aid: p.aid,
+            last: performance.now() };
+        });
         // свой ник не перебиваем выдуманным — шлём из профиля
         if (!NAME || NAME === 'Игрок') NAME = profileNick() || NAME;
         if (handlers.welcome) handlers.welcome(msg);
         break;
       case 'join':
-        if (msg.id) seen[msg.id] = performance.now();
+        if (msg.id) {
+          seen[msg.id] = performance.now();
+          // ✅ v0.4.3: новый игрок — в ростер (ник/уровень/BRIX-ID)
+          roster[msg.id] = { id: msg.id, n: msg.n, c: msg.c, lvl: msg.lvl,
+            aid: msg.aid, last: performance.now() };
+        }
         if (handlers.join) handlers.join(msg.id, msg.n, msg.c);
         break;
       case 'leave':
         delete seen[msg.id];
+        delete roster[msg.id];   // ✅ v0.4.3
         if (handlers.leave) handlers.leave(msg.id);
         break;
       case 's':
         seen[msg.id] = performance.now();
+        // ✅ v0.4.3: состояние живого игрока держит его в ростере
+        if (!roster[msg.id]) {
+          roster[msg.id] = { id: msg.id, n: msg.n, lvl: msg.lvl, aid: msg.aid };
+        } else {
+          if (msg.n) roster[msg.id].n = msg.n;
+          roster[msg.id].last = performance.now();
+        }
         if (handlers.state) handlers.state(msg);
         break;
       case 'hit':
@@ -131,9 +161,27 @@ window.BrixNet = (function () {
         // обрабатывает 'bhit' сам и назад не пересылает)
         if (handlers.bhitReq) handlers.bhitReq(msg);
         break;
+      /* --- ✅ v0.4.5 БОЙ: звук выстрела/перезарядки, попадания,
+             смерти и возрождения (в сервер-режиме рассылает server.js,
+             во вкладках — BroadcastChannel) --- */
+      case 'snd':
+        if (handlers.snd) handlers.snd(msg);
+        break;
+      case 'phit':
+        if (handlers.phit) handlers.phit(msg);
+        break;
+      case 'pdeath':
+        if (handlers.pdeath) handlers.pdeath(msg);
+        break;
+      case 'prespawn':
+        if (handlers.prespawn) handlers.prespawn(msg);
+        break;
       /* --- режим вкладок (без сервера) --- */
       case 'hi':
         seen[msg.id] = performance.now();
+        // ✅ v0.4.3: вкладка представилась — в ростер
+        roster[msg.id] = { id: msg.id, n: msg.n, c: msg.c, lvl: msg.lvl,
+          aid: msg.aid, last: performance.now() };
         if (handlers.join) handlers.join(msg.id, msg.n, msg.c);
         if (msg.need && handlers.worldReq) handlers.worldReq(msg.id);
         break;
@@ -215,7 +263,10 @@ window.BrixNet = (function () {
         ws = sock;
         mode = 'server';
         NAME = profileNick() || NAME;
-        send({ t: 'hello', n: NAME, c: COLOR, meta: meta || null });
+        // ✅ v0.4.3: в hello едет уровень профиля и BRIX-ID —
+        // сервер кладёт их в ростер (список игроков в мини-меню)
+        send({ t: 'hello', n: NAME, c: COLOR, lvl: ownLvl(), aid: ownAid(),
+          meta: meta || null });
         paint();
       } else {
         connectTabs();
@@ -226,7 +277,7 @@ window.BrixNet = (function () {
 
   function announce(needWorld) {
     NAME = profileNick() || NAME;
-    send({ t: 'hi', n: NAME, c: COLOR, need: !!needWorld });
+    send({ t: 'hi', n: NAME, c: COLOR, lvl: ownLvl(), aid: ownAid(), need: !!needWorld });
   }
 
   function disconnect() {
@@ -235,6 +286,7 @@ window.BrixNet = (function () {
     if (bc) { try { bc.close(); } catch (e) {} bc = null; }
     mode = 'off';
     seen = {};
+    roster = {};   // ✅ v0.4.3
     paint();
   }
 
@@ -328,6 +380,24 @@ window.BrixNet = (function () {
     send({ t: 'cbput', id: id, item: item, amt: Math.max(1, Math.floor(amt || 1)) });
   }
 
+  /* ✅ v0.4.5 БОЙ: звук выстрела/перезарядки (x/z — где звук случился,
+     слушатели гасят громкость по дистанции), попадание по игроку
+     (ХП решает сервер), возрождение */
+  function sendSnd(kind, pos) {
+    if (mode === 'off') return;
+    send({ t: 'snd', k: kind,
+      x: pos ? +pos.x.toFixed(1) : 0, z: pos ? +pos.z.toFixed(1) : 0 });
+  }
+  function sendPhit(tid, dmg, kind) {
+    if (mode === 'off') return;
+    send({ t: 'phit', tid: tid, dmg: Math.max(1, Math.floor(dmg || 1)),
+      kind: kind || 'shot' });
+  }
+  function sendRespawn() {
+    if (mode === 'off') return;
+    send({ t: 'prespawn' });
+  }
+
   /** снимок мира конкретному игроку (режим вкладок) */
   function sendWorldTo(toId, snapshot) {
     snapshot.t = 'world';
@@ -352,6 +422,10 @@ window.BrixNet = (function () {
     sendCbOpen: sendCbOpen,
     sendCbTake: sendCbTake,
     sendCbPut: sendCbPut,
+    /* ✅ v0.4.5: бой — звук/попадание/возрождение */
+    sendSnd: sendSnd,
+    sendPhit: sendPhit,
+    sendRespawn: sendRespawn,
     sendSocial: sendSocial,
     sendWorldTo: sendWorldTo,
     setStatusEl: setStatusEl,
@@ -359,6 +433,24 @@ window.BrixNet = (function () {
     get mode() { return mode; },
     get serverVer() { return serverVer; },
     get id() { return ID; },
-    peersCount: peersCount
+    peersCount: peersCount,
+    /* ✅ v0.4.3: список игроков для мини-меню (ник, уровень, BRIX-ID).
+       Своя строка всегда первая и помечена self: true */
+    getRoster: function () {
+      var out = [];
+      var now = performance.now();
+      for (var k in roster) {
+        // в режиме вкладок молчунов старше 5 с выносим (hi идёт раз в секунду)
+        if (mode === 'tabs' && now - (roster[k].last || 0) > 5000) continue;
+        out.push(roster[k]);
+      }
+      out.push({ id: ID, n: NAME, c: COLOR, lvl: ownLvl(), aid: ownAid(), self: true });
+      out.sort(function (a, b) {
+        if (a.self) return -1;
+        if (b.self) return 1;
+        return String(a.n || '').localeCompare(String(b.n || ''), 'ru');
+      });
+      return out;
+    }
   };
 })();

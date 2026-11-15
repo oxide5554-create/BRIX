@@ -74,6 +74,17 @@ window.BrixFirstPerson = (function () {
   var SPICK_URL = 'assets/models/stone_pickaxe.glb';  // каменная кирка
   var PICKAXE_URL = 'assets/models/pickaxe.glb';      // железная кирка (модель пользователя)
   var IRON_AXE_URL = 'assets/models/iron_axe.glb';    // ✅ v0.2.9 железный топор (simple_axe.glb)
+  /* ✅ v0.4.5 РЕВОЛЬВЕР (модель пользователя colt_detective_gun.glb).
+     Модель приходит сразу в метрах (~19 см по длине). ДЕРЖАНИЕ СВОЁ,
+     не как у топора: рукоять в правой ладони, СТВОЛ ВПЕРЁД, левая
+     рука подхватывает снизу. Анимации: отдача выстрела (shoot),
+     перезарядка — оружие опускается ВНИЗ и возвращается (reload),
+     прицеливание — плавное подведение к глазам (aim) */
+  var REVOLVER_URL = 'assets/models/revolver.glb';
+  var REV_TARGET_LEN = 0.30;   // длина револьвера в руке, м
+  // довороты модели в кисти (подбирались по скриншотам): ствол — вперёд (-Z)
+  var REV_ROT = { x: 0, y: 0, z: -25 };      // ствол вперёд-вровень (модель: ствол = +X)
+  var REV_POS = { x: 0.02, y: 0.02, z: 0 };
 
   // Камера рук (должна совпадать с renderOverlay) — ЗНАЧЕНИЯ ИЗ РЕПОЗИТОРА:
   // позиция (0, 1.7, 0), прицел (0, 1.0, 5).
@@ -180,6 +191,21 @@ window.BrixFirstPerson = (function () {
     curl: 0.95                       // наклон как у топора (rphi 35, ryaw 8)
   });
 
+  // ✅ v0.4.5 поза idle с РЕВОЛЬВЕРом: правая рука перед грудью, ладонь
+  // вертикальна (rphi 0 — ствол вперёд), левая подхватывает снизу
+  var FIDLE_REV = Object.assign({}, IDLE, {
+    sx: 0, hx: 0,
+    rx: 0.20, ry: 0.22, rz: 0.50, rphi: 0, ryaw: 0, roll: 90, curl: 0.95, thumb: 0.95,
+    lx: 0.06, ly: 0.02, lz: 0.62, lcurl: 0.6
+  });
+
+  // ✅ v0.4.5 поза ПРИЦЕЛИВАНИЯ: рука выше и дальше, ствол вровень взгляду
+  // (камера рук при этом чуть поднимается — см. renderOverlay)
+  var FPOSE_AIM = Object.assign({}, FIDLE_REV, {
+    rx: 0.02, ry: 0.38, rz: 0.58, rphi: 18, ryaw: 0, curl: 1, thumb: 1,
+    lx: 0.05, ly: 0.12, lz: 0.56, lcurl: 0.7
+  });
+
   function lerpP(a, b, t) {
     var o = {};
     for (var k in a) o[k] = (typeof a[k] === 'number' && typeof b[k] === 'number') ? a[k] + (b[k] - a[k]) * t : a[k];
@@ -191,6 +217,7 @@ window.BrixFirstPerson = (function () {
   };
   var k1Axe = mk(FIDLE_AXE);
   var k1Pick = mk(FIDLE_PICK);
+  var k1Rev = mk(FIDLE_REV);   // ✅ v0.4.5: кейфреймы револьвера
 
   var CL = {
     atk1: {
@@ -232,6 +259,32 @@ window.BrixFirstPerson = (function () {
         k1Pick(0.42, { rx: -0.04, ry: -0.10, rz: 0.62, rphi: 95,  curl: 1, sx: 0 }, 'in'),
         k1Pick(0.52, { rx: -0.04, ry: -0.16, rz: 0.58, rphi: 100, curl: 1, sx: 0 }),
         k1Pick(0.90, {})
+      ]
+    },
+    /* ✅ v0.4.5 ОТДАЧА ВЫСТРЕЛА (0.35 с ≈ кулдаун 0.3 с): рука резко
+       подаётся ВВЕРХ-НАЗАД (ry+ = вверх, rz− = к себе), кисть откидывается
+       стволом вверх (rphi−), затем плавно возвращается */
+    shoot: {
+      dur: 0.35,
+      keys: [
+        k1Rev(0,    {}),
+        k1Rev(0.09, { ry: 0.05, rz: 0.40, rphi: -10, sx: -1.4 }),
+        k1Rev(0.17, { ry: 0.042, rz: 0.415, rphi: -8, sx: -1 }),
+        k1Rev(0.35, {})
+      ]
+    },
+    /* ✅ v0.4.5 ПЕРЕЗАРЯДКА (2.2 с = RELOAD_DUR в gameworld.js): оружие
+       плавно опускается ВНИЗ-ВПЕРЕД (игрок «опускает револьвер вниз» —
+       без спец-анимации барабана), держится внизу, в конце поднимается */
+    reload: {
+      dur: 2.2,
+      keys: [
+        k1Rev(0,    {}),
+        k1Rev(0.42, { ry: -0.30, rz: 0.30, rx: 0.22, rphi: 26, curl: 1, sx: 5 }, 'in'),
+        k1Rev(0.62, { ry: -0.36, rz: 0.26, rx: 0.24, rphi: 30, curl: 1, sx: 6 }),
+        k1Rev(1.70, { ry: -0.36, rz: 0.26, rx: 0.24, rphi: 30, curl: 1, sx: 6 }),
+        k1Rev(1.95, { ry: -0.12, rz: 0.38, rx: 0.10, rphi: 12, curl: 0.97, sx: 3 }),
+        k1Rev(2.2,  {})
       ]
     }
   };
@@ -279,6 +332,7 @@ window.BrixFirstPerson = (function () {
     this.stonePick = null;    // {holder, wrap} — каменная кирка
     this.ironPick = null;     // {holder, wrap} — железная кирка
     this.ironAxe = null;      // {holder, wrap} — железный топор (v0.2.9)
+    this.revolver = null;     // {holder, wrap} — револьвер (v0.4.5)
     this.axeHolder = null;    // ссылки для совместимости
     this.pickaxeHolder = null;
     this.handBone = null;
@@ -289,6 +343,8 @@ window.BrixFirstPerson = (function () {
     this._animTime = 0;
     this._clock = 0;
     this.currentWeapon = 'none';
+    this._aiming = false;     // ✅ v0.4.5: ПКМ — прицеливание
+    this._aimBlend = 0;       // 0..1 — плавное подведение к глазам
 
     this._load();
   }
@@ -309,7 +365,14 @@ window.BrixFirstPerson = (function () {
       loadModel(IRON_AXE_URL)
     ]).then(function (r) {
       self._init(r[0], r[1], r[2], r[3], r[4]);
-      console.log('[BrixFirstPerson] руки от рига игрока готовы (каменный топор, каменная кирка, железная кирка двумя руками, железный топор одной рукой)');
+      // ✅ v0.4.5: револьвер грузится ОТДЕЛЬНО (на file:// его нет во
+      // встроенных моделях — руки остаются работоспособными без него)
+      loadModel(REVOLVER_URL).then(function (rvg) {
+        if (self._attachRevolver) self._attachRevolver(rvg);
+      }).catch(function () {
+        console.warn('[BrixFirstPerson] револьвер не загрузился (запускай через сервер) — руки работают, револьвер будет без модели');
+      });
+      console.log('[BrixFirstPerson] руки готовы: топоры, кирки (v0.4.5, револьвер догружается отдельно)');
     }).catch(function (err) {
       console.error('[BrixFirstPerson] ошибка загрузки:', err);
       if (window.BrixFatal) {
@@ -473,12 +536,38 @@ window.BrixFirstPerson = (function () {
     this.pickaxeHolder = this.ironPick.holder;
     /* ✅ ЖЕЛЕЗНЫЙ ТОПОР (v0.2.9) — одна правая рука, левая скрыта */
     this.ironAxe = makeTool(iag, IRON_AXE_TARGET_LEN, IRON_AXE_YAW, 0);
+
+    /* ✅ v0.4.5 РЕВОЛЬВЕР — СВОЯ сборка (не как у топора): модель уже
+       в метрах (~19 см), масштаб по габаритам, довороты REV_ROT подбирают
+       «ствол вперёд, рукоять в ладонь». Сборку вызывает конструктор после
+       отдельной загрузки модели (_attachRevolver) */
+    this._attachRevolver = function (rvg) {
+      if (self.revolver) return;
+      rvg.updateMatrixWorld(true);
+      var box = new THREE.Box3().setFromObject(rvg);
+      var size = box.getSize(new THREE.Vector3());
+      var sc = REV_TARGET_LEN / Math.max(size.x, size.y, size.z, 1e-6);
+      rvg.scale.setScalar(sc);
+      walkMat(rvg);
+      var wrap = new THREE.Group();
+      wrap.add(rvg);
+      var holder = new THREE.Group();
+      holder.add(wrap);
+      B.RightHand.add(holder);
+      holder.visible = self.currentWeapon === 'revolver' && self.visible;
+      self.revolver = { holder: holder, wrap: wrap };
+      console.log('[BrixFirstPerson] револьвер в руках готов');
+    };
+
     this.handBone = B.RightHand;
 
     this._poseHelpers();
 
     this.loaded = true;
-    this.setVisible(this.visible);
+    // ✅ v0.4.5: восстанавливаем ТО ЖЕ оружие, что выбрал хотбар
+    // (раньше setVisible(this.visible) всегда ставил 'axe' и перетирал
+    // револьвер сразу после загрузки моделей)
+    this.setWeapon(this.currentWeapon === 'none' ? null : this.currentWeapon);
 
     // для хотбара: топор считается выбранным, если setVisible(true)
   };
@@ -575,6 +664,25 @@ window.BrixFirstPerson = (function () {
     this.placeIronPick = function (roll) { placeLikeAxe(roll, self.ironPick.holder, self.ironPick.wrap, GRIP_PICKAXE); };
     // ✅ v0.2.9 железный топор — тот же хват, одна правая рука
     this.placeIronAxe = function (roll) { placeLikeAxe(roll, self.ironAxe.holder, self.ironAxe.wrap, GRIP_IRONAXE); };
+
+    // ✅ v0.4.5 хват РЕВОЛЬВЕРА: рукоять в правой ладони (чуть выше,
+    // чем у топора), СТВОЛ ВПЕРЁД. Довороты/сдвиг — константы REV_ROT/REV_POS
+    this.placeRevolver = function () {
+      var H = self.HF.Right;
+      var pos = H.h0.clone()
+        .addScaledVector(H.f, H.palmLen * 0.5)
+        .addScaledVector(H.n, 0.005)
+        .applyMatrix4(H.inv);
+      self.revolver.holder.position.copy(pos);
+      var fl = H.f.clone().applyQuaternion(H.wq.clone().invert());
+      var al = H.a.clone().applyQuaternion(H.wq.clone().invert());
+      var cl = new THREE.Vector3().crossVectors(fl, al);
+      var qb = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(fl, al, cl));
+      self.revolver.holder.quaternion.copy(qb);
+      self.revolver.holder.scale.setScalar(GRIP.sS / H.ws);
+      self.revolver.wrap.rotation.set(REV_ROT.x * D, REV_ROT.y * D, REV_ROT.z * D);
+      self.revolver.wrap.position.set(REV_POS.x, REV_POS.y, REV_POS.z);
+    };
 
     // рамка камеры рук
     (function () {
@@ -677,6 +785,7 @@ window.BrixFirstPerson = (function () {
       else if (self.currentWeapon === 'pickaxe') self.placeStonePick(p.roll !== undefined ? p.roll : 90);
       else if (self.currentWeapon === 'ironAxe') self.placeIronAxe(p.roll !== undefined ? p.roll : 90);
       else if (self.currentWeapon === 'ironPickaxe') self.placeIronPick(p.roll !== undefined ? p.roll : 90);
+      else if (self.currentWeapon === 'revolver' && self.revolver) self.placeRevolver();
     };
   };
 
@@ -694,23 +803,52 @@ window.BrixFirstPerson = (function () {
   };
 
   /** ✅ Выбор оружия: 'axe' | 'pickaxe' (каменная) | 'ironPickaxe' (железная) |
-   *  'ironAxe' (железный топор, v0.2.9) | null */
+   *  'ironAxe' (железный топор, v0.2.9) | 'revolver' (v0.4.5) | null */
   FirstPersonPlayer.prototype.setWeapon = function (type) {
     this.currentWeapon = type || 'none';
     var showArms = this.currentWeapon === 'axe' ||
                    this.currentWeapon === 'pickaxe' ||
                    this.currentWeapon === 'ironPickaxe' ||
-                   this.currentWeapon === 'ironAxe';
+                   this.currentWeapon === 'ironAxe' ||
+                   this.currentWeapon === 'revolver';
     // запоминаем состояние ВСЕГДА: если модели ещё грузятся,
     // оно применится в _init после загрузки
     this.visible = showArms;
     this._swingType = null;
+    this._aiming = false;
+    this._aimBlend = 0;
     if (!this.model || !this.meshes) return;
     this._applyVisibility(showArms);
     if (this.axe) this.axe.holder.visible = showArms && this.currentWeapon === 'axe';
     if (this.stonePick) this.stonePick.holder.visible = showArms && this.currentWeapon === 'pickaxe';
     if (this.ironPick) this.ironPick.holder.visible = showArms && this.currentWeapon === 'ironPickaxe';
     if (this.ironAxe) this.ironAxe.holder.visible = showArms && this.currentWeapon === 'ironAxe';
+    if (this.revolver) this.revolver.holder.visible = showArms && this.currentWeapon === 'revolver';
+  };
+
+  /** ✅ v0.4.5 ОТДАЧА: проиграть анимацию выстрела (короткий кик руки) */
+  FirstPersonPlayer.prototype.playShoot = function () {
+    if (!this.loaded || !this.visible || this.currentWeapon !== 'revolver') return;
+    this._swingType = 'shoot';
+    this._animTime = 0;
+  };
+
+  /** ✅ v0.4.5 ПЕРЕЗАРЯДКА: опустить револьвер вниз и вернуть (2.2 с) */
+  FirstPersonPlayer.prototype.playReload = function () {
+    if (!this.loaded || !this.visible || this.currentWeapon !== 'revolver') return;
+    this._swingType = 'reload';
+    this._animTime = 0;
+    this._aiming = false;
+  };
+
+  /** ✅ v0.4.5 ПРИЦЕЛИВАНИЕ (ПКМ): on=true — плавно подводим к глазам */
+  FirstPersonPlayer.prototype.setAim = function (on) {
+    this._aiming = !!on;
+  };
+
+  /** прогресс прицеливания 0..1 — gameworld плавно жмёт FOV камеры */
+  FirstPersonPlayer.prototype.aimProgress = function () {
+    return this._aimBlend || 0;
   };
 
   /** v=true — топор в руке (выбран в хотбаре), false — руки скрыты (совместимость) */
@@ -731,15 +869,24 @@ window.BrixFirstPerson = (function () {
     if (!this.loaded) return;
     this._clock += dt;
 
-    // ✅ v0.2.10: все инструменты — одна правая рука → одна поза покоя (как у топора)
-    var idle = FIDLE_AXE;
+    // ✅ v0.4.5: покой зависит от оружия — с револьвером своя стойка
+    var idle;
+    if (this.currentWeapon === 'revolver') idle = FIDLE_REV;
+    else idle = FIDLE_AXE;
+
+    // ✅ v0.4.5 ПРИЦЕЛИВАНИЕ: плавно 0..1 (не мгновенно). Прицел работает
+    // только с револьвером в руках и пока не играет выстрел/перезарядка
+    var wantAim = this._aiming && this.currentWeapon === 'revolver' && !this._swingType;
+    this._aimBlend += ((wantAim ? 1 : 0) - this._aimBlend) * Math.min(1, dt * 9);
+    if (this._aimBlend < 0.002) this._aimBlend = 0;
+
     var p;
     if (this._swingType) {
       var c = CL[this._swingType];
       this._animTime += dt;
       if (this._animTime >= c.dur) {
         this._swingType = null;
-        p = idle;
+        p = Object.assign({}, idle);
       } else {
         p = sample(c.keys, Math.max(0, this._animTime) / c.dur);
       }
@@ -747,6 +894,10 @@ window.BrixFirstPerson = (function () {
       p = Object.assign({}, idle);
       p.sx += Math.sin(this._clock * 1.8) * 0.8; // дыхание в покое
     }
+
+    // прицеливание накладывается ПОВЕРХ (лёгкий лер): даже во время
+    // отдачи револьвер остаётся у глаз
+    if (this._aimBlend > 0) p = lerpP(p, FPOSE_AIM, this._aimBlend);
 
     this.pose(p, true);
   };
@@ -756,6 +907,11 @@ window.BrixFirstPerson = (function () {
     if (!this.loaded || !this.visible) return;
     if (!this.renderer) return;
 
+    // ✅ v0.4.5: при прицеливании камера рук чуть поднимается (смотрим
+    // поверх револьвера) — плавно, вместе с позой
+    var aim = this._aimBlend || 0;
+    HANDS_CAM_POS.set(0, 1.7 - 0.05 * aim, 0);
+    HANDS_CAM_TARGET.set(0, CAM_TARGET_Y + 0.40 * aim, 5);
     this.handsCamera.position.copy(HANDS_CAM_POS);
     this.handsCamera.up.set(0, 1, 0);
     this.handsCamera.lookAt(HANDS_CAM_TARGET);
@@ -792,6 +948,7 @@ window.BrixFirstPerson = (function () {
     this.stonePick = null;
     this.ironPick = null;
     this.ironAxe = null;
+    this.revolver = null;
     this.pickaxeHolder = null;
     this.bones = null;
     this.loaded = false;

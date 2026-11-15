@@ -38,8 +38,10 @@ window.BrixControls = (function () {
     this._onKeyUp = function (e) { self._keys.delete(e.code); };
     this._onMouseMove = function (e) {
       if (!self.enabled || document.pointerLockElement !== self._dom) return;
-      self.yaw -= e.movementX * 0.0022;
-      self.pitch = BrixNoise.clamp(self.pitch - e.movementY * 0.0022, -1.5, 1.5);
+      // ✅ v0.4.5: при прицеливании (ПКМ) мышь медленнее — точная наводка
+      var mul = self.aimMul || 1;
+      self.yaw -= e.movementX * 0.0022 * mul;
+      self.pitch = BrixNoise.clamp(self.pitch - e.movementY * 0.0022 * mul, -1.5, 1.5);
     };
     this._onLockChange = function () {
       if (document.pointerLockElement !== self._dom && self.enabled) {
@@ -126,7 +128,8 @@ window.BrixControls = (function () {
     }
     var moving = fx !== 0 || fz !== 0;
     var sprint = this._keys.has('ShiftLeft') || this._keys.has('ShiftRight');
-    var speed = sprint ? SPRINT_SPEED : WALK_SPEED;
+    // ✅ v0.4.5: slowFactor < 1 — перезарядка револьвера (медленно даже бегом)
+    var speed = (sprint ? SPRINT_SPEED : WALK_SPEED) * (this.slowFactor || 1);
 
     // по колено в воде — медленнее
     var floorH = this._getHeight(this.position.x, this.position.z);

@@ -11,14 +11,14 @@
    АНТИ-КЭШ (почему после замены файлов ничего не менялось):
    python -m http.server и npm-серверы НЕ шлют заголовки запрета
    кэша, и браузер продолжает показывать СТАРЫЕ js-файлы.
-   1) Ко всем скриптам/стилям ниже добавлен ?v=042 — браузер
+   1) Ко всем скриптам/стилям ниже добавлен ?v=045 — браузер
       считает их новыми адресами и качает заново.
    2) Если в адресе нет ?v= — страница один раз перезагружается
-      с ?v=042 (свежий index.html гарантированно).
+      с ?v=045 (свежий index.html гарантированно).
    3) В меню есть ссылка «обновить кэш» (js/main.js).
    ============================================================ */
 (function () {
-  var V = '042';
+  var V = '045';
   window.BRIX_V = V;
   window.BrixAsset = function (u) { return u + (u.indexOf('?') < 0 ? '?' : '&') + 'v=' + V; };
   try {
@@ -38,15 +38,16 @@
 })();
 </script>
 <meta name="theme-color" content="#101312">
-<title>BRIX v0.4.2 — Главное меню</title>
+<title>BRIX v0.4.5 — Главное меню</title>
 <link rel="icon" href="assets/icon.png">
 <!-- Стили (перенос старой версии 1:1) -->
-<link rel="stylesheet" href="css/fonts.css?v=042">
-<link rel="stylesheet" href="css/base.css?v=042">
-<link rel="stylesheet" href="css/menu.css?v=042">
-<link rel="stylesheet" href="css/screens.css?v=042">
-<link rel="stylesheet" href="css/modals.css?v=042">
-<link rel="stylesheet" href="css/game.css?v=042">
+<link rel="stylesheet" href="css/fonts.css?v=045">
+<link rel="stylesheet" href="css/base.css?v=045">
+<link rel="stylesheet" href="css/menu.css?v=045">
+<link rel="stylesheet" href="css/screens.css?v=045">
+<link rel="stylesheet" href="css/modals.css?v=045">
+<link rel="stylesheet" href="css/game.css?v=045">
+<link rel="stylesheet" href="css/minimenu.css?v=045">
 </head>
 <body>
 
@@ -138,38 +139,39 @@
 </div>
 
 <!-- Скрипты: порядок важен! -->
-<script src="js/lib/three.min.js?v=042"></script>
-<script src="js/core/i18n.js?v=042"></script>
-<script src="js/core/state.js?v=042"></script>
-<script src="js/core/audio.js?v=042"></script>
-<script src="js/core/icons.js?v=042"></script>
-<script src="js/data/servers.js?v=042"></script>
-<script src="js/data/friends.js?v=042"></script>
-<script src="js/data/skins.js?v=042"></script>
-<script src="js/data/news.js?v=042"></script>
-<script src="js/data/itemicons.js?v=042"></script>
-<script src="js/ui/toast.js?v=042"></script>
-<script src="js/ui/modals.js?v=042"></script>
-<script src="js/ui/topbar.js?v=042"></script>
-<script src="js/ui/sidebar.js?v=042"></script>
-<script src="js/ui/screens.js?v=042"></script>
-<script src="js/ui/loading.js?v=042"></script>
-<script src="js/game/noise.js?v=042"></script>
-<script src="js/game/embeddata.js?v=042"></script>
-<script src="js/game/glb.js?v=042"></script>
-<script src="js/game/sfx.js?v=042"></script>
-<script src="js/game/terrain.js?v=042"></script>
-<script src="js/game/world.js?v=042"></script>
-<script src="js/game/controls.js?v=042"></script>
-<script src="js/game/props.js?v=042"></script>
-<script src="js/game/firstperson.js?v=042"></script>
-<script src="js/game/inventory.js?v=042"></script>
-<script src="js/game/lootmenu.js?v=042"></script>
-<script src="js/game/background.js?v=042"></script>
-<script src="js/net/net.js?v=042"></script>
-<script src="js/social/social.js?v=042"></script>
-<script src="js/game/remoteplayer.js?v=042"></script>
-<script src="js/game/gameworld.js?v=042"></script>
-<script src="js/main.js?v=042"></script>
+<script src="js/lib/three.min.js?v=045"></script>
+<script src="js/core/i18n.js?v=045"></script>
+<script src="js/core/state.js?v=045"></script>
+<script src="js/core/audio.js?v=045"></script>
+<script src="js/core/icons.js?v=045"></script>
+<script src="js/data/servers.js?v=045"></script>
+<script src="js/data/friends.js?v=045"></script>
+<script src="js/data/skins.js?v=045"></script>
+<script src="js/data/news.js?v=045"></script>
+<script src="js/data/itemicons.js?v=045"></script>
+<script src="js/ui/toast.js?v=045"></script>
+<script src="js/ui/modals.js?v=045"></script>
+<script src="js/ui/topbar.js?v=045"></script>
+<script src="js/ui/sidebar.js?v=045"></script>
+<script src="js/ui/screens.js?v=045"></script>
+<script src="js/ui/loading.js?v=045"></script>
+<script src="js/game/noise.js?v=045"></script>
+<script src="js/game/embeddata.js?v=045"></script>
+<script src="js/game/glb.js?v=045"></script>
+<script src="js/game/sfx.js?v=045"></script>
+<script src="js/game/terrain.js?v=045"></script>
+<script src="js/game/world.js?v=045"></script>
+<script src="js/game/controls.js?v=045"></script>
+<script src="js/game/props.js?v=045"></script>
+<script src="js/game/firstperson.js?v=045"></script>
+<script src="js/game/inventory.js?v=045"></script>
+<script src="js/game/lootmenu.js?v=045"></script>
+<script src="js/game/background.js?v=045"></script>
+<script src="js/net/net.js?v=045"></script>
+<script src="js/social/social.js?v=045"></script>
+<script src="js/game/remoteplayer.js?v=045"></script>
+<script src="js/game/minimenu.js?v=045"></script>
+<script src="js/game/gameworld.js?v=045"></script>
+<script src="js/main.js?v=045"></script>
 </body>
 </html>

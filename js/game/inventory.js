@@ -26,6 +26,18 @@ window.BrixItems = {
     id: 'ironAxe', name: 'Железный топор', nameEn: 'Iron Axe',
     icon: BrixAx('assets/icons/iron_axe.png'), stackable: false, tool: 'ironAxe'
   },
+  /* ✅ v0.4.5 РЕВОЛЬВЕР (модель пользователя colt_detective_gun.glb):
+     стреляет патронами, обойма 6, урон 20 (5 выстрелов = убийство);
+     в слоте показывает остаток обоймы (0–6) — slot.mag */
+  revolver: {
+    id: 'revolver', name: 'Револьвер', nameEn: 'Revolver',
+    icon: BrixAx('assets/icons/revolver.png'), stackable: false, tool: 'revolver'
+  },
+  /* ✅ v0.4.5 патроны для револьвера (штабелируются; выпадают из военных ящиков) */
+  ammo: {
+    id: 'ammo', name: 'Патроны', nameEn: 'Ammo',
+    icon: BrixAx('assets/icons/ammo_pistol.png'), stackable: true, stack: 128
+  },
   /* ✅ v0.3.6: ресурсы из репозитория — металлолом и метал фрагмент */
   scrap: {
     id: 'scrap', name: 'Металлолом', nameEn: 'Scrap',
@@ -104,15 +116,18 @@ window.BrixInventory = (function () {
     this.dom = null;
     this._dragging = false;
 
-    // стартовый набор: топор, древесина, камень, КАМЕННАЯ КИРКА,
-    // ЖЕЛЕЗНАЯ КИРКА (5-я ячейка) и ЖЕЛЕЗНЫЙ ТОПОР (6-я ячейка,
-    // модель и иконка от пользователя)
-    this.slots[0] = { item: BrixItems.stoneAxe, count: 1 };
-    this.slots[1] = { item: BrixItems.wood, count: 10 };
-    this.slots[2] = { item: BrixItems.stone, count: 5 };
+    // стартовый набор ✅ v0.4.5: РЕВОЛЬВЕР в слоте 1 (обойма полная — 6)
+    // и 50 ПАТРОНОВ в слоте 2; инструменты сдвинулись вправо,
+    // дерево/камень ушли в рюкзак
+    this.slots[0] = { item: BrixItems.revolver, count: 1, mag: 6 };
+    this.slots[1] = { item: BrixItems.ammo, count: 50 };
+    this.slots[2] = { item: BrixItems.stoneAxe, count: 1 };
     this.slots[3] = { item: BrixItems.stonePickaxe, count: 1 };
     this.slots[4] = { item: BrixItems.ironPickaxe, count: 1 };
     this.slots[5] = { item: BrixItems.ironAxe, count: 1 };
+    // рюкзак: немного ресурсов на старт
+    this.slots[6] = { item: BrixItems.wood, count: 10 };
+    this.slots[7] = { item: BrixItems.stone, count: 5 };
 
     this._mount();
     this._bind();
@@ -173,7 +188,10 @@ window.BrixInventory = (function () {
         if (n >= 1 && n <= HOTBAR_SIZE) { self.select(n - 1); return; }
       }
       // E — инвентарь
+      // ✅ v0.4.4: мини-меню (M) или карта открыты — инвентарь не открываем
+      // (как просил игрок: с открытым меню ничего из игровой UI не открывается)
       if (e.code === 'KeyE') {
+        if (window.BrixMiniMenu && BrixMiniMenu.isAnyOpen()) return;
         e.preventDefault();
         self.toggle();
         return;
@@ -349,6 +367,12 @@ window.BrixInventory = (function () {
       if (slot.item.stackable && slot.count > 1) {
         inner += '<span class="bx-count">' + slot.count + '</span>';
       }
+      // ✅ v0.4.5: У РЕВОЛЬВЕРА — остаток ОБОЙМЫ (0–6) СНИЗУ иконки:
+      // игрок всегда видит, сколько патронов заряжено
+      if (slot.item.tool === 'revolver') {
+        inner += '<span class="bx-mag' + (!slot.mag ? ' empty' : '') + '">' +
+          (slot.mag || 0) + '</span>';
+      }
       div.title = langName(slot.item);
     }
     div.innerHTML = inner;
@@ -420,14 +444,26 @@ window.BrixInventory = (function () {
       this._applyLang();
       if (document.pointerLockElement) document.exitPointerLock();
     } else {
-      // возврат захвата мыши (браузер требует жест — keydown им является;
-      // небольшая задержка на security cooldown после exitPointerLock)
-      setTimeout(function () {
-        if (BrixGame.state.phase === 'playing' && !BrixInventory.get().isOpen) {
-          var canvas = document.querySelector('#gameMount canvas');
-          if (canvas && !document.pointerLockElement) canvas.requestPointerLock();
+      // возврат захвата мыши (браузер требует жест — keydown им является).
+      // ✅ fix 0.4.5a: авто-повтор — после Esc браузер ~1.25 c не даёт
+      // pointer lock (SecurityError «cannot be acquired immediately after
+      // the user has exited the lock»); раньше попытка была одна и падала
+      // в консоль необработанной ошибкой, мышь оставалась свободной
+      var retryLock = function (tries) {
+        tries = tries || 0;
+        if (BrixGame.state.phase !== 'playing' || BrixInventory.get().isOpen) return;
+        var canvas = document.querySelector('#gameMount canvas');
+        if (!canvas || document.pointerLockElement === canvas) return;
+        try {
+          var p = canvas.requestPointerLock();
+          if (p && p.catch) p.catch(function () {
+            if (tries < 6) setTimeout(function () { retryLock(tries + 1); }, 300);
+          });
+        } catch (e) {
+          if (tries < 6) setTimeout(function () { retryLock(tries + 1); }, 300);
         }
-      }, 80);
+      };
+      setTimeout(retryLock, 80);
     }
   };
 

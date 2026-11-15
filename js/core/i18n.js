@@ -137,6 +137,13 @@ window.BrixI18N = (function () {
     'item.spring': 'ПРУЖИНА',
     'item.rifleBody': 'КОРПУС АК',
     'item.berdanaBody': 'КОРПУС БЕРДАНКИ',
+    'item.revolver': 'РЕВОЛЬВЕР',
+    'item.ammo': 'ПАТРОНЫ',
+    'hint.emptyMag': 'Обойма пуста — нажми R для перезарядки',
+    'hint.noAmmo': 'Нет патронов — ищи в ВОЕННЫХ (зелёных) ящиках',
+    'death.title': 'ВЫ УБИТЫ',
+    'death.killer': 'Вас убил: {n}',
+    'death.btn': 'ВОЗРОДИТЬСЯ',
     'loot.title': 'ЯЩИК',
     'loot.take': 'ВЗЯТЬ',
     'loot.takeAll': 'ВЗЯТЬ ВСЁ',
@@ -263,11 +270,32 @@ window.BrixI18N = (function () {
     'pause.disconnect': 'ОТКЛЮЧИТЬСЯ',
     'pause.lockHint': 'Кликните по экрану, чтобы вернуться в игру',
 
+    // ✅ v0.4.3: мини-меню в игре (M), список игроков, карта
+    'mm.subtitle': 'МЕНЮ ИГРЫ',
+    'mm.resume': 'ПРОДОЛЖИТЬ',
+    'mm.players': 'СПИСОК ИГРОКОВ',
+    'mm.map': 'КАРТА',
+    'mm.exit': 'ВЫХОД В МЕНЮ',
+    'mm.hint': 'M — меню · E — инвентарь · F — лут',
+    'mm.online': '{n}/{max} НА СЕРВЕРЕ',
+    'mm.listTitle': 'СПИСОК ИГРОКОВ',
+    'mm.listHint': '{n} на сервере «{name}»',
+    'mm.listEmpty': 'Пока только вы — пригласите друзей',
+    'mm.you': '(вы)',
+    'mm.lvl': 'УР. {n}',
+    'mm.mapClose': 'Закрыть карту',
+    'mm.mapBuild': 'Рисуем рельеф Brixland…',
+    'mm.quitTitle': 'ВЫ ТОЧНО ХОТИТЕ ВЫЙТИ?',
+    'mm.quitText': 'Вы отключитесь от сервера и вернётесь в главное меню.',
+    'mm.quitNo': 'НЕТ',
+    'mm.quitYes': 'ДА',
+    'mm.quitWait': 'ДА ({s})',
+
     // Общие
     'common.close': 'Закрыть',
     'common.cancel': 'Отмена',
     'common.beta': 'БЕТА',
-    'footer.version': 'v0.4.2 · мгновенное взятие лута (без «фокусов»), 20 ячеек рюкзака в лут-меню, дропы падают и лежат на площадке чекблока, прицел-точка, реакция только под прицелом · сборка 15.11.2026'
+    'footer.version': 'v0.4.5 · РЕВОЛЬВЕР: модель в руках, обойма 6 и счёт на иконке, ЛКМ — огонь (0.3 с), ПКМ — прицел, R — перезарядка вниз с медленным ходом, крестик-разброс, патроны и револьвер из ящиков, ПвП: пуля 20 / железо 10 / камень 5, звуки по дистанции · сборка 15.11.2026'
   };
 
   var en = {
@@ -393,6 +421,13 @@ window.BrixI18N = (function () {
     'item.spring': 'SPRING',
     'item.rifleBody': 'RIFLE BODY',
     'item.berdanaBody': 'BERDANA BODY',
+    'item.revolver': 'REVOLVER',
+    'item.ammo': 'AMMO',
+    'hint.emptyMag': 'Cylinder empty — press R to reload',
+    'hint.noAmmo': 'No ammo — look in MILITARY (green) crates',
+    'death.title': 'YOU DIED',
+    'death.killer': 'Killed by: {n}',
+    'death.btn': 'RESPAWN',
     'loot.title': 'CRATE',
     'loot.take': 'TAKE',
     'loot.takeAll': 'TAKE ALL',
@@ -511,10 +546,31 @@ window.BrixI18N = (function () {
     'pause.disconnect': 'DISCONNECT',
     'pause.lockHint': 'Click the screen to get back to the game',
 
+    // ✅ v0.4.3: in-game mini menu (M), player list, map
+    'mm.subtitle': 'GAME MENU',
+    'mm.resume': 'RESUME',
+    'mm.players': 'PLAYER LIST',
+    'mm.map': 'MAP',
+    'mm.exit': 'EXIT TO MENU',
+    'mm.hint': 'M — menu · E — inventory · F — loot',
+    'mm.online': '{n}/{max} ON SERVER',
+    'mm.listTitle': 'PLAYER LIST',
+    'mm.listHint': '{n} on “{name}”',
+    'mm.listEmpty': 'Only you so far — invite your friends',
+    'mm.you': '(you)',
+    'mm.lvl': 'LVL {n}',
+    'mm.mapClose': 'Close the map',
+    'mm.mapBuild': 'Drawing the Brixland relief…',
+    'mm.quitTitle': 'REALLY WANT TO EXIT?',
+    'mm.quitText': 'You will disconnect from the server and return to the main menu.',
+    'mm.quitNo': 'NO',
+    'mm.quitYes': 'YES',
+    'mm.quitWait': 'YES ({s})',
+
     'common.close': 'Close',
     'common.cancel': 'Cancel',
     'common.beta': 'BETA',
-    'footer.version': 'v0.4.2 · instant loot pickup (no ghosting), 20 backpack slots in loot menu, drops fall and rest on checkblock pad, dot crosshair, aim-gated interaction · build 15.11.2026'
+    'footer.version': 'v0.4.5 · REVOLVER: held model, 6-round cylinder with icon counter, LMB fire (0.3 s), RMB aim, R reload with slow walk, spread crosshair, ammo and revolver from crates, PvP: bullet 20 / iron 10 / stone 5, distance sounds · build 15.11.2026'
   };
 
   var dicts = { ru: ru, en: en };

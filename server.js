@@ -259,7 +259,11 @@ function pushCount() {
 function rosterFor() {
   const out = [];
   players.forEach((p) => {
-    out.push({ id: p.id, n: p.name, c: p.c, s: p.state || null });
+    // ✅ v0.4.3: в ростере ещё и уровень (lvl) + BRIX-ID (aid) аккаунта
+    // ✅ v0.4.5: и здоровье — у нового игрока полоски хп у всех сразу
+    out.push({ id: p.id, n: p.name, c: p.c, lvl: p.lvl || 1, aid: p.aid || '',
+      hp: p.dead ? 0 : (p.hp === undefined ? 100 : p.hp),
+      s: p.state || null });
   });
   return out;
 }
@@ -328,15 +332,21 @@ function buildCheckblockLayout(seed) {
    Лут ХРАНИТСЯ НА СЕРВЕРЕ: взял один предмет — у всех осталось остальное */
 function rollLoot(mil) {
   const r = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
-  const loot = { scrap: r(4, 8), metal: 0, spring: 0, pipe: 0, rifleBody: 0, berdanaBody: 0 };
+  const loot = { scrap: r(4, 8), metal: 0, spring: 0, pipe: 0, rifleBody: 0,
+    berdanaBody: 0, revolver: 0, ammo: 0 };
   if (Math.random() < 0.6) loot.metal = r(4, 16);
   if (Math.random() < 0.5) loot.spring = r(1, 3);
   if (Math.random() < 0.5) loot.pipe = r(1, 3);
+  // ✅ v0.4.5: ПАТРОНЫ (4–15) только в ВОЕННОМ ящике; РЕВОЛЬВЕР
+  // встречается и в военном (шанс выше), и в деревянном
+  if (Math.random() < 0.7) loot.ammo = r(4, 15);
   if (mil) {
     loot.rifleBody = 1;                        // корпус АК — в военном ящике всегда
+    if (Math.random() < 0.35) loot.revolver = 1;
     if (Math.random() < 0.25) loot.berdanaBody = 1;
-  } else if (Math.random() < 0.35) {
-    loot.berdanaBody = 1;                      // корпус берданки
+  } else {
+    if (Math.random() < 0.12) loot.revolver = 1;
+    if (Math.random() < 0.35) loot.berdanaBody = 1;
   }
   return loot;
 }
@@ -551,6 +561,8 @@ server.on('upgrade', (req, sock) => {
     id: null, name: '', c: '#e2572b',
     sock: sock,
     state: null,          // последнее состояние движения
+    hp: 100,              // ✅ v0.4.5: здоровье (ПвП) — авторитет сервера
+    dead: false,
     last: Date.now(),
     send: null
   };
@@ -567,13 +579,17 @@ server.on('upgrade', (req, sock) => {
         p.id = 'u' + (nextNum++);
         p.name = String(msg.n || ('Игрок-' + p.id.slice(1).padStart(2, '0'))).slice(0, 16);
         p.c = String(msg.c || '#e2572b').slice(0, 24);
+        // ✅ v0.4.3: уровень профиля и BRIX-ID — для списка игроков
+        // в мини-меню (M). Присылаются клиентом, сервер только хранит
+        p.lvl = Math.max(1, Math.min(9999, Number(msg.lvl) || 1));
+        p.aid = String(msg.aid || '').slice(0, 16);
         p.send = (obj2) => { try { sock.write(wsEncodeText(JSON.stringify(obj2))); } catch (e) {} };
         players.set(p.id, p);
         if (!world && msg.meta) initWorld(msg.meta);
         // АВТОРИТЕТНЫЙ welcome: свой id + ВСЕ игроки с позициями + мир
         p.send({
           t: 'welcome',
-          ver: 42,               // ✅ v0.4.2: протокол tid/cbdeny (оптимистичный лут)
+          ver: 44,               // ✅ v0.4.5: протокол боя (snd/phit/pdeath/prespawn), hp в ростере
           id: p.id,
           players: rosterFor().filter(function (r) { return r.id !== p.id; }),
           world: world ? {
@@ -586,7 +602,9 @@ server.on('upgrade', (req, sock) => {
           } : null,
           objs: objsSnapshot()   // ✅ v0.3.6: бочки/чекблоки/дропы (авторитет сервера)
         });
-        broadcast({ t: 'join', id: p.id, n: p.name, c: p.c }, p.id);
+        // ✅ v0.4.3: в join едет lvl/aid — у всех игроков список полный сразу
+        broadcast({ t: 'join', id: p.id, n: p.name, c: p.c,
+          lvl: p.lvl || 1, aid: p.aid || '' }, p.id);
         console.log('[mp] ' + p.name + ' (' + p.id + ') вошёл (игроков: ' + players.size + ')');
         // ✅ v0.3.6: мгновенный пуш нового счётчика всем
         pushCount();
@@ -754,6 +772,56 @@ server.on('upgrade', (req, sock) => {
             }
           });
           if (!delivered && p.send) p.send({ t: 'fsoc-miss', to: msg.to, kind: msg.kind });
+          break;
+        }
+        /* ✅ v0.4.5 БОЙ: звук выстрела/перезарядки — ретранслируем всем
+           остальным (они сами гасят громкость по дистанции до источника) */
+        case 'snd': {
+          broadcast({ t: 'snd', by: p.id, k: String(msg.k || 'shot'),
+            x: Number(msg.x) || 0, z: Number(msg.z) || 0 }, p.id);
+          break;
+        }
+        /* ✅ v0.4.5 ПВП: заявка попадания. ХП — АВТОРИТЕТ СЕРВЕРА:
+           пуля 20 (шутер в 130 м), удар инструментом ≤10 (в 6 м).
+           Убил → pdeath всем; труп ждёт prespawn от жертвы */
+        case 'phit': {
+          const target = players.get(String(msg.tid || ''));
+          if (!target || !target.state || target.dead) break;
+          if (!p.state) break;
+          const kind = String(msg.kind || 'shot');
+          const d2 = dist2(p.state.x, p.state.z, target.state.x, target.state.z);
+          if (kind === 'shot' && d2 > 130 * 130) break;      // дальше 130 м
+          if (kind !== 'shot' && d2 > 6 * 6) break;          // дальше 6 м
+          const dmg = Math.max(0, Math.min(kind === 'shot' ? 20 : 10,
+            Math.floor(Number(msg.dmg) || 0)));
+          if (!dmg) break;
+          target.hp = Math.max(0, (target.hp === undefined ? 100 : target.hp) - dmg);
+          broadcast({ t: 'phit', tid: target.id, hp: target.hp,
+            by: p.id, kind }, null);
+          if (target.hp <= 0) {
+            target.dead = true;
+            broadcast({ t: 'pdeath', tid: target.id, by: p.id }, null);
+            console.log('[mp] ' + p.name + ' убил ' + target.name +
+              (kind === 'shot' ? ' (выстрел)' : ' (инструментом)'));
+          }
+          break;
+        }
+        /* ✅ v0.4.5: жертва сама сообщает о своей смерти (надёжнее, чем
+           выводить по hp=0 у стрелка) — рассылаем остальным */
+        case 'pdeath': {
+          if (msg.tid === p.id) {
+            p.dead = true;
+            p.hp = 0;
+          }
+          broadcast({ t: 'pdeath', tid: String(msg.tid || p.id),
+            by: String(msg.by || '') }, p.id);
+          break;
+        }
+        /* ✅ v0.4.5: возрождение — хп восстанавливает СЕРВЕР */
+        case 'prespawn': {
+          p.dead = false;
+          p.hp = 100;
+          broadcast({ t: 'prespawn', tid: p.id }, p.id);
           break;
         }
       }
