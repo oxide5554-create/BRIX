@@ -1648,7 +1648,7 @@ window.BrixGameWorld = (function () {
         (hudEl || mount).appendChild(diagEl);
         var serverAlive = null;   // null = ещё не проверяли, true/false = pong
         function renderDiag() {
-          var ver = 'BRIX v0.4.6';
+          var ver = 'BRIX v0.4.7';
           var net = BrixNet.mode === 'server' ? 'СЕТЬ: сервер' : 'СЕТЬ: вкладки';
           var hp;
           if (BrixNet.mode !== 'server') hp = '· сервер не нужен';
@@ -1851,9 +1851,12 @@ window.BrixGameWorld = (function () {
             mpSendT = 1 / 12;
             var mv2 = controls.getMoveState();
             var sel2 = inventory.getSelectedItem();
-            // ✅ v0.4.5: getSelectedItem возвращает САМ ПРЕДМЕТ (было
-            // sel2.item.tool — всегда '', у чужих игроков руки были пустые)
-            var tool2 = sel2 ? (sel2.tool || (sel2.item && sel2.item.tool) || '') : '';
+            // ✅ v0.4.7: если план строителя взят в руки КЛИКОМ из
+            // инвентаря — другим игрокам тоже уходит tool 'plan'
+            // (✅ v0.4.5: getSelectedItem возвращает САМ ПРЕДМЕТ)
+            var tool2 = (inventory.isPlanEquipped && inventory.isPlanEquipped())
+              ? 'plan'
+              : (sel2 ? (sel2.tool || (sel2.item && sel2.item.tool) || '') : '');
             // анимация для других: перезарядка/выстрел/удар/прыжок/бег/покой
             var anim2 = 'idle';
             var ph2 = 0;

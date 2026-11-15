@@ -262,7 +262,7 @@ window.BrixI18N = (function () {
     // Хотбар и инвентарь
     'inv.title': 'ИНВЕНТАРЬ',
     'inv.hotbar': 'БЫСТРЫЙ ДОСТУП',
-    'inv.hint': 'E — закрыть · перетаскивай предметы мышкой',
+    'inv.hint': 'E — закрыть · перетаскивай предметы мышкой · план строителя: клик — в руки, Z — стройка',
 
     // Пауза
     'pause.title': 'ПАУЗА',
@@ -295,7 +295,7 @@ window.BrixI18N = (function () {
     'common.close': 'Закрыть',
     'common.cancel': 'Отмена',
     'common.beta': 'БЕТА',
-    'footer.version': 'v0.4.5 · РЕВОЛЬВЕР: модель в руках, обойма 6 и счёт на иконке, ЛКМ — огонь (0.3 с), ПКМ — прицел, R — перезарядка вниз с медленным ходом, крестик-разброс, патроны и револьвер из ящиков, ПвП: пуля 20 / железо 10 / камень 5, звуки по дистанции · сборка 15.11.2026'
+    'footer.version': 'v0.4.7 · СТРОИТЕЛЬСТВО: план строителя в инвентаре (клик — в руки, Z — меню), хотбар 6 слотов, фундамент/стена/потолок с коллизиями, плавный бег между фундаментами, постройки живут на сервере — память + автосейв + снапшот новым игрокам · сборка 15.11.2026'
   };
 
   var en = {
@@ -539,7 +539,7 @@ window.BrixI18N = (function () {
 
     'inv.title': 'INVENTORY',
     'inv.hotbar': 'QUICK ACCESS',
-    'inv.hint': 'E — close · drag items with the mouse',
+    'inv.hint': 'E — close · drag items with the mouse · building plan: click to take in hands, Z — build',
 
     'pause.title': 'PAUSED',
     'pause.resume': 'RESUME',
@@ -570,7 +570,7 @@ window.BrixI18N = (function () {
     'common.close': 'Close',
     'common.cancel': 'Cancel',
     'common.beta': 'BETA',
-    'footer.version': 'v0.4.5 · REVOLVER: held model, 6-round cylinder with icon counter, LMB fire (0.3 s), RMB aim, R reload with slow walk, spread crosshair, ammo and revolver from crates, PvP: bullet 20 / iron 10 / stone 5, distance sounds · build 15.11.2026'
+    'footer.version': 'v0.4.7 · BUILDING: plan in the inventory (click to take in hands, Z — menu), 6-slot hotbar, foundation/wall/ceiling with collisions, smooth running between foundations, builds live on the server — memory + autosave + snapshot for newcomers · build 15.11.2026'
   };
 
   var dicts = { ru: ru, en: en };

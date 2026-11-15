@@ -2,9 +2,12 @@
 //  brix • js/game/inventory.js
 //  ХОТБАР + ИНВЕНТАРЬ BRIX — собственный стиль (rust-дизайн игры),
 //  механика портирована из репозитория (scr/ui/hotbar.js и
-//  scr/ui/inventory.js): ✅ v0.4.6 — 7 слотов быстрого доступа (7-й —
-//  «План строителя») + сетка 5x4, drag & drop, стеки, клавиши 1-7,
-//  колесо мыши, E — открыть/закрыть. Открывается поверх игры.
+//  scr/ui/inventory.js): ✅ v0.4.7 — хотбар СНОВА 6 слотов (клавиши 1-6,
+//  колесо мыши), а «ПЛАН СТРОИТЕЛЯ» переехал В ИНВЕНТАРЬ (первая ячейка
+//  рюкзака): КЛИК по плану — взять в руки (Z открывает меню стройки),
+//  повторный клик или выбор другого слота — убрать. План закреплён:
+//  его нельзя перетащить и нельзя положить на него другой предмет.
+//  Сетка 5x4, drag & drop, стеки, E — открыть/закрыть.
 // ============================================================
 // пробивка кэша браузера: к пути добавляется ?v=<версия> (см. index.html)
 function BrixAx(u) { return window.BrixAsset ? window.BrixAsset(u) : u; }
@@ -33,9 +36,11 @@ window.BrixItems = {
     id: 'revolver', name: 'Револьвер', nameEn: 'Revolver',
     icon: BrixAx('assets/icons/revolver.png'), stackable: false, tool: 'revolver'
   },
-  /* ✅ v0.4.6 ПЛАН СТРОИТЕЛЯ: держи в руках (слот 7) и жми Z —
-     откроется меню строительства (фундамент/стена/потолок),
-     ЛКМ ставит деталь. Без плана в руках Z не работает */
+  /* ✅ v0.4.7 ПЛАН СТРОИТЕЛЯ — живёт В ИНВЕНТАРЕ (не в хотбаре):
+     открой инвентарь (E) и КЛИКНИ по плану — он в руках (синий ватман),
+     дальше Z — меню строительства (фундамент/стена/потолок),
+     ЛКМ ставит деталь. Без плана в руках Z не работает.
+     Выбрал другой слот / ещё раз кликнул по плану — план убран */
   buildingPlan: {
     id: 'buildingPlan', name: 'План строителя', nameEn: 'Building Plan',
     icon: BrixAx('assets/icons/building_plan.png'), stackable: false, tool: 'plan'
@@ -96,9 +101,9 @@ window.BrixItems = {
 window.BrixInventory = (function () {
   'use strict';
 
-  // ✅ v0.4.6: хотбар РАСШИРЕН до 7 слотов — 7-й под «План строителя»
-  // (в руках синий ватман; Z открывает меню строительства)
-  var HOTBAR_SIZE = 7;
+  // ✅ v0.4.7: хотбар 6 слотов (как было в v0.4.5), а «План строителя» —
+  // предмет ИНВЕНТАРЯ: клик по нему в рюкзаке берёт план в руки
+  var HOTBAR_SIZE = 6;
   var COLS = 5;            // ✅ v0.3.2: сетка 5x4 как в референсе (Rust)
   var ROWS = 4;
   var instance = null;
@@ -124,19 +129,22 @@ window.BrixInventory = (function () {
     this.onSelect = null;     // callback(item|null, index)
     this.dom = null;
     this._dragging = false;
+    // ✅ v0.4.7: план строителя взят в руки КЛИКОМ из инвентаря
+    // (не через слот хотбара — в хотбаре его больше нет)
+    this.planEquipped = false;
 
-    // стартовый набор ✅ v0.4.6: + ПЛАН СТРОИТЕЛЯ в слоте 7 (Z — меню стройки);
-    // револьвер/патроны/инструменты — как в v0.4.5, дерево/камень в рюкзаке
+    // стартовый набор ✅ v0.4.7: хотбар 1–6 (револьвер/патроны/инструменты),
+    // ПЛАН СТРОИТЕЛЯ — первая ячейка РЮКЗАКА (клик — в руки), дерево/камень рядом
     this.slots[0] = { item: BrixItems.revolver, count: 1, mag: 6 };
     this.slots[1] = { item: BrixItems.ammo, count: 50 };
     this.slots[2] = { item: BrixItems.stoneAxe, count: 1 };
     this.slots[3] = { item: BrixItems.stonePickaxe, count: 1 };
     this.slots[4] = { item: BrixItems.ironPickaxe, count: 1 };
     this.slots[5] = { item: BrixItems.ironAxe, count: 1 };
-    this.slots[6] = { item: BrixItems.buildingPlan, count: 1 };
-    // рюкзак: немного ресурсов на старт
-    this.slots[7] = { item: BrixItems.wood, count: 10 };
-    this.slots[8] = { item: BrixItems.stone, count: 5 };
+    // рюкзак: план строителя (закреплён) + немного ресурсов на старт
+    this.slots[HOTBAR_SIZE] = { item: BrixItems.buildingPlan, count: 1 };
+    this.slots[HOTBAR_SIZE + 1] = { item: BrixItems.wood, count: 10 };
+    this.slots[HOTBAR_SIZE + 2] = { item: BrixItems.stone, count: 5 };
 
     this._mount();
     this._bind();
@@ -225,10 +233,33 @@ window.BrixInventory = (function () {
   Inventory.prototype.select = function (index) {
     if (index < 0 || index >= HOTBAR_SIZE) return;
     this.activeSlot = index;
+    // ✅ v0.4.7: выбрал слот хотбара — план из рук убирается
+    if (this.planEquipped) {
+      this.planEquipped = false;
+      if (this.isOpen) this.renderInventory();
+    }
     this.renderHotbar();
     var slot = this.slots[index];
     if (this.onSelect) this.onSelect(slot ? slot.item : null, index);
   };
+
+  /* ✅ v0.4.7: ПЛАН СТРОИТЕЛЯ — взять в руки / убрать (клик по плану
+     в инвентаре). Руки переключает onSelect, как при выборе слота */
+  Inventory.prototype.equipPlan = function (on) {
+    on = !!on;
+    if (this.planEquipped === on) return;
+    this.planEquipped = on;
+    this.renderHotbar();
+    if (this.isOpen) this.renderInventory();
+    if (this.onSelect) {
+      if (on) this.onSelect(BrixItems.buildingPlan, -1);
+      else {
+        var slot = this.slots[this.activeSlot];
+        this.onSelect(slot ? slot.item : null, this.activeSlot);
+      }
+    }
+  };
+  Inventory.prototype.isPlanEquipped = function () { return !!this.planEquipped; };
 
   Inventory.prototype.getSelectedItem = function () {
     var slot = this.slots[this.activeSlot];
@@ -289,6 +320,9 @@ window.BrixInventory = (function () {
     var a = idxOf(source), b = idxOf(target);
     if (a === b) return;
     var A = this.slots[a], B = this.slots[b];
+    // ✅ v0.4.7: ПЛАН СТРОИТЕЛЯ закреплён в рюкзаке — его нельзя
+    // перетащить и нельзя положить на его место другой предмет
+    if ((A && A.item.tool === 'plan') || (B && B.item.tool === 'plan')) return;
     if (A && B && A.item.id === B.item.id && B.item.stackable) {
       var space = B.item.stack - B.count;
       var move = Math.min(space, A.count);
@@ -370,6 +404,7 @@ window.BrixInventory = (function () {
     div.className = 'bx-slot' + (slot ? '' : ' empty');
 
     var inner = '';
+    var isPlan = !!(slot && slot.item.tool === 'plan');
     if (slot) {
       inner += renderIcon(slot.item);
       // ✅ v0.3.3: количество В УГЛУ СЛОТА вернули (12 дерева)
@@ -382,11 +417,17 @@ window.BrixInventory = (function () {
         inner += '<span class="bx-mag' + (!slot.mag ? ' empty' : '') + '">' +
           (slot.mag || 0) + '</span>';
       }
-      div.title = langName(slot.item);
+      // ✅ v0.4.7: план в руках — подсветка слота
+      if (isPlan && self.planEquipped) div.classList.add('plan-active');
+      div.title = isPlan
+        ? (BrixState.data.lang === 'en'
+          ? 'Building Plan — CLICK: take in hands · Z: build menu'
+          : 'План строителя — КЛИК: взять в руки · Z: меню стройки')
+        : langName(slot.item);
     }
     div.innerHTML = inner;
 
-    if (slot) {
+    if (slot && !isPlan) {
       div.draggable = true;
       div.addEventListener('dragstart', function (e) {
         e.dataTransfer.setData('text/plain', JSON.stringify({ type: type, index: index }));
@@ -397,6 +438,13 @@ window.BrixInventory = (function () {
       div.addEventListener('dragend', function () {
         div.classList.remove('dragging');
         self._dragging = false;
+      });
+    }
+    // ✅ v0.4.7: КЛИК по плану в инвентаре — взять в руки / убрать
+    if (isPlan && type === 'inv') {
+      div.classList.add('bx-plan');
+      div.addEventListener('click', function () {
+        self.equipPlan(!self.planEquipped);
       });
     }
     div.addEventListener('dragover', function (e) { e.preventDefault(); div.classList.add('drag-over'); });
@@ -478,7 +526,10 @@ window.BrixInventory = (function () {
 
   Inventory.prototype._applyLang = function () {
     this.dom.title.textContent = BrixState.t('inv.title');
-    this.dom.sub.textContent = '';
+    // ✅ v0.4.7: напоминание про план строителя (он теперь в рюкзаке)
+    this.dom.sub.textContent = BrixState.data.lang === 'en'
+      ? 'Building Plan in the backpack — click it to take in hands · Z — build'
+      : 'План строителя в рюкзаке — клик по нему: взять в руки · Z — стройка';
     this.dom.hint.textContent = BrixState.t('inv.hint');
     this.dom.closeBtn.textContent = '✕';
   };

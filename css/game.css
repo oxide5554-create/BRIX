@@ -134,6 +134,14 @@
 .bx-slot.dragging { opacity: 0.35; }
 .bx-slot.drag-over { background: rgba(76, 76, 72, 0.95); }
 
+/* ✅ v0.4.7: ПЛАН СТРОИТЕЛЯ — предмет инвентаря (клик — взять в руки).
+   Слот закреплён: подсветка синей рамкой, когда план В РУКАХ */
+.bx-slot.bx-plan { cursor: pointer; }
+.bx-slot.plan-active {
+  background: rgba(38, 52, 66, 0.95);
+  box-shadow: inset 0 0 0 2px #6fa8dc, 0 0 10px rgba(111, 168, 220, 0.35);
+}
+
 .bx-slot img {
   position: absolute; inset: 6px;
   width: calc(100% - 12px); height: calc(100% - 12px);

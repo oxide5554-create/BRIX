@@ -1,5 +1,5 @@
 /* ============================================================
- *  brix • server.js — АВТОРИТЕТНЫЙ СЕРВЕР МУЛЬТИПЛЕЕРА (v0.4.6)
+ *  brix • server.js — АВТОРИТЕТНЫЙ СЕРВЕР МУЛЬТИПЛЕЕРА (v0.4.7)
  *  Как в Rust/Oxide: сервер — хозяин мира.
  *
  *  Ноль зависимостей: чистый Node.js.
@@ -353,33 +353,57 @@ function rollLoot(mil) {
 
 /* ✅ v0.3.8: ПЕРСИСТЕНТНОСТЬ — состояние мира (лут ящиков, HP бочек, дропы)
    живёт в world-objs.json и ПЕРЕЖИВАЕТ перезапуск сервера.
+   ✅ v0.4.7 ПОСТРОЙКИ: фундаменты/стены/потолки живут В ПАМЯТИ СЕРВЕРА
+   (worldObjs.builds) независимо от игроков: когда на сервере 0 игроков,
+   дом никуда не девается; новый игрок получает весь дом в welcome
+   (objs.bd); файл пишется через 800 мс после изменения, КАЖДЫЕ 20 с
+   для надёжности и при остановке сервера (Ctrl+C) — ничего не теряется.
    «Перезагрузил игру — ресурсы те же» работает, потому что состояние
    вообще не у клиента: клиент при входе получает снимок сервера */
 const OBJS_FILE = path.join(ROOT, 'world-objs.json');
 let saveTimer = null;
+let worldDirty = false;          // ✅ v0.4.7: есть несохранённые изменения
+
+function writeWorldNow() {
+  try {
+    const data = {
+      v: 4,
+      dropSeq: worldObjs.dropSeq,
+      cb: worldObjs.cb.map((c) => ({
+        id: c.id, x: c.x, z: c.z, rot: c.rot, item: c.item, seed: c.seed, mil: c.mil,
+        taken: c.taken, gone: c.gone, loot: c.loot,
+        barrels: c.barrels.map((b) => ({ id: b.id, lx: b.lx, lz: b.lz, wy: b.wy,
+          lying: b.lying, hp: b.hp, brk: b.brk }))
+      })),
+      drops: Array.from(worldObjs.drops.values()),
+      // ✅ v0.4.6/0.4.7: ПОСТРОЙКИ (фундаменты/стены/потолки) — переживают
+      //    перезапуск сервера, как и весь остальной мир
+      builds: worldObjs.builds
+    };
+    fs.writeFileSync(OBJS_FILE, JSON.stringify(data));
+    worldDirty = false;
+  } catch (e) { console.log('[objs] не сохранил мир: ' + e.message); }
+}
+
 function markDirty() {
+  worldDirty = true;
   if (saveTimer) return;
-    saveTimer = setTimeout(() => {
+  saveTimer = setTimeout(() => {
     saveTimer = null;
-    try {
-      const data = {
-        v: 4,
-        dropSeq: worldObjs.dropSeq,
-        cb: worldObjs.cb.map((c) => ({
-          id: c.id, x: c.x, z: c.z, rot: c.rot, item: c.item, seed: c.seed, mil: c.mil,
-          taken: c.taken, gone: c.gone, loot: c.loot,
-          barrels: c.barrels.map((b) => ({ id: b.id, lx: b.lx, lz: b.lz, wy: b.wy,
-            lying: b.lying, hp: b.hp, brk: b.brk }))
-        })),
-        drops: Array.from(worldObjs.drops.values()),
-        // ✅ v0.4.6: ПОСТРОЙКИ (фундаменты/стены/потолки) — переживают
-        //    перезапуск сервера, как и весь остальной мир
-        builds: worldObjs.builds
-      };
-      fs.writeFile(OBJS_FILE, JSON.stringify(data), () => {});
-    } catch (e) { console.log('[objs] не сохранил мир: ' + e.message); }
+    writeWorldNow();
   }, 800);
 }
+
+/* ✅ v0.4.7: страховые сохранения — каждые 20 с, если что-то менялось,
+   и гарантированная запись при остановке сервера (Ctrl+C / kill).
+   Постройки не теряются, даже если сервер убили сразу после bplace */
+setInterval(() => { if (worldDirty) writeWorldNow(); }, 20000);
+function saveOnExit() {
+  try { if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; } writeWorldNow(); } catch (e) {}
+}
+process.on('SIGINT', () => { saveOnExit(); process.exit(0); });
+process.on('SIGTERM', () => { saveOnExit(); process.exit(0); });
+process.on('exit', () => { try { saveOnExit(); } catch (e) {} });
 
 function freshWorldObjs() {
   const cb = buildCheckblockLayout(OBJ_SEED);
@@ -568,7 +592,8 @@ function objsSnapshot() {
     })),
     dr: Array.from(worldObjs.drops.values()).map((d) =>
       ({ id: d.id, kind: d.kind, x: d.x, z: d.z, amt: d.amt })),
-    // ✅ v0.4.6: постройки в снапшоте — новый игрок сразу видит дом
+/* ✅ v0.4.6/0.4.7: постройки в снапшоте — новый игрок сразу видит дом
+   (даже если на сервере сейчас 0 игроков: builds живёт в памяти сервера) */
     bd: worldObjs.builds.map((b) => ({ id: b.id, ty: b.ty, gx: b.gx, gz: b.gz,
       e: b.e !== undefined ? b.e : undefined, top: b.top }))
   };
@@ -710,7 +735,7 @@ server.on('upgrade', (req, sock) => {
         // АВТОРИТЕТНЫЙ welcome: свой id + ВСЕ игроки с позициями + мир
         p.send({
           t: 'welcome',
-          ver: 45,               // ✅ v0.4.6: протокол строительства (bplace/bnew/bdeny, bd в снапшоте)
+          ver: 46,               // ✅ v0.4.7: план строителя в инвентаре, коллизии стен/потолков, страховочные сейвы построек
           id: p.id,
           players: rosterFor().filter(function (r) { return r.id !== p.id; }),
           world: world ? {

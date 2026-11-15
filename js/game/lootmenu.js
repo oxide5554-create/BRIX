@@ -127,10 +127,12 @@ window.BrixLootMenu = (function () {
     var take = space > 0 ? Math.min(space, amt) : amt;   // занят другим — как клик
     if (onTake) onTake(curId, item, take);
   }
-  /** ПЕРЕТАЩИЛИ СВОЙ слот idx В ЯЩИК: положить весь стек */
+  /** ПЕРЕТАЩИЛИ СВОЙ слот idx В ЯЩИК: положить весь стек.
+      ✅ v0.4.7: ПЛАН СТРОИТЕЛЯ в ящик НЕ положить — он закреплён */
   function dropOwnToCrate(idx) {
     var s = inv().slots[idx];
     if (!s || !curId) return;
+    if (s.item && s.item.tool === 'plan') return;
     if (onPut) onPut(curId, s.item.id, s.count, idx);
   }
   /** СВОЙ-СВОЙ: перестановка стеков (как в основном инвентаре) */
@@ -209,18 +211,23 @@ window.BrixLootMenu = (function () {
         el.appendChild(c);
       }
       el.title = itemName(slot.item.id);
-      el.draggable = true;
-      el.addEventListener('dragstart', function (e) {
-        onDragStart(e, { src: 'own', index: idx });
-      });
+      // ✅ v0.4.7: план строителя не перетаскивается (закреплён в рюкзаке)
+      if (slot.item.tool !== 'plan') {
+        el.draggable = true;
+        el.addEventListener('dragstart', function (e) {
+          onDragStart(e, { src: 'own', index: idx });
+        });
+      }
     }
     el.addEventListener('dragover', onDragOver);
     el.addEventListener('dragleave', onDragLeave);
+    // ✅ v0.4.7: на слот с планом нельзя бросить предмет из ящика
     el.addEventListener('drop', function (e) {
       e.preventDefault();
       el.classList.remove('drag-over');
       var data; try { data = JSON.parse(e.dataTransfer.getData('text/plain')); } catch (err) { return; }
       if (!data) return;
+      if (slot && slot.item && slot.item.tool === 'plan') return;
       if (data.src === 'crate') dropCrateToOwn(data.item, idx);
       else if (data.src === 'own' && typeof data.index === 'number') dropOwnToOwn(data.index, idx);
     });

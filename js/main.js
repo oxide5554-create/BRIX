@@ -9,7 +9,7 @@
 
   // маркер сборки: если этой строки нет в консоли — браузер загрузил СТАРЫЕ файлы
   // (нажми Ctrl+Shift+R, чтобы обновить кэш)
-  console.log('%cBRIX v0.4.6 — СТРОИТЕЛЬСТВО: план строителя (слот 7, Z — меню), фундамент на 4 ногах, стены и потолок, магнит к фундаменту, коллизии, постройки на сервере',
+  console.log('%cBRIX v0.4.7 — СТРОИТЕЛЬСТВО: план строителя В ИНВЕНТАРЕ (клик — в руки, Z — меню), хотбар 6 слотов, фундамент на 4 ногах, стены и потолок с коллизиями, магнит к фундаменту, плавный бег между фундаментами, постройки живут на сервере (память + автосейв)',
     'background:#e2572b;color:#fff;padding:2px 8px;border-radius:3px;font-weight:bold');
 
   var currentLayer = null;
@@ -141,7 +141,7 @@
       'assets/textures/grass.png',
       'assets/sfx/stone/stone_hit_1.wav',
       'assets/sfx/stone/stone_break.ogg',
-      /* ✅ v0.4.6: стройка — иконка плана и 3 звука строительства */
+      /* ✅ v0.4.7: стройка — иконка плана (новая, от пользователя) и 3 звука строительства */
       'assets/icons/building_plan.png',
       'assets/sfx/build/Construction_Wooden_Build_03.wav',
       'assets/sfx/build/Construction_Wooden_Build_04.wav',
@@ -159,7 +159,7 @@
       if (missing.length) {
         paint('✗ сервер не отдаёт: ' + missing.join(' , ') + ' — в папке игры нет assets/ из архива', '#ff6b5e');
       } else {
-        paint('✓ сборка v0.4.6 — все файлы на месте', '#8fd07a');
+        paint('✓ сборка v0.4.7 — все файлы на месте', '#8fd07a');
       }
     });
   }
