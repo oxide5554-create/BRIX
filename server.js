@@ -30,6 +30,13 @@ const path = require('path');
 
 const PORT = 8787;
 const ROOT = __dirname;
+
+/* ✅ v0.4.17: версия СЕРВЕРА — едет в welcome.sv и /status. Клиент по ней
+   видит: подключился ли он вообще к НОВОМУ серверу (старый server.js
+   версии не присылает — и панель на 9 молчит). В консоли при старте
+   печатается ПОЛНЫЙ ПУТЬ папки сервера — чтобы admins.json правился
+   именно там, где сервер РЕАЛЬНО запущен */
+const SRV_VER = '0.4.17';
 const PLAYER_TIMEOUT = 90000;   // молчание дольше этого — игрок «выпал» (фоновые вкладки шлют pong)
 
 /* ✅ v0.3.8: РЕСПАВН ПО ТАЙМЕРУ СЕРВЕРА (не по перезагрузке клиента!) */
@@ -144,7 +151,11 @@ function serveFile(req, res, urlPath) {
     });
     res.end(JSON.stringify({
       ok: true, players: players.size, max: 64, inGame: countInGame(),
-      names: names, map: 'Brixland'
+      names: names, map: 'Brixland',
+      /* ✅ v0.4.17: диагностика панели разработчика — открой в браузере
+         http://<адрес>:8787/status и видно: версию сервера, ПАПКУ,
+         откуда он запущен, и какие ID он считает админами */
+      ver: SRV_VER, folder: ROOT, adminIds: Array.from(ADMIN_AIDS)
     }));
     return;
   }
@@ -361,6 +372,103 @@ function rollLoot(mil) {
    «Перезагрузил игру — ресурсы те же» работает, потому что состояние
    вообще не у клиента: клиент при входе получает снимок сервера */
 const OBJS_FILE = path.join(ROOT, 'world-objs.json');
+/* ✅ v0.4.14: поколение мира дублируем в отдельный файл world-epoch.json.
+   Если world-objs.json потерялся/удалили вручную — эпоха выживает, и
+   сервер НЕ примет старые бэкапы браузеров («воскресшие 32 постройки
+   из бэка» после ручной чистки). Пишется при каждом сохранении мира,
+   читается при старте (в т.ч. для свежего мира) */
+const EPOCH_FILE = path.join(ROOT, 'world-epoch.json');
+
+function readEpochSidecar() {
+  try {
+    let raw = fs.readFileSync(EPOCH_FILE, 'utf8');
+    if (raw.charCodeAt(0) === 0xFEFF) raw = raw.slice(1);
+    return (JSON.parse(raw).ep) | 0;
+  } catch (e) { return 0; }
+}
+
+function writeEpochSidecar(ep) {
+  try { fs.writeFileSync(EPOCH_FILE, JSON.stringify({ ep: ep | 0 })); }
+  catch (e) { /* не критично: эпоха остаётся и в world-objs.json */ }
+}
+
+/* ============================================================
+   ✅ v0.4.15 АДМИН-ПАНЕЛЬ РАЗРАБОТЧИКА (клавиша 9, только у владельца
+   сервера). Администратор определяется ПО BRIX-ID АККАУНТА (aid из
+   hello) — ник подделать легко, а ID живёт в localStorage игрока.
+   Сервер проверяет КАЖДУЮ команду (клиентский флаг — только для UI).
+
+   Команды (t:'admin', op:…):
+     wipebuilds — удалить ВСЕ постройки + поднять поколение (bwipe всем);
+     tp {x,z}   — телепорт СЕБЯ на координаты;
+     tpto {tid} — телепорт СЕБЯ к игроку;
+     bring {tid}— телепорт ИГРОКА к себе;
+     ban {tid}  — забанить аккаунт (bans.json, персистентно) и кикнуть;
+     respawn    — мгновенный респавн ВСЕХ ящиков и бочек с новым лутом;
+     cleardrops — убрать все выпавшие предметы (дропы) с сервера.
+
+   Бесконечное ХП — сервер НЕ применяет урон к админу (case 'phit').
+   Открытие любых замков — server обходит проверку кода (case 'btog').
+   ============================================================ */
+const ADMIN_AIDS = new Set([
+  'BRIX-GH6ZGS'          // ← ID разработчика (владелец сервера)
+]);
+
+/* ✅ v0.4.16: СВОЙ список админов — файл admins.json рядом с server.js.
+   Не надо больше править server.js! Формат файла:
+       ["BRIX-A1B2C3", "BRIX-XXXXXX"]
+   Как узнать свой BRIX-ID (любой из трёх способов):
+     1) нажать 9 в игре — подсказка на экране покажет ТВОЙ ID;
+     2) консоль сервера: при входе каждого игрока печатается его ID;
+     3) мини-меню (M) → список игроков → своя строка, там ID.
+   Файл создаётся автоматически, если его нет. Изменения — после
+   ПЕРЕЗАПУСКА сервера. Панель (клавиша 9) откроется только у тех,
+   чей ID есть в этом списке (или встроен выше) */
+const ADMINS_FILE = path.join(ROOT, 'admins.json');
+if (!fs.existsSync(ADMINS_FILE)) {
+  try { fs.writeFileSync(ADMINS_FILE, JSON.stringify([], null, 2)); }
+  catch (e) { console.log('[admin] не создал admins.json: ' + e.message); }
+}
+try {
+  const rawA = fs.readFileSync(ADMINS_FILE, 'utf8');
+  const jA = JSON.parse(rawA.charCodeAt(0) === 0xFEFF ? rawA.slice(1) : rawA);
+  if (Array.isArray(jA)) jA.forEach((id) => {
+    const s = String(id || '').trim();
+    if (s) ADMIN_AIDS.add(s.slice(0, 16));
+  });
+  console.log('[admin] админы по ID: ' + Array.from(ADMIN_AIDS).join(', '));
+  console.log('[start] BRIX сервер v' + SRV_VER + ' · папка сервера: ' + ROOT);
+  console.log('[start] admins.json правится ИМЕННО в этой папке, потом перезапуск сервера');
+} catch (e) {
+  console.log('[admin] admins.json не прочитан (' + e.message +
+    ') — работает только встроенный ID');
+}
+function isAdminP(p) {
+  return !!(p && p.aid && ADMIN_AIDS.has(p.aid));
+}
+
+/* БАН-ЛИСТ: bans.json рядом с server.js — переживает перезапуск.
+   Формат: [{ key, n, aid, by, at }] — key = BRIX-ID или 'n:Ник'
+   (для игроков без аккаунта). Пишется при каждом бане */
+const BANS_FILE = path.join(ROOT, 'bans.json');
+let bans = [];
+try {
+  const rawB = fs.readFileSync(BANS_FILE, 'utf8');
+  const jB = JSON.parse(rawB.charCodeAt(0) === 0xFEFF ? rawB.slice(1) : rawB);
+  if (Array.isArray(jB)) bans = jB.filter((b) => b && b.key);
+} catch (e) { bans = []; }
+
+function saveBans() {
+  try { fs.writeFileSync(BANS_FILE, JSON.stringify(bans)); }
+  catch (e) { console.log('[admin] не сохранил bans.json: ' + e.message); }
+}
+
+function isBanned(aid, name) {
+  const nk = 'n:' + String(name || '');
+  return bans.some((b) =>
+    (aid && b.key === aid) || (name && b.key === nk));
+}
+
 let saveTimer = null;
 let worldDirty = false;          // ✅ v0.4.7: есть несохранённые изменения
 
@@ -378,9 +486,11 @@ function writeWorldNow() {
       drops: Array.from(worldObjs.drops.values()),
       // ✅ v0.4.6/0.4.7: ПОСТРОЙКИ (фундаменты/стены/потолки) — переживают
       //    перезапуск сервера, как и весь остальной мир
-      builds: worldObjs.builds
+      builds: worldObjs.builds,
+      epoch: worldObjs.epoch | 0   // ✅ v0.4.13: поколение мира
     };
     fs.writeFileSync(OBJS_FILE, JSON.stringify(data));
+    writeEpochSidecar(worldObjs.epoch | 0);   // ✅ v0.4.14: дубль поколения
     worldDirty = false;
   } catch (e) { console.log('[objs] не сохранил мир: ' + e.message); }
 }
@@ -408,7 +518,15 @@ process.on('exit', () => { try { saveOnExit(); } catch (e) {} });
 function freshWorldObjs() {
   const cb = buildCheckblockLayout(OBJ_SEED);
   cb.forEach((c) => { c.gone = false; c.loot = rollLoot(c.mil); });
-  return { cb, drops: new Map(), dropSeq: 0, builds: [] };
+  /* ✅ v0.4.13: epoch — поколение мира. CLEAR-BUILDS.bat повышает его
+     в world-objs.json; если клиент приносит бэкап из СТАРОГО поколения
+     (до очистки) — сервер НЕ принимает его назад, а клиент сам чистит
+     свой localStorage. ✅ v0.4.14: свежий мир помнит поколение через
+     world-epoch.json, поэтому потеря файла больше НЕ сбрасывает эпоху */
+  return { cb, drops: new Map(), dropSeq: 0, builds: [],
+    /* ✅ v0.4.14: свежий мир ВСЁ РАВНО помнит поколение (сайдкар) —
+       старые бэкапы браузеров не примутся даже после потери файла */
+    epoch: readEpochSidecar() };
 }
 
 function loadWorldObjs() {
@@ -420,9 +538,13 @@ function loadWorldObjs() {
     const drops = new Map();
     (j.drops || []).forEach((d) => { if (d && d.id) drops.set(d.id, d); });
     const builds = Array.isArray(j.builds) ? j.builds.filter((b) =>
-      b && (b.ty === 'f' || b.ty === 'w' || b.ty === 'c') &&
+      b && (b.ty === 'f' || b.ty === 'w' || b.ty === 'c' ||
+            b.ty === 'wi' || b.ty === 'dw' || b.ty === 'dr') &&
       Number.isFinite(b.gx) && Number.isFinite(b.gz) && Number.isFinite(b.top)) : [];
-    return { cb: j.cb, drops, dropSeq: j.dropSeq || 0, builds };
+    return { cb: j.cb, drops, dropSeq: j.dropSeq || 0, builds,
+      /* ✅ v0.4.14: берём МАКСИМУМ из файла и сайдкара — откат файла
+         в прошлое поколение невозможен */
+      epoch: Math.max(j.epoch | 0, readEpochSidecar()) };   // ✅ v0.4.13: поколение мира
   } catch (e) { return null; }
 }
 
@@ -483,11 +605,12 @@ function canonicalEdge(gx, gz, e) {
   if (e === 1) return { gx: gx + 1, gz: gz, e: 3 };   // восточный край клетки → западный край клетки (gx+1)
   return { gx: gx, gz: gz, e: (e === 3 ? 3 : 0) };
 }
-/* индексы построек: клетка -> запись (фундамент/потолок), край -> стена */
+/* индексы построек: клетка -> запись (фундамент/потолок), край -> стена/
+   окно/проём/дверь (✅ v0.4.10) */
 const buildCell = new Map();   // 'gx,gz' -> {f: rec, c: rec}
-const buildEdge = new Map();   // 'gx,gz,e' -> rec стены
+const buildEdge = new Map();   // 'gx,gz,e' -> rec краевой детали
 worldObjs.builds.forEach((b) => {
-  if (b.ty === 'w') {
+  if (b.ty === 'w' || b.ty === 'wi' || b.ty === 'dw' || b.ty === 'dr') {
     const ce = canonicalEdge(b.gx, b.gz, b.e);
     b.gx = ce.gx; b.gz = ce.gz; b.e = ce.e;
     buildEdge.set(b.gx + ',' + b.gz + ',' + b.e, b);
@@ -504,15 +627,66 @@ function hasWallOnCell(gx, gz) {
             buildEdge.get(gx + ',' + (gz + 1) + ',0') || buildEdge.get((gx + 1) + ',' + gz + ',3'));
 }
 
-/** АВТОРИТЕТНАЯ установка постройки. Возвращает {b} или строку-причину отказа */
+/* ✅ v0.4.10: публичная копия постройки — БЕЗ кода замка и списка
+   разгадавших: код НИКОГДА не покидает сервер (в bnew/welcome едет
+   только «есть код» hc и владелец own) */
+function publicBuild(b) {
+  const out = { id: b.id, ty: b.ty, gx: b.gx, gz: b.gz, top: b.top,
+    by: b.by, at: b.at };
+  if (b.e !== undefined) out.e = b.e;
+  if (b.ty === 'dr') {
+    out.open = b.open ? 1 : 0;
+    out.hc = (b.code && String(b.code).length === 4) ? 1 : 0;
+    out.own = b.own || '';
+  }
+  return out;
+}
+
+/** АВТОРИТЕТНАЯ установка постройки. Возвращает {b} или строку-причину отказа.
+    ✅ v0.4.12 «НА СТАРЫЕ ФУНДАМЕНТЫ НЕЛЬЗЯ СТРОИТЬ»: клиент теперь шлёт
+    ТОЧКУ ПРИЦЕЛА (px, pz — мировые координаты, куда смотрел луч). Сервер
+    САМ находит клетку и край по точке, координаты клетки от клиента —
+    только резерв. Любое расхождение координат «клиент/сервер» (старые
+    фундаменты из прошлых версий, перенос папки, бэкап) больше не мешает:
+    под лучом в радиусе клетки фундамент есть — стройка разрешена */
 function applyPlace(p, msg) {
   const ty = String(msg.ty || '');
-  const gx = Math.round(Number(msg.gx) | 0);
-  const gz = Math.round(Number(msg.gz) | 0);
+  let gx = Math.round(Number(msg.gx) | 0);
+  let gz = Math.round(Number(msg.gz) | 0);
   if (!Number.isFinite(gx) || !Number.isFinite(gz)) return 'bad';
+  /* точка прицела (клиент v0.4.12+). Резать по 5000 — защита от мусора */
+  let px = Number(msg.px), pz = Number(msg.pz);
+  const hasPt = Number.isFinite(px) && Number.isFinite(pz) &&
+    Math.abs(px) <= 5000 && Math.abs(pz) <= 5000;
   const now = Date.now();
   if (p.lastPlace && now - p.lastPlace < 200) return 'spam';   // не чаще 5/с
   p.lastPlace = now;
+
+  /* клетка под точкой прицела */
+  const ptx = hasPt ? Math.round(px / CELL) : null;
+  const ptz = hasPt ? Math.round(pz / CELL) : null;
+  function cellHasF(cx, cz) {
+    const c = buildCell.get(cx + ',' + cz);
+    return !!(c && c.f);
+  }
+  /* выбрать якорную клетку. Порядок:
+     1) клетка от КЛИЕНТА — она точная, когда луч попал в палубу или стену
+        (клиент берёт её из userData меша, не «угадывает»);
+     2) клетка под ТОЧКОЙ ПРИЦЕЛА — лечит «старые фундаменты»: даже если
+        координаты клетки у клиента разъехались, фундамент под лучом
+        найдётся;
+     3) 4 соседа точки прицела (луч в самый край палубы). */
+  function anchorFor() {
+    if (cellHasF(gx, gz)) return { gx: gx, gz: gz };
+    if (ptx !== null && cellHasF(ptx, ptz)) return { gx: ptx, gz: ptz };
+    if (ptx !== null) {
+      const nb = [[ptx + 1, ptz], [ptx - 1, ptz], [ptx, ptz + 1], [ptx, ptz - 1]];
+      for (let i = 0; i < nb.length; i++) {
+        if (cellHasF(nb[i][0], nb[i][1])) return { gx: nb[i][0], gz: nb[i][1] };
+      }
+    }
+    return null;
+  }
 
   if (ty === 'f') {
     const key = gx + ',' + gz;
@@ -529,47 +703,125 @@ function applyPlace(p, msg) {
     markDirty();
     console.log('[build] ' + p.name + ' поставил ФУНДАМЕНТ (' + gx + ',' + gz +
       ') высота ' + top.toFixed(1));
-    return { b: rec };
+    return { b: publicBuild(rec) };
   }
 
-  if (ty === 'w') {
-    // клиент шлёт КЛЕТКУ-АНКЕР (где стоит фундамент) + край относительно неё.
-    // Дедупликация — по ФИЗИЧЕСКОМУ краю: канонический ключ одинаков
-    // для «юг клетки A» и «север клетки B», постройка не задвоится
-    const e = Math.max(0, Math.min(3, Number(msg.e) | 0));
+  if (ty === 'w' || ty === 'wi' || ty === 'dw') {
+    /* клетка-якорь: та, где стоит фундамент. v0.4.12: берём её ПО ТОЧКЕ
+       ПРИЦЕЛА (сервер главнее), координаты клиента — только резерв */
+    const an = anchorFor();
+    if (!an) return 'nofound';                        // фундамента нет нигде рядом
+    gx = an.gx; gz = an.gz;
     const key = gx + ',' + gz;
     const cell = buildCell.get(key);
-    if (!cell || !cell.f) return 'nofound';           // стена требует фундамент
+    /* край: куда от центра клетки смещена точка прицела — та же формула,
+       что у клиента (planOnEdge), поэтому призрак и сервер ВСЕГДА
+       согласованы. Клиентский e используется только если луч попал
+       точно в центр клетки (формула вырождается) */
+    let e;
+    if (hasPt) {
+      const dx = px - gx * CELL, dz = pz - gz * CELL;
+      if (Math.abs(dx) < 0.05 && Math.abs(dz) < 0.05) {
+        e = Math.max(0, Math.min(3, Number(msg.e) | 0));
+      } else {
+        e = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 1 : 3) : (dz > 0 ? 2 : 0);
+      }
+    } else {
+      e = Math.max(0, Math.min(3, Number(msg.e) | 0));
+    }
+    // Дедупликация — по ФИЗИЧЕСКОМУ краю: канонический ключ одинаков
+    // для «юг клетки A» и «север клетки B», постройка не задвоится
     const ce = canonicalEdge(gx, gz, e);
     const ekey = ce.gx + ',' + ce.gz + ',' + ce.e;
-    if (buildEdge.get(ekey)) return 'busy';           // край занят
-    const rec = { id: 'b' + (++buildSeq), ty: 'w', gx: gx, gz: gz, e: e,
+    const exist = buildEdge.get(ekey);
+    if (ty === 'w') {
+      if (exist) return 'busy';                       // край занят
+    } else {
+      // окно/проём встают ВМЕТО обычной стены (замена); на крае с
+      // окном/проёмом/дверью — нельзя
+      if (exist && exist.ty !== 'w') return 'busy';
+    }
+    const rec = { id: 'b' + (++buildSeq), ty, gx: gx, gz: gz, e: e,
       top: cell.f.top,                // ВЫСОТА ИЗ ФУНДАМЕНТА СЕРВЕРА — у всех одинаково
       by: p.name, at: now };
+    /* замена (окно/проём вместо стены): старая запись УХОДИТ ИЗ МИРА —
+       иначе при рестарте stale-стена снова занимала бы край */
+    if (exist) {
+      const oi = worldObjs.builds.indexOf(exist);
+      if (oi >= 0) worldObjs.builds.splice(oi, 1);
+    }
     worldObjs.builds.push(rec);
     buildEdge.set(ekey, rec);
     markDirty();
-    console.log('[build] ' + p.name + ' поставил СТЕНУ (' + gx + ',' + gz +
-      ', край ' + e + ') на фундамент ' + key);
-    return { b: rec };
+    console.log('[build] ' + p.name + ' поставил ' +
+      ({ w: 'СТЕНУ', wi: 'ОКНО', dw: 'ДВЕРНОЙ ПРОЁМ' }[ty] || ty) +
+      ' (' + gx + ',' + gz + ', край ' + e + ') на фундамент ' + key +
+      (exist ? ' — вместо ' + exist.id : ''));
+    if (exist) return { b: publicBuild(rec), old: exist.id };   // замена стены
+    return { b: publicBuild(rec) };
+  }
+
+  if (ty === 'dr') {
+    /* дверь — в ДВЕРНОЙ ПРОЁМ. v0.4.12: проём ищем по точке прицела
+       (ближайший dw-край), координаты клиента — резерв */
+    let dwRec = null, dwKey = null;
+    if (hasPt) {
+      const half = CELL / 2;
+      let bestD = 2.2;
+      buildEdge.forEach((b2, k2) => {
+        if (b2.ty !== 'dw') return;
+        const cx = b2.gx * CELL + (b2.e === 1 ? half : b2.e === 3 ? -half : 0);
+        const cz = b2.gz * CELL + (b2.e === 2 ? half : b2.e === 0 ? -half : 0);
+        const d = Math.hypot(px - cx, pz - cz);
+        if (d < bestD) { bestD = d; dwRec = b2; dwKey = k2; }
+      });
+    }
+    if (!dwRec) {
+      const e0 = Math.max(0, Math.min(3, Number(msg.e) | 0));
+      const ce0 = canonicalEdge(gx, gz, e0);
+      const k0 = ce0.gx + ',' + ce0.gz + ',' + ce0.e;
+      const b0 = buildEdge.get(k0);
+      if (b0 && b0.ty === 'dw') { dwRec = b0; dwKey = k0; }
+    }
+    if (!dwRec) return 'nodw';                        // дверного проёма нет
+    const rec = { id: 'b' + (++buildSeq), ty: 'dr',
+      gx: dwRec.gx, gz: dwRec.gz, e: dwRec.e, top: dwRec.top,
+      by: p.name, at: now,
+      own: p.aid || ('n:' + p.name),  // владелец — BRIX-ID (ник для гостей)
+      open: 0, code: null, unl: {} };
+    /* проём УХОДИТ ИЗ МИРА (замена dw → dr), иначе при рестарте рама
+       вернулась бы на край и дверь «потерялась» */
+    const dwIdx = worldObjs.builds.indexOf(dwRec);
+    if (dwIdx >= 0) worldObjs.builds.splice(dwIdx, 1);
+    worldObjs.builds.push(rec);
+    buildEdge.set(dwRec.gx + ',' + dwRec.gz + ',' + dwRec.e, rec);
+    markDirty();
+    console.log('[build] ' + p.name + ' поставил ДВЕРЬ (' + dwRec.gx + ',' +
+      dwRec.gz + ', край ' + dwRec.e + ') в проём — владелец ' + rec.own);
+    return { b: publicBuild(rec), old: dwRec.id };
   }
 
   if (ty === 'c') {
+    /* потолок — над клеткой с фундаментом И стеной. v0.4.12: клетку берём
+       по точке прицела, клиентские координаты — резерв */
+    const an = anchorFor();
+    if (!an) return 'nofound';
+    gx = an.gx; gz = an.gz;
     const key = gx + ',' + gz;
     const cell = buildCell.get(key);
-    if (!cell || !cell.f) return 'nofound';           // потолок ставится над фундаментом
     if (cell.c) return 'busy';
     if (!hasWallOnCell(gx, gz)) return 'nowall';      // потолок требует СТЕНУ
     const rec = { id: 'b' + (++buildSeq), ty: 'c', gx, gz,
-      top: cell.f.top + WALL_H,       // низ потолка = верх фундамента + стена
+      top: Math.round((cell.f.top + WALL_H) * 100) / 100,   // низ потолка = верх фундамента + стена
       by: p.name, at: now };
     worldObjs.builds.push(rec);
     cell.c = rec;
     markDirty();
     console.log('[build] ' + p.name + ' поставил ПОТОЛОК (' + gx + ',' + gz +
       ') на высоте ' + rec.top.toFixed(1));
-    return { b: rec };
+    return { b: publicBuild(rec) };
   }
+
   return 'bad';
 }
 
@@ -582,7 +834,7 @@ function barrelWorld(c, b) {
   };
 }
 
-function objsSnapshot() {
+function objsSnapshot(p) {
   return {
     cb: worldObjs.cb.map((c) => ({
       id: c.id, x: c.x, z: c.z, rot: c.rot, item: c.item, seed: c.seed, mil: c.mil,
@@ -592,10 +844,24 @@ function objsSnapshot() {
     })),
     dr: Array.from(worldObjs.drops.values()).map((d) =>
       ({ id: d.id, kind: d.kind, x: d.x, z: d.z, amt: d.amt })),
-/* ✅ v0.4.6/0.4.7: постройки в снапшоте — новый игрок сразу видит дом
-   (даже если на сервере сейчас 0 игроков: builds живёт в памяти сервера) */
-    bd: worldObjs.builds.map((b) => ({ id: b.id, ty: b.ty, gx: b.gx, gz: b.gz,
-      e: b.e !== undefined ? b.e : undefined, top: b.top }))
+/* ✅ v0.4.10: постройки в снапшоте — новый игрок сразу видит дом
+   (даже если на сервере сейчас 0 игроков: builds живёт в памяти сервера).
+   publicBuild: код замка не уходит клиенту; dunl — какие замки этот
+   игрок УЖЕ РАЗГАДАЛ (после перезахода код заново не спрашивается).
+   ✅ v0.4.13: ep — поколение мира; клиент хранит его в бэкапе и
+   присылает обратно в badopt: устаревший бэкап (до ОЧИСТКИ) сервер
+   отвергает и отправляет клиенту bwipe — дом убирается и у него */
+    bd: worldObjs.builds.map(publicBuild),
+    ep: worldObjs.epoch | 0,
+    dunl: (p && worldObjs.builds.some((b) => b.ty === 'dr'))
+      ? worldObjs.builds
+          /* ✅ fix 0.4.11: «разгаданность» узнаётся в ОБОИХ формах ключа —
+             BRIX-ID и старый «n:ник» — после перезахода код заново
+             не спрашивается */
+          .filter((b) => b.ty === 'dr' && b.code && b.unl &&
+            ((p.aid && b.unl[p.aid]) || b.unl['n:' + p.name]))
+          .map((b) => b.id)
+      : []
   };
 }
 
@@ -637,6 +903,125 @@ function dropPlayer(p, reason) {
 
 function dropSocket(p) {
   if (players.has(p.id)) dropPlayer(p, 'отключился');
+}
+
+/* ============================================================
+   ✅ v0.4.15: обработка админ-команд. КАЖДАЯ проверяет isAdminP —
+   подделать команду со стороны клиента бесполезно
+   ============================================================ */
+function adminOp(p, msg) {
+  const op = String(msg.op || '');
+  if (!isAdminP(p)) {
+    p.send({ t: 'adeny', op });
+    console.log('[admin] ОТКАЗ (' + op + '): ' + p.name +
+      ' не администратор (aid=' + (p.aid || 'нет') + ')');
+    return;
+  }
+  switch (op) {
+    /* удалить ВСЕ постройки: + поколение, bwipe всем (дома уберутся
+       сами, бэкапы старого поколения сервер больше не примет) */
+    case 'wipebuilds': {
+      const n = worldObjs.builds.length;
+      worldObjs.builds = [];
+      buildCell.clear();
+      buildEdge.clear();
+      worldObjs.epoch = Math.max(worldObjs.epoch | 0, readEpochSidecar()) + 1;
+      writeEpochSidecar(worldObjs.epoch);
+      writeWorldNow();
+      broadcast({ t: 'bwipe', ep: worldObjs.epoch | 0 }, null);
+      p.send({ t: 'aok', op, info: 'Удалено построек: ' + n +
+        ' · поколение мира: ' + worldObjs.epoch });
+      console.log('[admin] ' + p.name + ' удалил все постройки (' + n +
+        '), epoch=' + worldObjs.epoch);
+      break;
+    }
+    /* телепорт СЕБЯ на координаты (кламп — не выйти за край мира) */
+    case 'tp': {
+      const x = Math.max(-800, Math.min(800, Number(msg.x) || 0));
+      const z = Math.max(-800, Math.min(800, Number(msg.z) || 0));
+      if (p.state) { p.state.x = x; p.state.z = z; p.state.a = 'idle'; }
+      p.send({ t: 'atp', x, z });
+      console.log('[admin] ' + p.name + ' телепортировался на ' + x + ' : ' + z);
+      break;
+    }
+    /* телепорт СЕБЯ к игроку */
+    case 'tpto': {
+      const target = players.get(String(msg.tid || ''));
+      if (!target || !target.state) { p.send({ t: 'aok', op, info: 'Игрок не найден или ещё в меню' }); break; }
+      const x = Math.round(target.state.x * 10) / 10;
+      const z = Math.round(target.state.z * 10) / 10;
+      if (p.state) { p.state.x = x; p.state.z = z; p.state.a = 'idle'; }
+      p.send({ t: 'atp', x, z });
+      console.log('[admin] ' + p.name + ' телепортировался к ' + target.name + ' (' + x + ' : ' + z + ')');
+      break;
+    }
+    /* телепорт ИГРОКА к себе */
+    case 'bring': {
+      const target = players.get(String(msg.tid || ''));
+      if (!target || !target.state) { p.send({ t: 'aok', op, info: 'Игрок не найден или ещё в меню' }); break; }
+      if (!p.state) { p.send({ t: 'aok', op, info: 'Сначала выйди в игру — тебя не видно серверу' }); break; }
+      const x = Math.round(p.state.x * 10) / 10;
+      const z = Math.round(p.state.z * 10) / 10;
+      target.state.x = x; target.state.z = z; target.state.a = 'idle';
+      target.send({ t: 'atp', x, z, by: p.name });
+      p.send({ t: 'aok', op, info: 'Игрок ' + target.name + ' перемещён к тебе' });
+      console.log('[admin] ' + p.name + ' переместил ' + target.name + ' к себе (' + x + ' : ' + z + ')');
+      break;
+    }
+    /* забанить аккаунт (персистентно в bans.json) и кикнуть прямо сейчас */
+    case 'ban': {
+      const target = players.get(String(msg.tid || ''));
+      if (!target) { p.send({ t: 'aok', op, info: 'Игрок не найден' }); break; }
+      if (isAdminP(target)) { p.send({ t: 'aok', op, info: 'Администратора забанить нельзя' }); break; }
+      const key = target.aid || ('n:' + target.name);
+      if (!bans.some((b) => b.key === key)) {
+        bans.push({ key, n: target.name, aid: target.aid || '',
+          by: p.name, at: Date.now() });
+        saveBans();
+      }
+      target.send({ t: 'banned', by: p.name });
+      dropPlayer(target, 'забанен ' + p.name);
+      p.send({ t: 'aok', op, info: 'Забанен: ' + target.name +
+        (target.aid ? ' (' + target.aid + ')' : ' (без аккаунта, по нику)') });
+      console.log('[admin] ' + p.name + ' забанил ' + target.name +
+        ' (key=' + key + ', всего банов: ' + bans.length + ')');
+      break;
+    }
+    /* мгновенный респавн ВСЕХ ящиков и бочек: лут перебрасывается заново,
+       сломанные бочки встают — и у ВСЕХ игроков сразу */
+    case 'respawn': {
+      let nc = 0, nb = 0;
+      worldObjs.cb.forEach((c) => {
+        c.gone = false; c.taken = false;
+        c.loot = rollLoot(c.mil);
+        broadcast({ t: 'cbrespawn', id: c.id, loot: c.loot, mil: c.mil }, null);
+        nc++;
+        c.barrels.forEach((b) => {
+          if (!b.brk) return;
+          b.brk = false; b.hp = 2;
+          broadcast({ t: 'brespawn', id: b.id, hp: 2 }, null);
+          nb++;
+        });
+      });
+      markDirty();
+      writeWorldNow();
+      p.send({ t: 'aok', op, info: 'Ящиков вернул: ' + nc + ' · бочек вернул: ' + nb });
+      console.log('[admin] ' + p.name + ' заспавнил ящики/бочки (' + nc + '/' + nb + ')');
+      break;
+    }
+    /* убрать все выпавшие предметы (дропы) с земли */
+    case 'cleardrops': {
+      const nd = worldObjs.drops.size;
+      worldObjs.drops.clear();
+      writeWorldNow();
+      broadcast({ t: 'dclr' }, null);
+      p.send({ t: 'aok', op, info: 'Убрано дропов: ' + nd });
+      console.log('[admin] ' + p.name + ' убрал дропы (' + nd + ')');
+      break;
+    }
+    default:
+      p.send({ t: 'adeny', op, why: 'unknown' });
+  }
 }
 
 /** первый клиент задаёт мир (мир детерминированный — seed общий у всех) */
@@ -722,6 +1107,19 @@ server.on('upgrade', (req, sock) => {
 
       /* --- регистрация игрока (сервер назначает id) --- */
       if (msg.t === 'hello') {
+        const aidCand = String(msg.aid || '').slice(0, 16);
+        const nameCand = String(msg.n || '').slice(0, 16);
+        /* ✅ v0.4.15: бан-лист ПЕРЕД регистрацией — забаненный не войдёт */
+        if (isBanned(aidCand, nameCand)) {
+          try {
+            sock.write(wsEncodeText(JSON.stringify(
+              { t: 'banned' })));
+          } catch (e) {}
+          try { sock.destroy(); } catch (e) {}
+          console.log('[admin] отказано в входе (забанен): ' +
+            nameCand + ' (aid=' + (aidCand || 'нет') + ')');
+          return;
+        }
         p.id = 'u' + (nextNum++);
         p.name = String(msg.n || ('Игрок-' + p.id.slice(1).padStart(2, '0'))).slice(0, 16);
         p.c = String(msg.c || '#e2572b').slice(0, 24);
@@ -735,7 +1133,12 @@ server.on('upgrade', (req, sock) => {
         // АВТОРИТЕТНЫЙ welcome: свой id + ВСЕ игроки с позициями + мир
         p.send({
           t: 'welcome',
-          ver: 46,               // ✅ v0.4.7: план строителя в инвентаре, коллизии стен/потолков, страховочные сейвы построек
+          ver: 49,               // ✅ v0.4.12: геометрическая привязка (px/pz), добор (badopt)
+          /* ✅ v0.4.17: sv — версия СЕРВЕРА (клиент отличит новый сервер
+             от старого), adm — подтвердил ли сервер ЭТОГО игрока админом
+             (для диагностики; панель включается по adminon) */
+          sv: SRV_VER,
+          adm: isAdminP(p) ? 1 : 0,
           id: p.id,
           players: rosterFor().filter(function (r) { return r.id !== p.id; }),
           world: world ? {
@@ -746,12 +1149,20 @@ server.on('upgrade', (req, sock) => {
               stone: world.ores.stone.slice()
             }
           } : null,
-          objs: objsSnapshot()   // ✅ v0.3.6: бочки/чекблоки/дропы (авторитет сервера)
+      /* ✅ v0.4.10: постройки — публичные копии без кода замка,
+         dunl — замки, которые ЭТОТ игрок уже разгадал */
+          objs: objsSnapshot(p)   // ✅ v0.3.6: бочки/чекблоки/дропы (авторитет сервера)
         });
         // ✅ v0.4.3: в join едет lvl/aid — у всех игроков список полный сразу
         broadcast({ t: 'join', id: p.id, n: p.name, c: p.c,
           lvl: p.lvl || 1, aid: p.aid || '' }, p.id);
-        console.log('[mp] ' + p.name + ' (' + p.id + ') вошёл (игроков: ' + players.size + ')');
+        /* ✅ v0.4.16: BRIX-ID КАЖДОГО вошедшего — в консоли сервера.
+           Так владелец узнаёт свой ID, чтобы вписать его в admins.json */
+        console.log('[mp] ' + p.name + ' (' + p.id + ', BRIX-ID: ' +
+          (p.aid || 'нет') + ') вошёл (игроков: ' + players.size + ')' +
+          (isAdminP(p) ? ' — АДМИН' : ''));
+        // ✅ v0.4.15: админу — отдельное подтверждение (клиент включает панель на 9)
+        if (isAdminP(p)) p.send({ t: 'adminon' });
         // ✅ v0.3.6: мгновенный пуш нового счётчика всем
         pushCount();
         // ✅ v0.3.5: отложенные заявки в друзья — «дойдут, когда зайдёшь»
@@ -782,6 +1193,10 @@ server.on('upgrade', (req, sock) => {
           }
           break;
         }
+        /* ✅ v0.4.15 АДМИН-ПАНЕЛЬ: все команды разработчика (см. adminOp) */
+        case 'admin':
+          adminOp(p, msg);
+          break;
         case 'bye':
           dropPlayer(p, 'вышел');
           break;
@@ -933,6 +1348,9 @@ server.on('upgrade', (req, sock) => {
         case 'phit': {
           const target = players.get(String(msg.tid || ''));
           if (!target || !target.state || target.dead) break;
+          /* ✅ v0.4.15: у админа БЕСКОНЕЧНОЕ ХП — сервер не применяет урон,
+             полоска не падает и у стрелка не показывается */
+          if (isAdminP(target)) break;
           if (!p.state) break;
           const kind = String(msg.kind || 'shot');
           const d2 = dist2(p.state.x, p.state.z, target.state.x, target.state.z);
@@ -978,9 +1396,176 @@ server.on('upgrade', (req, sock) => {
         case 'bplace': {
           const res = applyPlace(p, msg);
           if (res && res.b) {
+            // ✅ v0.4.10: замена (стена→окно/проём, проём→дверь) —
+            // сначала всем снос старой детали, потом новая постройка
+            if (res.old) broadcast({ t: 'brem', id: res.old }, null);
             broadcast({ t: 'bnew', pid: p.id, b: res.b }, null);
+            // ✅ v0.4.9: постройка пишется на диск СРАЗУ (не через дебаунс
+            // 800 мс) — даже kill -9 сразу после установки ничего не теряет
+            writeWorldNow();
           } else {
             p.send({ t: 'bdeny', tid: msg.tid || '', why: res || 'bad' });
+          }
+          break;
+        }
+        /* ✅ v0.4.10 ДВЕРЬ (F): открыть/закрыть. Решает СЕРВЕР: чужой
+           закрытый замок не откроет; владелец и разгадавшие — могут */
+        case 'btog': {
+          const d = worldObjs.builds.find((b) => b.id === String(msg.id || '') && b.ty === 'dr');
+          if (!d) break;
+          /* ✅ fix 0.4.11: владелец узнаётся в ОБОИХ формах ключа — новый
+             BRIX-ID и старый «n:ник» (двери из прошлых сессий, когда
+             клиент ещё не слал aid). Раньше после появления ID сервер
+             отказывал СОБСТВЕННИКУ в открытии его двери */
+          const ownT = (d.own === p.aid) || (d.own === ('n:' + p.name));
+          const unlT = d.unl && ((p.aid && d.unl[p.aid]) || d.unl['n:' + p.name]);
+          /* ✅ v0.4.15: админ открывает ЛЮБУЮ дверь, даже с чужим кодом */
+          if (d.code && !ownT && !unlT && !isAdminP(p)) {
+            p.send({ t: 'bdeny-d', id: d.id });   // чужой и не разгадал
+            break;
+          }
+          d.open = d.open ? 0 : 1;
+          broadcast({ t: 'bdoor', id: d.id, open: d.open }, null);
+          markDirty();
+          writeWorldNow();
+          console.log('[build] ' + p.name + ' ' + (d.open ? 'открыл' : 'закрыл') + ' дверь ' + d.id);
+          break;
+        }
+        /* ✅ v0.4.10: ВЛАДЕЛЕЦ задаёт/меняет код (4 цифры). Смена кода
+           сбрасывает «разгаданность» у ВСЕХ — лампа горит красным */
+        case 'bcode': {
+          const d = worldObjs.builds.find((b) => b.id === String(msg.id || '') && b.ty === 'dr');
+          if (!d) break;
+          /* ✅ fix 0.4.11: код ставит владелец — в ОБОИХ формах ключа */
+          if (!((d.own === p.aid) || (d.own === ('n:' + p.name)))) break;
+          const code = String(msg.code || '').replace(/\D/g, '').slice(0, 4);
+          if (code.length !== 4) break;
+          d.code = code;
+          d.unl = {};                            // все вводят заново
+          broadcast({ t: 'block', id: d.id, hc: 1 }, null);
+          markDirty();
+          writeWorldNow();
+          console.log('[build] ' + p.name + ' задал код замка ' + d.id);
+          break;
+        }
+        /* ✅ v0.4.10: ЧУЖОЙ вводит код. Верный → игрок навсегда вписывается
+           в «разгадавшие» (живёт на сервере по BRIX-ID), дверь открывается;
+           неверный → bcodedeny */
+        case 'btry': {
+          const d = worldObjs.builds.find((b) => b.id === String(msg.id || '') && b.ty === 'dr');
+          if (!d) break;
+          /* ✅ fix 0.4.11: «разгаданность» пишем под СТАБИЛЬНЫМ ключом
+             (BRIX-ID), но узнаём и по старому «n:ник» — после перезахода
+             код заново НЕ спрашивается, даже если ключ поменялся */
+          const code = String(msg.code || '').replace(/\D/g, '').slice(0, 4);
+          if (!d.code || code !== d.code) {
+            p.send({ t: 'bcodedeny', id: d.id });
+            break;
+          }
+          if (!d.unl) d.unl = {};
+          const unlKey = p.aid || ('n:' + p.name);
+          d.unl[unlKey] = 1;
+          if (p.aid) d.unl['n:' + p.name] = 1;   // совместимость со старыми ключами
+          d.open = 1;
+          broadcast({ t: 'bdoor', id: d.id, open: 1 }, null);
+          p.send({ t: 'dunl', id: d.id });
+          markDirty();
+          writeWorldNow();
+          console.log('[build] ' + p.name + ' разгадал код замка ' + d.id + ' — дверь открыта');
+          break;
+        }
+        /* ✅ v0.4.11 ДОБОР ПОСТРОЕК: клиент при входе прислал записи с
+           ЛОКАЛЬНЫМ id («L…») — сервер их НИКОГДА не подтверждал. Так
+           бывает, когда сервер потерял world-objs.json (перенос папки,
+           сбой): дом у игрока ВИДЕН из бэкапа, но сервер отказывает в
+           каждой стене («нет фундамента»). Сервер добирает свободные
+           клетки/края (сервер ГЛАВНЕЕ: занятые пропускаются), рассылает
+           bnew всем и сразу пишет на диск */
+        case 'badopt': {
+          /* ✅ v0.4.13: ЗАЩИТА ОТ ВОСКРЕШЕНИЯ ОЧИЩЕННЫХ ПОСТРОЕК.
+             Клиент хранит бэкап построек в localStorage и при входе
+             предлагает его серверу (badopt). Если бэкап из СТАРОГО
+             поколения мира (msg.ep меньше текущего epoch, повышаемого
+             CLEAR-BUILDS.bat) — сервер отказывает и шлёт bwipe:
+             клиент сам выкидывает устаревшие постройки из бэкапа.
+             epoch=0 на сервере (свежий мир после сбоя) — добор работает
+             как раньше, «спасение» дома при потере файла не тронуто */
+          const clEp = Math.round(Number(msg.ep)) | 0;
+          const svEp = worldObjs.epoch | 0;
+          if (svEp > 0 && clEp < svEp) {
+            p.send({ t: 'bwipe', ep: svEp });
+            console.log('[build] отклонил устаревший бэкап ' + p.name +
+              ' (бэкап epoch ' + clEp + ', мир epoch ' + svEp +
+              ' — постройки были очищены)');
+            break;
+          }
+          const list = Array.isArray(msg.list) ? msg.list.slice(0, 400) : [];
+          if (!list.length) break;
+          /* ✅ порядок добора: сначала фундаменты, потом краевые детали,
+             потом потолки — СТРОГО (нельзя order[ty] || 9: ноль «фундамент»
+             фальсив и улетал в конец — дверь добиралась раньше фундамента
+             и отбрасывалась как «без фундамента») */
+          const order = { f: 0, w: 1, wi: 1, dw: 1, dr: 1, c: 2 };
+          const rank = (ty) => Object.prototype.hasOwnProperty.call(order, ty) ? order[ty] : 9;
+          list.sort((a, b2) => rank(a.ty) - rank(b2.ty));
+          let adopted = 0;
+          for (const raw of list) {
+            const ty2 = String(raw.ty || '');
+            const gx2 = Math.round(Number(raw.gx) | 0);
+            const gz2 = Math.round(Number(raw.gz) | 0);
+            if (!Number.isFinite(gx2) || !Number.isFinite(gz2)) continue;
+            const top2 = Math.max(-20, Math.min(300, Number(raw.top) || 0));
+            const by2 = String(raw.by || p.name).slice(0, 16);
+            const now2 = Date.now();
+            if (ty2 === 'f') {
+              const key2 = gx2 + ',' + gz2;
+              const cell2 = buildCell.get(key2);
+              if (cell2 && cell2.f) continue;           // сервер уже знает
+              const rec2 = { id: 'b' + (++buildSeq), ty: 'f', gx: gx2, gz: gz2,
+                top: top2, by: by2, at: now2 };
+              worldObjs.builds.push(rec2);
+              if (!buildCell.has(key2)) buildCell.set(key2, {});
+              buildCell.get(key2).f = rec2;
+              broadcast({ t: 'bnew', pid: p.id, b: publicBuild(rec2) }, null);
+              adopted++;
+            } else if (ty2 === 'w' || ty2 === 'wi' || ty2 === 'dw' || ty2 === 'dr') {
+              const e2 = Math.max(0, Math.min(3, Number(raw.e) | 0));
+              const ce2 = canonicalEdge(gx2, gz2, e2);
+              const ekey2 = ce2.gx + ',' + ce2.gz + ',' + ce2.e;
+              if (buildEdge.has(ekey2)) continue;       // край занят — сервер главнее
+              const cell3 = buildCell.get(gx2 + ',' + gz2);
+              if (!cell3 || !cell3.f) continue;         // фундамента нет — не принимаем
+              const rec3 = ty2 === 'dr'
+                ? { id: 'b' + (++buildSeq), ty: 'dr', gx: gx2, gz: gz2, e: e2,
+                    top: cell3.f.top, by: by2, at: now2,
+                    own: String(raw.own || p.aid || ('n:' + p.name)).slice(0, 32),
+                    open: raw.open ? 1 : 0, code: null, unl: {} }
+                : { id: 'b' + (++buildSeq), ty: ty2, gx: gx2, gz: gz2, e: e2,
+                    top: cell3.f.top, by: by2, at: now2 };
+              worldObjs.builds.push(rec3);
+              buildEdge.set(ekey2, rec3);
+              broadcast({ t: 'bnew', pid: p.id, b: publicBuild(rec3) }, null);
+              adopted++;
+            } else if (ty2 === 'c') {
+              const key3 = gx2 + ',' + gz2;
+              const cell4 = buildCell.get(key3);
+              if (!cell4 || !cell4.f) continue;
+              if (cell4.c) continue;
+              if (!hasWallOnCell(gx2, gz2)) continue;
+              const rec4 = { id: 'b' + (++buildSeq), ty: 'c', gx: gx2, gz: gz2,
+                top: Math.round((cell4.f.top + WALL_H) * 100) / 100,
+                by: by2, at: now2 };
+              worldObjs.builds.push(rec4);
+              cell4.c = rec4;
+              broadcast({ t: 'bnew', pid: p.id, b: publicBuild(rec4) }, null);
+              adopted++;
+            }
+          }
+          if (adopted > 0) {
+            markDirty();
+            writeWorldNow();
+            console.log('[build] добрал ' + adopted + ' постр. из бэкапа ' + p.name +
+              ' (прислано ' + list.length + ')');
           }
           break;
         }

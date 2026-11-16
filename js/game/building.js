@@ -2,6 +2,20 @@
 //  brix • js/game/building.js
 //  ✅ v0.4.7 СТРОИТЕЛЬСТВО (как в Rust: план строителя)
 //
+//  ✅ v0.4.10 ДВЕРИ И ОКНА (6 деталей в меню Z):
+//  - ОКНО (wi) — стена с проёмом: сквозь неё видно, пуля пролетает,
+//    а игрок перелазит по ПРЫЖКУ В УПОР (скриптовая анимация);
+//  - ДВЕРНОЙ ПРОЁМ (dw) — стена с проходом, отверстие под дверь;
+//  - ДВЕРЬ (dr) — ставится ТОЛЬКО в дверной проём (наведи и ЛКМ).
+//    Открывается/закрывается на F с анимацией; закрытая — не пускает.
+//    Сразу с КОДОВЫМ ЗАМКОМ (как в Rust): зелёная лампа — кода нет,
+//    красная — есть. Владелец (BRIX-ID) задаёт/меняет код на F,
+//    чужой вводит его на F; кто ввёл верно — больше не спрашивается,
+//    пока владелец не сменит код. Всё живёт на сервере: код, открыт/
+//    закрыт, список «кто разгадал» — в world-objs.json, как у бочек;
+//  - ПУЛЯ: стрельба теперь проверяет постройки (bulletBlock) — через
+//    стену/дверь/потолок не летит, через проём окна/двери — летит.
+//
 //  - ПРЕДМЕТ «План строителя» теперь В ИНВЕНТАРЕ (не в хотбаре, хотбар 6
 //    слотов): открой инвентарь (E), КЛИКНИ по плану — он в руках (см.
 //    firstperson.js). Z открывает меню ТОЛЬКО с планом в руках.
@@ -47,8 +61,16 @@ window.BrixBuilding = (function () {
   var MAX_PLACE_DIST = 9;// дальше — призрак скрыт
   var PLACE_CD = 0.25;   // между установками
   var WATER_LEVEL = 2.2;
+  /* ✅ v0.4.10 размеры окон/дверей (относительно НИЗА стены, м) */
+  var EYE = 1.7;         // глаза над ногами (как в controls.js)
+  var WI_Y0 = 0.95;      // низ окна
+  var WI_Y1 = 2.10;      // верх окна
+  var WI_HALF = 0.45;    // половина ширины окна
+  var DW_HALF = 0.57;    // половина ширины дверного проёма
+  var DW_H = 2.2;        // высота проёма
+  var DOOR_OPEN_ANGLE = -1.9; // угол открытой двери (рад)
 
-  /* ---------- детали ---------- */
+  /* ---------- детали (✅ v0.4.10: 6 штук) ---------- */
   var PIECES = [
     { id: 'f', name: 'Фундамент', nameEn: 'Foundation',
       desc: 'Палуба на четырёх толстых ногах. Следует рельефу, магнитится к соседнему',
@@ -56,13 +78,22 @@ window.BrixBuilding = (function () {
     { id: 'w', name: 'Стена', nameEn: 'Wall',
       desc: 'Ставится на один из четырёх краёв фундамента',
       descEn: 'Snaps to one of the four foundation edges' },
+    { id: 'wi', name: 'Окно', nameEn: 'Window',
+      desc: 'Стена с окном: видно и стрелять можно сквозь. Прыжок в упор — перелаз',
+      descEn: 'Wall with a window: see through, shoot through, jump to vault' },
+    { id: 'dw', name: 'Дверной проём', nameEn: 'Doorway',
+      desc: 'Стена с проходом. В проём потом ставится дверь',
+      descEn: 'Wall with a passage. A door goes here later' },
+    { id: 'dr', name: 'Дверь', nameEn: 'Door',
+      desc: 'Наведи на дверной проём и ставь. F — открыть/закрыть, замок с кодом',
+      descEn: 'Aim at a doorway and place. F to open/close, coded lock' },
     { id: 'c', name: 'Потолок', nameEn: 'Ceiling',
       desc: 'Накрывает клетку, у которой есть стена',
       descEn: 'Covers a cell that has a wall' }
   ];
-  // углы деталей на колесе (экранные, 0° = вправо): как в референсе
-  // фундамент выделен справа, стена слева-снизу, потолок слева-сверху
-  var PIECE_ANGLES = [0, 130, 230];
+  // углы деталей на колесе (экранные, 0° = вправо): 6 сегментов по кругу
+  var PIECE_ANGLES = [0, 60, 120, 180, 240, 300];
+  var EDGE_TY = { w: 1, wi: 1, dw: 1, dr: 1 };   // краевые детали (на край фундамента)
 
   function L(ru, en) {
     try { return (window.BrixState && BrixState.data.lang === 'en') ? en : ru; }
@@ -204,15 +235,21 @@ window.BrixBuilding = (function () {
     var wallTex = canvasTex(woodCanvas({ planks: 6, vertical: true, tone: [143, 102, 58] }));
     var ceilTex = canvasTex(woodCanvas({ planks: 8, tone: [128, 96, 58] }));
     var postTex = canvasTex(woodCanvas({ planks: 3, vertical: true, tone: [110, 78, 44] }));
+    var leafTex = canvasTex(woodCanvas({ planks: 5, vertical: true, tone: [124, 89, 50] }));
     _mat = {
       deck: new THREE.MeshStandardMaterial({ map: deckTex, roughness: 0.88, metalness: 0.02 }),
       wall: new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9, metalness: 0.02 }),
       ceil: new THREE.MeshStandardMaterial({ map: ceilTex, roughness: 0.92, metalness: 0.02 }),
       post: new THREE.MeshStandardMaterial({ map: postTex, roughness: 0.95, metalness: 0.0 }),
       beam: new THREE.MeshStandardMaterial({ map: postTex, roughness: 0.95, metalness: 0.0,
-        color: 0xb9a288 })
+        color: 0xb9a288 }),
+      /* ✅ v0.4.10: дверь, металл замка и лампочки замка */
+      leaf: new THREE.MeshStandardMaterial({ map: leafTex, roughness: 0.85, metalness: 0.02 }),
+      lock: new THREE.MeshStandardMaterial({ color: 0x45464b, roughness: 0.45, metalness: 0.65 }),
+      lampOn: new THREE.MeshBasicMaterial({ color: 0x46d95c }),   // зелёная — кода нет
+      lampOff: new THREE.MeshBasicMaterial({ color: 0xe23c2a })   // красная — код есть
     };
-    _disposables.push(deckTex, wallTex, ceilTex, postTex);
+    _disposables.push(deckTex, wallTex, ceilTex, postTex, leafTex);
     _geo = {
       deck: new THREE.BoxGeometry(CELL, DECK_T, CELL),
       wall: new THREE.BoxGeometry(CELL, WALL_H, WALL_T),
@@ -221,7 +258,22 @@ window.BrixBuilding = (function () {
       joist: new THREE.BoxGeometry(CELL, 0.15, 0.2),
       dbeamX: new THREE.BoxGeometry(CELL + 0.1, 0.1, 0.16),
       dbeamZ: new THREE.BoxGeometry(0.16, 0.1, CELL + 0.1),
-      post: new THREE.CylinderGeometry(POST_R, POST_R * 1.18, 1, 10)
+      post: new THREE.CylinderGeometry(POST_R, POST_R * 1.18, 1, 10),
+      /* ✅ v0.4.10: окно (4 части стены + подоконник/перемычка) */
+      wiBot: new THREE.BoxGeometry(CELL, WI_Y0, WALL_T),
+      wiTop: new THREE.BoxGeometry(CELL, WALL_H - WI_Y1, WALL_T),
+      wiSide: new THREE.BoxGeometry(CELL / 2 - WI_HALF, WI_Y1 - WI_Y0, WALL_T),
+      wiSill: new THREE.BoxGeometry(WI_HALF * 2 + 0.16, 0.1, WALL_T + 0.10),
+      wiLintel: new THREE.BoxGeometry(WI_HALF * 2 + 0.16, 0.1, WALL_T + 0.10),
+      /* ✅ v0.4.10: дверной проём (2 столба + перемычка + наличники) */
+      dwSide: new THREE.BoxGeometry(CELL / 2 - DW_HALF, WALL_H, WALL_T),
+      dwTop: new THREE.BoxGeometry(DW_HALF * 2, WALL_H - DW_H, WALL_T),
+      dwTrimV: new THREE.BoxGeometry(0.12, DW_H + 0.06, WALL_T + 0.09),
+      dwTrimH: new THREE.BoxGeometry(DW_HALF * 2 + 0.20, 0.12, WALL_T + 0.09),
+      /* ✅ v0.4.10: дверь + кодовый замок */
+      doorLeaf: new THREE.BoxGeometry(DW_HALF * 2 - 0.04, DW_H - 0.04, 0.09),
+      lockBox: new THREE.BoxGeometry(0.3, 0.4, 0.12),
+      lockDot: new THREE.BoxGeometry(0.1, 0.1, 0.03)
     };
     for (var k in _geo) _disposables.push(_geo[k]);
   }
@@ -305,7 +357,18 @@ window.BrixBuilding = (function () {
     return { group: g, deck: deck };
   }
 
-  /** стена: плита + горизонтальная балка. Локальный ноль — низ стены */
+  /** общий низ стены/окна/проёма/двери: позиция и поворот группы по краю.
+      Локальный ноль — НИЗ стены, центр по длине */
+  function placeEdge(g, rec) {
+    var e = rec.e;
+    var X0 = rec.gx * CELL, Z0 = rec.gz * CELL, half = CELL / 2;
+    if (e === 0) { g.position.set(X0, rec.top, Z0 - half); }
+    else if (e === 2) { g.position.set(X0, rec.top, Z0 + half); }
+    else if (e === 1) { g.position.set(X0 + half, rec.top, Z0); g.rotation.y = Math.PI / 2; }
+    else { g.position.set(X0 - half, rec.top, Z0); g.rotation.y = Math.PI / 2; }
+  }
+
+  /** стена: плита + горизонтальная балка */
   function buildWallGroup(rec) {
     var g = new THREE.Group();
     var slab = shadow(new THREE.Mesh(_geo.wall, _mat.wall));
@@ -314,13 +377,120 @@ window.BrixBuilding = (function () {
     var beam = shadow(new THREE.Mesh(_geo.wbeam, _mat.beam));
     beam.position.y = WALL_H * 0.48;
     g.add(beam);
-    var e = rec.e;
-    var X0 = rec.gx * CELL, Z0 = rec.gz * CELL, half = CELL / 2;
-    if (e === 0) { g.position.set(X0, rec.top, Z0 - half); }
-    else if (e === 2) { g.position.set(X0, rec.top, Z0 + half); }
-    else if (e === 1) { g.position.set(X0 + half, rec.top, Z0); g.rotation.y = Math.PI / 2; }
-    else { g.position.set(X0 - half, rec.top, Z0); g.rotation.y = Math.PI / 2; }
+    placeEdge(g, rec);
     return { group: g, slab: slab };
+  }
+
+  /** ✅ v0.4.10 ОКНО: стена с проёмом (низ/верх/бока) + подоконник и
+      перемычка. Сквозь проём видно и летит пуля; игрок перелазит прыжком */
+  function buildWindowGroup(rec) {
+    var g = new THREE.Group();
+    var parts = [];
+    function part(geo, x, y, mat) {
+      var m = shadow(new THREE.Mesh(geo, mat || _mat.wall));
+      m.position.set(x, y, 0);
+      m.userData.bwin = rec.id;
+      g.add(m); parts.push(m);
+      return m;
+    }
+    part(_geo.wiBot, 0, WI_Y0 / 2);                       // под окном
+    part(_geo.wiTop, 0, WI_Y1 + (WALL_H - WI_Y1) / 2);    // над окном
+    part(_geo.wiSide, -(CELL / 2 + WI_HALF) / 2, (WI_Y0 + WI_Y1) / 2);   // слева
+    part(_geo.wiSide, (CELL / 2 + WI_HALF) / 2, (WI_Y0 + WI_Y1) / 2);    // справа
+    part(_geo.wiSill, 0, WI_Y0, _mat.beam);               // подоконник
+    part(_geo.wiLintel, 0, WI_Y1, _mat.beam);             // перемычка
+    placeEdge(g, rec);
+    return { group: g, slab: parts[0], solids: parts.slice(1) };
+  }
+
+  /** ✅ v0.4.10 ДВЕРНОЙ ПРОЁМ: 2 столба + перемычка + наличники.
+      Проём 1.14×2.2 м — свободно проходит игрок, позже — дверь */
+  function buildDoorwayGroup(rec) {
+    var g = new THREE.Group();
+    var parts = [];
+    function part(geo, x, y, mat) {
+      var m = shadow(new THREE.Mesh(geo, mat || _mat.wall));
+      m.position.set(x, y, 0);
+      g.add(m); parts.push(m);
+      return m;
+    }
+    part(_geo.dwSide, -(CELL / 2 + DW_HALF) / 2, WALL_H / 2);   // столб слева
+    part(_geo.dwSide, (CELL / 2 + DW_HALF) / 2, WALL_H / 2);    // столб справа
+    part(_geo.dwTop, 0, DW_H + (WALL_H - DW_H) / 2);            // перемычка
+    part(_geo.dwTrimV, -(DW_HALF + 0.06), DW_H / 2, _mat.beam); // наличник слева
+    part(_geo.dwTrimV, DW_HALF + 0.06, DW_H / 2, _mat.beam);    // наличник справа
+    part(_geo.dwTrimH, 0, DW_H + 0.06, _mat.beam);              // наличник сверху
+    placeEdge(g, rec);
+    return { group: g, slab: parts[0], solids: parts.slice(1) };
+  }
+
+  /** ✅ v0.4.12: НЕВИДИМЫЙ увеличенный хитбокс замка (кэшируется — один
+      на все двери): попадание рядом с замком = «на замок». Размер —
+      чуть больше самого замка, ЦЕНТР ПОЛОТНА НЕ ЗАХВАТЫВАЕТ:
+      F у центра двери = открыть/закрыть, F у края (замок) = код */
+  var _lockHitGeo = null, _lockHitMat = null;
+  function lockHitMesh() {
+    if (!_lockHitGeo) {
+      _lockHitGeo = new THREE.BoxGeometry(0.34, 0.42, 0.3);
+      _lockHitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0,
+        depthWrite: false, depthTest: false });
+      _disposables.push({ dispose: function () {
+        if (_lockHitGeo) { _lockHitGeo.dispose(); _lockHitGeo = null; }
+        if (_lockHitMat) { _lockHitMat.dispose(); _lockHitMat = null; }
+      } });
+    }
+    return new THREE.Mesh(_lockHitGeo, _lockHitMat);
+  }
+
+  /** ✅ v0.4.10 ДВЕРЬ: рама (= проём) + полотно на петле + КОДОВЫЙ ЗАМК
+      с лампочкой (зелёная — кода нет, красная — есть). Полотно вращается
+      вокруг левой петли (leafPivot) — анимация открытия в tick() */
+  function buildDoorGroup(rec) {
+    var g = new THREE.Group();
+    var parts = [];
+    function part(geo, x, y, mat) {
+      var m = shadow(new THREE.Mesh(geo, mat || _mat.wall));
+      m.position.set(x, y, 0);
+      m.userData.bid = rec.id;
+      g.add(m); parts.push(m);
+      return m;
+    }
+    part(_geo.dwSide, -(CELL / 2 + DW_HALF) / 2, WALL_H / 2);
+    part(_geo.dwSide, (CELL / 2 + DW_HALF) / 2, WALL_H / 2);
+    part(_geo.dwTop, 0, DW_H + (WALL_H - DW_H) / 2);
+    part(_geo.dwTrimV, -(DW_HALF + 0.06), DW_H / 2, _mat.beam);
+    part(_geo.dwTrimV, DW_HALF + 0.06, DW_H / 2, _mat.beam);
+    part(_geo.dwTrimH, 0, DW_H + 0.06, _mat.beam);
+    // полотно на петле (левый край проёма); вращается целиком при открытии
+    var pivot = new THREE.Group();
+    pivot.position.set(-DW_HALF + 0.02, 0, 0);
+    var leaf = shadow(new THREE.Mesh(_geo.doorLeaf, _mat.leaf));
+    leaf.position.set(DW_HALF - 0.02, DW_H / 2, 0);
+    leaf.userData.bid = rec.id;
+    pivot.add(leaf);
+    // кодовый замок на полотне (у края открывания, торчит наружу)
+    var lock = shadow(new THREE.Mesh(_geo.lockBox, _mat.lock));
+    lock.position.set(DW_HALF - 0.16, 1.42, 0.1);
+    lock.userData.bid = rec.id; lock.userData.block = 1;
+    pivot.add(lock);
+    /* ✅ fix 0.4.12 «НЕ ПОПАДАЮ ПО ЗАМКУ»: замок маленький — попасть лучом
+       трудно. Добавляем НЕВИДИМЫЙ увеличенный хитбокс вокруг него:
+       наведение рядом с замком = «на замок» (подсказка и F работают) */
+    var lockHit = lockHitMesh();
+    lockHit.position.set(DW_HALF - 0.22, 1.4, 0.14);
+    lockHit.userData.bid = rec.id; lockHit.userData.block = 1;
+    lockHit.renderOrder = -1;
+    pivot.add(lockHit);
+    var dot = new THREE.Mesh(_geo.lockDot, (rec.hc ? _mat.lampOff : _mat.lampOn));
+    dot.position.set(DW_HALF - 0.16, 1.18, 0.17);
+    dot.userData.bid = rec.id; dot.userData.bdot = 1;
+    pivot.add(dot);
+    pivot.rotation.y = rec.open ? DOOR_OPEN_ANGLE : 0;
+    g.add(pivot);
+    parts.push(leaf); parts.push(lock);
+    placeEdge(g, rec);
+    return { group: g, slab: parts[0], solids: parts.slice(1),
+      leafPivot: pivot, leaf: leaf, lock: lock, dot: dot, lockHit: lockHit };
   }
 
   /** потолок: плита + 2 лага снизу (видны из комнаты). Ноль — НИЗ плиты */
@@ -336,11 +506,27 @@ window.BrixBuilding = (function () {
   }
 
   /* ---------- реестр: применение/удаление записи ---------- */
+  var solidMeshes = [];       // ✅ v0.4.10: доп. меши окон/дверей — для пуль
+  var doorEntries = new Map(); // ✅ v0.4.10: id двери -> entry (анимация/луч F)
+
+  function pushSolids(entry) {
+    if (!entry.solids) return;
+    for (var i = 0; i < entry.solids.length; i++) solidMeshes.push(entry.solids[i]);
+  }
+
   function destroyEntry(entry) {
     if (!entry) return;
     if (entry.group && _scene) _scene.remove(entry.group);
     var ri = rayTargets.indexOf(entry.deck || entry.slab);
     if (ri >= 0) rayTargets.splice(ri, 1);
+    // ✅ v0.4.10: доп. меши уходят из списка «для пуль»
+    if (entry.solids) {
+      for (var i = 0; i < entry.solids.length; i++) {
+        var si = solidMeshes.indexOf(entry.solids[i]);
+        if (si >= 0) solidMeshes.splice(si, 1);
+      }
+    }
+    if (entry.rec && entry.rec.ty === 'dr') doorEntries.delete(entry.rec.id);
   }
 
   function rebuildAux() {
@@ -349,8 +535,14 @@ window.BrixBuilding = (function () {
     // стены больше не образуют «липкий» угол), ПОТОЛКИ (сплошная плита:
     // сверху ходьба, снизу не перепрыгнуть) и ПАЛУБЫ (бок: под палубой
     // не пройти насквозь, но сверху feet > maxY-0.1 — ходьба не блокируется)
+    // ✅ v0.4.10: ОКНО — проём свободен (перелаз/пуля), ДВЕРНОЙ ПРОЁМ —
+    // открыт сверху донизу, ДВЕРЬ — бокс активен только когда закрыта
     wallBoxes.length = 0;
     var END_INSET = 0.04;   // подгонка концов стены по длине (углы)
+    function ebox(x0, x1, z0, z1, y0, y1, act) {
+      wallBoxes.push({ minX: x0, maxX: x1, minZ: z0, maxZ: z1,
+        minY: y0, maxY: y1, active: act !== false });
+    }
     edgeRecs.forEach(function (entry) {
       var r = entry.rec;
       var X0 = r.gx * CELL, Z0 = r.gz * CELL, half = CELL / 2, t2 = WALL_T / 2;
@@ -359,14 +551,45 @@ window.BrixBuilding = (function () {
         // а сама стена — на КРАЮ (отсюда «дёргает» между фундаментами
         // и проход сквозь видимую стену). Теперь бокс точно на краю
         var wz = r.e === 0 ? Z0 - half : Z0 + half;
-        wallBoxes.push({ minX: X0 - half + END_INSET, maxX: X0 + half - END_INSET,
-          minZ: wz - t2, maxZ: wz + t2,
-          minY: r.top, maxY: r.top + WALL_H, active: true });
+        var xA = X0 - half + END_INSET, xB = X0 + half - END_INSET;
+        if (r.ty === 'w') {
+          ebox(xA, xB, wz - t2, wz + t2, r.top, r.top + WALL_H);
+        } else if (r.ty === 'wi') {
+          // окно: под/над проёмом и два простенка по бокам
+          ebox(xA, xB, wz - t2, wz + t2, r.top, r.top + WI_Y0);
+          ebox(xA, xB, wz - t2, wz + t2, r.top + WI_Y1, r.top + WALL_H);
+          ebox(xA, X0 - WI_HALF, wz - t2, wz + t2, r.top + WI_Y0, r.top + WI_Y1);
+          ebox(X0 + WI_HALF, xB, wz - t2, wz + t2, r.top + WI_Y0, r.top + WI_Y1);
+        } else {
+          // дверной проём и дверь: столбы + перемычка
+          ebox(xA, X0 - DW_HALF, wz - t2, wz + t2, r.top, r.top + WALL_H);
+          ebox(X0 + DW_HALF, xB, wz - t2, wz + t2, r.top, r.top + WALL_H);
+          ebox(X0 - DW_HALF, X0 + DW_HALF, wz - t2, wz + t2, r.top + DW_H, r.top + WALL_H);
+          if (r.ty === 'dr') {
+            // полотно двери: не пускает только когда ЗАКРЫТА
+            ebox(X0 - DW_HALF, X0 + DW_HALF, wz - t2, wz + t2,
+              r.top, r.top + DW_H, !r.open);
+          }
+        }
       } else {
         var wx = r.e === 1 ? X0 + half : X0 - half;
-        wallBoxes.push({ minX: wx - t2, maxX: wx + t2,
-          minZ: Z0 - half + END_INSET, maxZ: Z0 + half - END_INSET,
-          minY: r.top, maxY: r.top + WALL_H, active: true });
+        var zA = Z0 - half + END_INSET, zB = Z0 + half - END_INSET;
+        if (r.ty === 'w') {
+          ebox(wx - t2, wx + t2, zA, zB, r.top, r.top + WALL_H);
+        } else if (r.ty === 'wi') {
+          ebox(wx - t2, wx + t2, zA, zB, r.top, r.top + WI_Y0);
+          ebox(wx - t2, wx + t2, zA, zB, r.top + WI_Y1, r.top + WALL_H);
+          ebox(wx - t2, wx + t2, zA, Z0 - WI_HALF, r.top + WI_Y0, r.top + WI_Y1);
+          ebox(wx - t2, wx + t2, Z0 + WI_HALF, zB, r.top + WI_Y0, r.top + WI_Y1);
+        } else {
+          ebox(wx - t2, wx + t2, zA, Z0 - DW_HALF, r.top, r.top + WALL_H);
+          ebox(wx - t2, wx + t2, Z0 + DW_HALF, zB, r.top, r.top + WALL_H);
+          ebox(wx - t2, wx + t2, Z0 - DW_HALF, Z0 + DW_HALF, r.top + DW_H, r.top + WALL_H);
+          if (r.ty === 'dr') {
+            ebox(wx - t2, wx + t2, Z0 - DW_HALF, Z0 + DW_HALF,
+              r.top, r.top + DW_H, !r.open);
+          }
+        }
       }
     });
     cellRecs.forEach(function (cell) {
@@ -388,22 +611,48 @@ window.BrixBuilding = (function () {
     });
   }
 
-  /** поставить запись у себя (оптимистично или от сервера/вкладки) */
+  /** поставить запись у себя (оптимистично или от сервера/вкладки).
+      ✅ v0.4.10: краевые детали w/wi/dw/dr — единый реестр по каноническому
+      краю; окно/проём ЗАМЕНЯЮТ стену, дверь — дверной проём (на том же
+      крае, старый меш сносится, старая запись возвращается в _replaced
+      для отката при bdeny) */
   function applyRecord(b, opts) {
     opts = opts || {};
     if (!b || !inited) return null;
     var cellKey = key(b.gx, b.gz);
     var canon, ekey;
 
-    if (b.ty === 'w') {
+    if (EDGE_TY[b.ty]) {
       canon = canonicalEdge(b.gx, b.gz, b.e);
       ekey = key(canon.gx, canon.gz) + ',' + canon.e;
       var ex = edgeRecs.get(ekey);
       if (ex) {
-        // тот же край: если id отличается (локальный → серверный) — тихо
-        // заменяем id, меш уже стоит; если id совпал — просто эхо
-        ex.rec.id = b.id;
-        return ex.rec;
+        if (ex.rec.id === b.id) {
+          // эхо: обновляем ЖИВОЕ состояние двери (open/hc/own)
+          if (b.ty === 'dr') {
+            var ch = (ex.rec.open ? 1 : 0) !== (b.open ? 1 : 0) ||
+                     (ex.rec.hc ? 1 : 0) !== (b.hc ? 1 : 0);
+            ex.rec.open = b.open ? 1 : 0;
+            ex.rec.hc = b.hc ? 1 : 0;
+            if (b.own !== undefined) ex.rec.own = b.own;
+            if (ch) applyDoorState(ex);
+          }
+          return ex.rec;
+        }
+        // на крае уже что-то стоит (оптимистичный локальный меш или
+        // предыдущая деталь) — сносим и ставим новую (сервер главнее)
+        var old = ex.rec;
+        destroyEntry(ex);
+        edgeRecs.delete(ekey);
+        ex = null;
+        if (old.id !== b.id) {
+          b._replacedOld = old;          // для отката bdeny
+          /* ✅ fix 0.4.11: замена «L…» → серверный id (эхо своей постройки
+             или добор badopt) — звук строительства НЕ играем: свой звук
+             уже прозвучал при оптимистичной установке, а массовый добор
+             дома после reconnect не должен греметь серией ударов */
+          b._silentReid = String(old.id).charAt(0) === 'L';
+        }
       }
     } else {
       if (!cellRecs.has(cellKey)) cellRecs.set(cellKey, { f: null, c: null });
@@ -432,6 +681,31 @@ window.BrixBuilding = (function () {
       built.slab.userData.bedge = ekey;
       rayTargets.push(built.slab);
       edgeRecs.set(ekey, entry);
+    } else if (b.ty === 'wi') {
+      built = buildWindowGroup(b);
+      entry.group = built.group; entry.slab = built.slab; entry.solids = built.solids;
+      built.slab.userData.bedge = ekey;
+      rayTargets.push(built.slab);
+      pushSolids(entry);
+      edgeRecs.set(ekey, entry);
+    } else if (b.ty === 'dw') {
+      built = buildDoorwayGroup(b);
+      entry.group = built.group; entry.slab = built.slab; entry.solids = built.solids;
+      built.slab.userData.bedge = ekey;
+      rayTargets.push(built.slab);
+      pushSolids(entry);
+      edgeRecs.set(ekey, entry);
+    } else if (b.ty === 'dr') {
+      built = buildDoorGroup(b);
+      entry.group = built.group; entry.slab = built.slab; entry.solids = built.solids;
+      entry.leafPivot = built.leafPivot; entry.leaf = built.leaf;
+      entry.lock = built.lock; entry.dot = built.dot;
+      entry.lockHit = built.lockHit || null;
+      built.slab.userData.bedge = ekey;
+      rayTargets.push(built.slab);
+      pushSolids(entry);
+      edgeRecs.set(ekey, entry);
+      doorEntries.set(b.id, entry);
     } else if (b.ty === 'c') {
       built = buildCeilingGroup(b);
       entry.group = built.group; entry.slab = built.slab;
@@ -444,7 +718,7 @@ window.BrixBuilding = (function () {
     rebuildAux();
 
     // звук: свои — сразу; чужие — с затуханием по дистанции
-    if (!opts.silent) {
+    if (!opts.silent && !b._silentReid) {
       var vol = 0.8;
       if (opts.remote && _getPos) {
         var dx = (b.gx * CELL) - _getPos().x, dz = (b.gz * CELL) - _getPos().z;
@@ -465,7 +739,7 @@ window.BrixBuilding = (function () {
   function removeRecord(rec) {
     if (!rec) return;
     var cellKey = key(rec.gx, rec.gz);
-    if (rec.ty === 'w') {
+    if (EDGE_TY[rec.ty]) {
       var canon = canonicalEdge(rec.gx, rec.gz, rec.e);
       var ekey = key(canon.gx, canon.gz) + ',' + canon.e;
       var en = edgeRecs.get(ekey);
@@ -499,24 +773,114 @@ window.BrixBuilding = (function () {
      ============================================================ */
   var LS_KEY = 'brix-builds-v1';
 
-  function applySnapshot(list) {
-    (list || []).forEach(function (b) { applyRecord(b, { silent: true }); });
+  /* ✅ v0.4.13 — ПОКОЛЕНИЕ МИРА (epoch), лечение «батник не работает»:
+     CLEAR-BUILDS.bat повышает epoch в world-objs.json. Клиент хранит
+     в бэкапе ПОКОЛЕНИЕ, при котором записи были известны серверу, и
+     присылает его в badopt. Сервер отвергает бэкап из старого поколения
+     и шлёт bwipe — клиент сам выкидывает очищенные постройки (и из мира,
+     и из бэкапа). Потеря файла на сервере (свежий мир, epoch=0) по-прежнему
+     спасается добором, как в 0.4.12.
+     serverEp — текущее поколение с сервера; backupEp — поколение записей
+     бэкапа (минимальное среди живых записей — консервативно) */
+  var serverEp = 0;
+  var backupEp = 0;
+  var wipeToasted = false;
+
+  /* ✅ v0.4.9 — ГЛАВНЫЙ ФИКС «ДОМ ПРОПАДАЕТ ПРИ ПЕРЕЗАХОДЕ»:
+     раньше applyRecord молча отбрасывал ПОСТРОЙКИ, если мир ещё не
+     построен (!inited), а loadLocal() вызывался ВНУТРИ init() ДО
+     inited=true — локальный бэкап из localStorage НЕ ВОССТАНАВЛИВАЛСЯ
+     НИКОГДА. Теперь: 1) очередь — снапшот, пришедший до init, ждёт и
+     применяется после; 2) inited=true ставится СРАЗУ после сборки
+     материалов/призрака, ещё до loadLocal. Бэкап (вкладки/соло) и
+     снимок сервера (welcome) теперь применяются всегда */
+  var pendingSnapshot = null;
+  var pendingEp = 0;          /* ✅ v0.4.13: поколение снимка, пришедшего до init */
+  var adoptToasted = false;
+
+  /* ✅ fix 0.4.11 «НА СТАРЫЕ ФУНДАМЕНТЫ НЕЛЬЗЯ СТРОИТЬ»: если сервер
+     потерял часть мира (перенос папки сервера без world-objs.json, сбой
+     файла, рестарт «с чистого листа») — дом у клиента всё равно ВИДЕН
+     (страховочный бэкап в localStorage), но сервер не знал таких
+     фундаментов и ОТКАЗЫВАЛ в каждой стене/окне («нет фундамента»).
+     Теперь после каждого снимка клиент сравнивает СВОИ записи с
+     идентификаторами СЕРВЕРА: всё, чего в снимке нет (и локальные
+     «L…», и прежние серверные «b…», которые сервер потерял) уходит
+     серверу на добор. Занятые клетки/края сервер пропускает, свободные
+     принимает, рассылает всем и сохраняет на диск. Как у бочек: мир
+     снова единый у всех игроков */
+  function adoptLocalToServer(snapList) {
+    if (!window.BrixNet || BrixNet.mode !== 'server') return;
+    var known = {};
+    (snapList || []).forEach(function (b) { if (b && b.id) known[b.id] = true; });
+    var lost = [];
+    allRecords().forEach(function (r) {
+      /* ✅ v0.4.13: на добор едет только поколение бэкапа (backupEp) —
+         смешанных эпох не предлагает: сервер всё равно отвергнет старые */
+      if (r && r.id && !known[r.id] && (r._ep | 0) === backupEp) lost.push(r);
+    });
+    if (!lost.length) return;
+    try {
+      BrixNet.send({ t: 'badopt', list: lost, ep: backupEp });   // ✅ v0.4.13: поколение бэкапа
+      if (window.BrixHud && !adoptToasted) {
+        adoptToasted = true;
+        BrixHud.toast(L('Сервер добрал ' + lost.length + ' постр. из вашего бэкапа',
+          'Server adopted ' + lost.length + ' builds from your backup'), 6);
+      }
+    } catch (e) { /* нет связи — попробуем при следующем снимке */ }
+  }
+
+  function applySnapshot(list, ep) {
+    /* ✅ v0.4.13: поколение мира из снимка сервера (objs.ep) */
+    serverEp = Math.round(Number(ep)) | 0;
+    if (!inited) {
+      // мир ещё строится — копим, применим в init() (см. ниже)
+      pendingEp = serverEp;
+      pendingSnapshot = (pendingSnapshot || []).concat(list || []);
+      return;
+    }
+    (list || []).forEach(function (b) {
+      if (b) b._ep = serverEp;   // ✅ v0.4.13: запись известна серверу в ЭТОМ поколении
+      applyRecord(b, { silent: true });
+    });
+    adoptLocalToServer(list);   // ✅ fix 0.4.11: добор построек, которых сервер не знает
+    saveLocal();   // ✅ v0.4.9: бэкап всегда свежий, во всех режимах
   }
 
   function saveLocal() {
-    try { localStorage.setItem(LS_KEY, JSON.stringify(allRecords())); }
-    catch (e) { /* недоступно — играем без сохранения вкладок */ }
+    try {
+      /* ✅ v0.4.13: в бэкап едет МИНИМАЛЬНОЕ поколение среди записей —
+         если в памяти ещё висит хоть одна устаревшая (до очистки),
+         бэкап остаётся в старом поколении и сервер его отвергнет */
+      var recs = allRecords();
+      var minEp = serverEp;
+      if (recs.length) {
+        minEp = recs[0]._ep | 0;
+        recs.forEach(function (r) { var e2 = (r && r._ep) | 0; if (e2 < minEp) minEp = e2; });
+      }
+      backupEp = minEp;
+      localStorage.setItem(LS_KEY, JSON.stringify({ ep: minEp, list: recs }));
+    } catch (e) { /* недоступно — играем без сохранения вкладок */ }
   }
 
   function loadLocal() {
     try {
       var a = JSON.parse(localStorage.getItem(LS_KEY));
-      if (Array.isArray(a) && a.length) applySnapshot(a);
+      if (!a) return;
+      /* ✅ v0.4.13: новый формат {ep, list}; старый — просто массив (ep=0) */
+      if (Array.isArray(a)) a = { ep: 0, list: a };
+      backupEp = Math.round(Number(a.ep)) | 0;
+      if (!Array.isArray(a.list) || !a.list.length) return;
+      a.list.forEach(function (r) {
+        if (r) { r._ep = backupEp; applyRecord(r, { silent: true }); }
+      });
     } catch (e) { /* нет сохранения */ }
   }
 
   function onBnew(msg) {
     if (!msg || !msg.b) return;
+    /* ✅ v0.4.13: сервер подтвердил запись в ТЕКУЩЕМ поколении мира */
+    msg.b._ep = serverEp;
     var remote = msg.pid !== (window.BrixNet && BrixNet.id);
     applyRecord(msg.b, { remote: remote });
     // подтверждение своей оптимистичной постройки
@@ -528,7 +892,30 @@ window.BrixBuilding = (function () {
         delete pendingPlace[tid];
       }
     }
-    if (window.BrixNet && BrixNet.mode !== 'server') saveLocal();
+    // ✅ v0.4.9: бэкап в localStorage — во ВСЕХ режимах (страхование)
+    saveLocal();
+  }
+
+  /* ✅ v0.4.13: сервер отклонил бэкап (bwipe) — постройки были ОЧИЩЕНЫ
+     батником CLEAR-BUILDS.bat Выкидываем все записи старого поколения
+     (и из мира, и из бэкапа) — «дом-призрак» не остаётся даже у себя */
+  function onBwipe(msg) {
+    var wEp = Math.round(Number(msg && msg.ep)) | 0;
+    if (wEp > serverEp) serverEp = wEp;
+    if (wEp <= backupEp) return;   // бэкап не старее очистки — не наше дело
+    var recs = allRecords();
+    var removed = 0;
+    recs.forEach(function (r) {
+      if ((r._ep | 0) < wEp) { removeRecord(r); removed++; }
+    });
+    saveLocal();
+    if (window.BrixHud && removed && !wipeToasted) {
+      wipeToasted = true;
+      BrixHud.toast(L('Постройки были очищены на сервере',
+        'Builds were wiped on the server'), 6);
+    }
+    console.log('[BrixBuilding] bwipe: убрал ' + removed +
+      ' постр. старого поколения (epoch ' + wEp + ')');
   }
 
   function onBdeny(msg) {
@@ -537,14 +924,64 @@ window.BrixBuilding = (function () {
     clearTimeout(p.timer);
     delete pendingPlace[msg.tid];
     removeRecord(p.rec);
+    // ✅ v0.4.10: если новая деталь ЗАМЕНИЛА старую (стена→окно и т.п.) —
+    // при отказе сервера возвращаем старую на место
+    if (p.old) applyRecord(p.old, { silent: true });
+    /* ✅ v0.4.12 «НА СТАРЫЕ ФУНДАМЕНТЫ НЕЛЬЗЯ СТРОИТЬ» — финальное лечение:
+       сервер не знал фундамент, на который игрок смотрел (потерянный
+       world-objs.json, сбой файла, старая сетка). Клиент ДОБИРАЕТ свои
+       постройки серверу (badopt — сервер берёт свободные клетки) и ОДИН
+       раз повторяет установку сам. Игрок жмёт ЛКМ как обычно — дом строится */
+    if (msg.why === 'nofound' && window.BrixNet && BrixNet.mode === 'server' &&
+        !p.retried && p.plan) {
+      p.retried = true;
+      forceAdopt();
+      if (window.BrixHud) {
+        BrixHud.toast(L('Сервер не знал этот фундамент — добираю из бэкапа…',
+          'Server missed this foundation — restoring from backup…'), 4);
+      }
+      setTimeout(function () {
+        retryPlace(p.plan);
+      }, 380);
+      return;
+    }
     if (window.BrixHud) {
       var why = { busy: L('Здесь уже стоит постройка', 'Occupied'),
         nofound: L('Под постройкой должен быть фундамент', 'Needs a foundation below'),
         nowall: L('Сначала поставь стену', 'Place a wall first'),
+        nodw: L('Дверь ставится в дверной проём', 'A door needs a doorway'),
         spam: L('Слишком быстро', 'Too fast') }[msg.why] ||
         L('Сервер не дал построить', 'Server denied the build');
       BrixHud.toast(why);
     }
+  }
+
+  /* ✅ v0.4.12: добор ВСЕХ своих построек серверу (как при входе, но по
+     требованию). Сервер пропустит занятые клетки/края — безопасно */
+  function forceAdopt() {
+    try {
+      var list = allRecords().filter(function (r) {
+        return r && (r._ep | 0) === backupEp;   // ✅ v0.4.13: только поколение бэкапа
+      }).slice(0, 400);
+      if (!list.length) return;
+      BrixNet.send({ t: 'badopt', list: list, ep: backupEp });   // ✅ v0.4.13
+    } catch (e) { /* нет связи */ }
+  }
+
+  /* ✅ v0.4.12: повтор установки тем же планом после добора фундамента */
+  function retryPlace(plan) {
+    if (window.BrixGame.state.phase !== 'playing') return;
+    var tid = 'T' + Math.random().toString(36).slice(2, 9);
+    var rec = { id: 'L' + (++localSeq), ty: plan.ty, gx: plan.gx, gz: plan.gz,
+      top: plan.top, by: myName, at: Date.now(), _ep: serverEp };   // ✅ v0.4.13
+    if (plan.e !== undefined) rec.e = plan.e;
+    applyRecord(rec);
+    pendingPlace[tid] = { rec: rec, old: rec._replacedOld || null,
+      plan: plan, retried: true };
+    BrixNet.sendBplace(plan.ty, plan.gx, plan.gz, plan.e, plan.top, tid,
+      plan.px, plan.pz);
+    placeFallbackTimer(tid);
+    saveLocalTry();
   }
 
   function placeFallbackTimer(tid) {
@@ -588,6 +1025,28 @@ window.BrixBuilding = (function () {
       });
     } else if (kind === 'w') {
       var w = new THREE.Mesh(_geo.wall, null); w.position.y = WALL_H / 2; g.add(w); g.userData.m = w;
+    } else if (kind === 'wi' || kind === 'dw' || kind === 'dr') {
+      // ✅ v0.4.10: призрак окна/проёма/двери — из ТЕХ ЖЕ частей
+      function mk(geo, x, y) {
+        var m = new THREE.Mesh(geo, null);
+        m.position.set(x, y, 0); g.add(m); return m;
+      }
+      if (kind === 'wi') {
+        mk(_geo.wiBot, 0, WI_Y0 / 2);
+        mk(_geo.wiTop, 0, WI_Y1 + (WALL_H - WI_Y1) / 2);
+        mk(_geo.wiSide, -(CELL / 2 + WI_HALF) / 2, (WI_Y0 + WI_Y1) / 2);
+        mk(_geo.wiSide, (CELL / 2 + WI_HALF) / 2, (WI_Y0 + WI_Y1) / 2);
+      } else {
+        mk(_geo.dwSide, -(CELL / 2 + DW_HALF) / 2, WALL_H / 2);
+        mk(_geo.dwSide, (CELL / 2 + DW_HALF) / 2, WALL_H / 2);
+        mk(_geo.dwTop, 0, DW_H + (WALL_H - DW_H) / 2);
+      }
+      if (kind === 'dr') {
+        var lf = mk(_geo.doorLeaf, 0, DW_H / 2);   // полотно по центру проёма
+        g.userData.m = lf;
+      } else {
+        g.userData.m = g.children[0];
+      }
     } else {
       var c = new THREE.Mesh(_geo.ceil, null); c.position.y = CEIL_T / 2; g.add(c); g.userData.m = c;
     }
@@ -635,18 +1094,28 @@ window.BrixBuilding = (function () {
     return { valid: true, ty: 'f', gx: gx, gz: gz, top: top };
   }
 
-  /** план для СТЕНЫ по точке прицела (и мешу, в который попали) */
-  function planWall(P, hit) {
+  /** ✅ v0.4.10 план для КРАЕВОЙ детали (стена/окно/проём) по точке прицела.
+      Окно и проём можно ставить и ВМЕТО существующей стены (замена);
+      на край с окном/проёмом/дверью — нельзя */
+  function planOnEdge(P, hit, ty) {
     var gx, gz;
-    // если попали в палуду/стену — берём её клетку
-    var viaMesh = null, o = hit && hit.object;
+    // если попали в палубу/стену/окно/проём — берём её клетку
+    var viaMesh = null, viaEdge2 = null, o = hit && hit.object;
     while (o) {
+      /* ✅ fix 0.4.11: ПОПАЛИ В СТЕНУ/ОКНО/ПРОЁМ — их канонический ключ
+         (bedge) точно знает клетку-анкер. Раньше клетку «угадывали»
+         округлением точки прицела и на половине краёв промахивались —
+         призрак краснел «нет фундамента», хотя фундамент рядом */
+      if (!viaEdge2 && o.userData && o.userData.bedge) viaEdge2 = o.userData.bedge;
       if (o.userData && o.userData.bcell) { viaMesh = o.userData.bcell; break; }
       o = o.parent;
     }
     if (viaMesh) {
       var parts = viaMesh.split(',');
       gx = parseInt(parts[0], 10); gz = parseInt(parts[1], 10);
+    } else if (viaEdge2) {
+      var ppE = viaEdge2.split(',');
+      gx = parseInt(ppE[0], 10); gz = parseInt(ppE[1], 10);
     } else {
       gx = Math.round(P.x / CELL); gz = Math.round(P.z / CELL);
     }
@@ -657,9 +1126,52 @@ window.BrixBuilding = (function () {
     var e = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 1 : 3) : (dz > 0 ? 2 : 0);
     var canon = canonicalEdge(gx, gz, e);
     var ekey = key(canon.gx, canon.gz) + ',' + canon.e;
-    if (edgeRecs.has(ekey)) return { valid: false, why: 'busy' };
-    // ✅ МАГНИТ К КРАЮ: стена встаёт ровно на край фундамента
-    return { valid: true, ty: 'w', gx: gx, gz: gz, e: e, top: anchorCell.f.rec.top };
+    var ex = edgeRecs.get(ekey);
+    if (ex) {
+      var et = ex.rec.ty;
+      if (ty === 'w') return { valid: false, why: 'busy' };
+      // окно/проём встают ВМЕТО обычной стены (замена) — иначе нельзя
+      if ((ty === 'wi' || ty === 'dw') && et !== 'w') return { valid: false, why: 'busy' };
+    }
+    // ✅ МАГНИТ К КРАЮ: деталь встаёт ровно на край фундамента
+    return { valid: true, ty: ty, gx: gx, gz: gz, e: e, top: anchorCell.f.rec.top };
+  }
+
+  /** центр края (мировые координаты середины стены) — для поиска проёма */
+  function edgeCenter(r) {
+    var half = CELL / 2;
+    if (r.e === 0) return { x: r.gx * CELL, z: r.gz * CELL - half };
+    if (r.e === 2) return { x: r.gx * CELL, z: r.gz * CELL + half };
+    if (r.e === 1) return { x: r.gx * CELL + half, z: r.gz * CELL };
+    return { x: r.gx * CELL - half, z: r.gz * CELL };
+  }
+
+  /** ✅ v0.4.10 план для ДВЕРИ: нужна ДВЕРНАЯ РАМА (dw) — целимся прямо в
+      неё (рама ловит луч) или берём ближайший проём к точке прицела */
+  function planDoor(P, hit) {
+    var viaEdge = null, o2 = hit && hit.object;
+    while (o2) {
+      if (o2.userData && o2.userData.bedge) { viaEdge = o2.userData.bedge; break; }
+      o2 = o2.parent;
+    }
+    if (viaEdge) {
+      var en = edgeRecs.get(viaEdge);
+      if (en && en.rec.ty === 'dw') {
+        var pp = viaEdge.split(',');
+        return { valid: true, ty: 'dr', gx: +pp[0], gz: +pp[1], e: +pp[2], top: en.rec.top };
+      }
+      return { valid: false, why: en ? 'busy' : 'nodw' };
+    }
+    // свободный поиск: ближайший дверной проём к точке прицела
+    var best = null, bestD = 1.35;
+    edgeRecs.forEach(function (en2) {
+      if (en2.rec.ty !== 'dw') return;
+      var c = edgeCenter(en2.rec);
+      var d = Math.hypot(P.x - c.x, P.z - c.z);
+      if (d < bestD) { bestD = d; best = en2.rec; }
+    });
+    if (best) return { valid: true, ty: 'dr', gx: best.gx, gz: best.gz, e: best.e, top: best.top };
+    return { valid: false, why: 'nodw' };
   }
 
   /** план для ПОТОЛКА: клетка должна иметь фундамент И хотя бы одну стену */
@@ -692,9 +1204,10 @@ window.BrixBuilding = (function () {
     try {
       var inv = window.BrixInventory && BrixInventory.get();
       if (!inv) return false;
-      // ✅ v0.4.7: план взят в руки КЛИКОМ из инвентаря (рюкзак) —
-      // либо он в выбранном слоте хотбара (совместимость со старыми сейвами)
-      if (inv.isPlanEquipped && inv.isPlanEquipped()) return true;
+      /* ✅ v0.4.9 (по просьбе игрока): строим ТОЛЬКО когда план стоит
+         В СЛОТЕ ХОТБАРА и этот слот выбран (план в руках, onSelect
+         уже переключил руки на ватман). Клик по плану в рюкзаке больше
+         НЕ берёт его в руки — сначала перетащи план в хотбар */
       var it = inv.getSelectedItem();
       return !!(it && it.tool === 'plan');
     } catch (e) { return false; }
@@ -708,7 +1221,7 @@ window.BrixBuilding = (function () {
 
   function updateGhost() {
     if (!ghost.group) return;
-    var active = holdingPlan() && !menu.open && !uiBlocked() &&
+    var active = holdingPlan() && !menu.open && !isUiBlocked() &&
       window.BrixGame && BrixGame.state.phase === 'playing';
     if (!active) {
       ghost.group.visible = false;
@@ -731,12 +1244,17 @@ window.BrixBuilding = (function () {
     var P = hits[0].point;
     var plan;
     if (current === 'f') plan = planFoundation(P);
-    else if (current === 'w') plan = planWall(P, hits[0]);
-    else plan = planCeiling(P, hits[0]);
+    else if (current === 'c') plan = planCeiling(P, hits[0]);
+    else if (current === 'dr') plan = planDoor(P, hits[0]);
+    else plan = planOnEdge(P, hits[0], current);   // 'w' | 'wi' | 'dw'
     if (!plan) { ghost.group.visible = false; ghost.shown = false; return; }
+    /* ✅ v0.4.12: точку прицела едет НА СЕРВЕР (px/pz) — сервер сам
+       проверяет, что под лучом есть фундамент. Лечит «старые фундаменты»:
+       любое расхождение координат клиент/сервер больше не ломает стройку */
+    plan.px = P.x; plan.pz = P.z;
     ghost.plan = plan;
     ghost.valid = !!plan.valid;
-    if (current === 'w') {
+    if (EDGE_TY[current]) {
       ghost.group.position.set(plan.gx * CELL + (plan.e === 1 ? CELL / 2 : plan.e === 3 ? -CELL / 2 : 0),
         plan.top || 0,
         plan.gz * CELL + (plan.e === 2 ? CELL / 2 : plan.e === 0 ? -CELL / 2 : 0));
@@ -752,18 +1270,23 @@ window.BrixBuilding = (function () {
 
   /** ЛКМ с планом — установить выбранную деталь */
   function tryPlace() {
-    if (window.BrixGame.state.phase !== 'playing' || menu.open || uiBlocked()) return;
+    if (window.BrixGame.state.phase !== 'playing' || menu.open || isUiBlocked()) return;
     if (placeCd > 0 || !ghost.shown || !ghost.plan || !ghost.plan.valid) return;
     var plan = ghost.plan;
     placeCd = PLACE_CD;
     var tid = 'T' + Math.random().toString(36).slice(2, 9);
     var rec = { id: 'L' + (++localSeq), ty: plan.ty, gx: plan.gx, gz: plan.gz,
-      top: plan.top, by: myName, at: Date.now() };
-    if (plan.ty === 'w') rec.e = plan.e;
+      top: plan.top, by: myName, at: Date.now(), _ep: serverEp };   // ✅ v0.4.13
+    if (plan.e !== undefined) rec.e = plan.e;
     applyRecord(rec);                        // у себя — СРАЗУ (оптимистично)
+    // ✅ v0.4.10: запоминаем, ЧТО заменили (стена→окно/проём, проём→дверь)
+    // — при отказе сервера вернём на место
+    // ✅ v0.4.12: храним ПЛАН — при nofound сервер доберёт фундамент
+    // из бэкапа и мы ОДИН раз повторим установку автоматически
+    pendingPlace[tid] = { rec: rec, old: rec._replacedOld || null, plan: plan };
     if (window.BrixNet && BrixNet.mode === 'server') {
-      pendingPlace[tid] = { rec: rec };
-      BrixNet.sendBplace(plan.ty, plan.gx, plan.gz, plan.e, plan.top, tid);
+      BrixNet.sendBplace(plan.ty, plan.gx, plan.gz, plan.e, plan.top, tid,
+        plan.px, plan.pz);
       placeFallbackTimer(tid);
       saveLocalTry();
     } else {
@@ -779,6 +1302,489 @@ window.BrixBuilding = (function () {
     // в серверном режиме localStorage — страховка на случай «только у меня
     // работает»: снимок сервера всё равно главнее и придёт в welcome
     saveLocal();
+  }
+
+  /* ============================================================
+     ✅ v0.4.10 ДВЕРЬ И КОДОВЫЙ ЗАМОК: состояние, анимация,
+     права (владелец/разгадавшие), клавиатура кода — как в Rust.
+     Код ХРАНИТСЯ ТОЛЬКО НА СЕРВЕРЕ (rec.code не покидает server.js);
+     клиент знает только «есть код» (rec.hc) и «я его разгадал» (myUnl)
+     ============================================================ */
+  var myUnl = {};            // замки, код которых я уже ввёл верно
+  var lastTog = null;        /* ✅ fix 0.4.11: последняя оптимистичная дверь
+                    {id, to} — для ОТКАТА, если сервер не пустил */
+
+  function myNick() {
+    /* ✅ fix 0.4.11: сервер режет ник до 16 символов (p.name) — сравниваем
+       владельца в ТОЙ ЖЕ форме, иначе «n:ДлинныйНик» ≠ «n:ОбрезанныйНик» */
+    try { return String((window.BrixNet && BrixNet.NAME) || myName).slice(0, 16); }
+    catch (e) { return String(myName).slice(0, 16); }
+  }
+  /** ключ владельца: BRIX-ID профиля, для гостей — 'n:'+ник.
+      Он же живёт на сервере в rec.own — переживёт перезаход.
+      ✅ fix 0.4.11: BRIX-ID создаётся СРАЗУ (раньше — только при первом
+      открытии профиля: дверь, поставленная до этого, навсегда теряла
+      владельца — F по своей двери требовал код) */
+  function ownerKey() {
+    try {
+      var aid = (window.BrixState && BrixState.ensureProfileId && BrixState.ensureProfileId()) ||
+                (window.BrixState && BrixState.data.profileId) || '';
+      return aid ? String(aid) : ('n:' + myNick());
+    } catch (e) { return 'n:' + myNick(); }
+  }
+  /* ✅ fix 0.4.11: владелец узнаётся в ОБОИХ формах, которые сервер мог
+     записать: новый BRIX-ID и старый «n:ник» (двери из прошлых сессий).
+     Раньше совпадала только одна — свои двери «не открывались» */
+  function isOwner(rec) {
+    if (!rec || !rec.own) return false;
+    try {
+      var aid = (window.BrixState && BrixState.data.profileId) || '';
+      if (aid && rec.own === String(aid)) return true;
+    } catch (e) {}
+    return rec.own === ('n:' + myNick());
+  }
+  function applyUnl(list) { (list || []).forEach(function (id) { myUnl[id] = true; }); }
+  /** можно ли открыть дверь БЕЗ ввода кода */
+  function doorAuth(rec) {
+    /* ✅ v0.4.15: админ (ID владельца, подтверждён сервером) открывает
+       ЛЮБЫЕ замки — F по чужой закрытой двери просто открывает её */
+    if (window.BrixAdmin && BrixAdmin.masterkey) return true;
+    if (!rec.hc) return true;           // кода нет — зелёная лампа
+    if (isOwner(rec)) return true;      // владелец всегда может
+    return !!myUnl[rec.id];             // уже разгадал этот замок
+  }
+
+  function findEntry(id) { return doorEntries.get(id) || null; }
+  function findRec(id) {
+    var found = null;
+    cellRecs.forEach(function (cell) {
+      if (!found && cell.f && cell.f.rec.id === id) found = cell.f.rec;
+      if (!found && cell.c && cell.c.rec.id === id) found = cell.c.rec;
+    });
+    if (found) return found;
+    var e2 = null;
+    edgeRecs.forEach(function (en) { if (!e2 && en.rec.id === id) e2 = en.rec; });
+    return e2;
+  }
+
+  /** лампочка замка: зелёная (кода нет) / красная (код есть) */
+  function updateLight(en) {
+    if (en && en.dot && _mat) en.dot.material = en.rec.hc ? _mat.lampOff : _mat.lampOn;
+  }
+  /** привести меш двери к rec (без анимации — для снимков/рестарта) */
+  function applyDoorState(en) {
+    if (en.leafPivot) {
+      en.leafPivot.rotation.y = en.rec.open ? DOOR_OPEN_ANGLE : 0;
+      en.anim = null;
+    }
+    updateLight(en);
+    rebuildAux();
+  }
+
+  /** локально открыть/закрыть: анимация + звук + коллизия полотна */
+  function setDoorLocal(en, open, silent) {
+    var rec = en.rec;
+    if ((rec.open ? 1 : 0) === (open ? 1 : 0)) return;
+    rec.open = open ? 1 : 0;
+    if (en.leafPivot) {
+      en.anim = { from: en.leafPivot.rotation.y, to: rec.open ? DOOR_OPEN_ANGLE : 0, t: 0 };
+    }
+    if (!silent && window.BrixSfx) BrixSfx.play('doorMove', { volume: 0.42, jitter: 0.05 });
+    rebuildAux();   // бокс полотна active = !open
+  }
+
+  /** F по двери: открыть/закрыть (свой/разгадавший/без кода).
+      В серверном режиме решает сервер; во вкладках — сами */
+  function toggleDoor(en) {
+    var rec = en.rec;
+    var next = rec.open ? 0 : 1;
+    setDoorLocal(en, next);
+    lastTog = { id: rec.id, to: next };   /* ✅ fix 0.4.11: для отката */
+    if (window.BrixNet && BrixNet.mode === 'server') {
+      BrixNet.send({ t: 'btog', id: rec.id });
+    } else if (window.BrixNet && BrixNet.mode === 'tabs') {
+      BrixNet.send({ t: 'bdoor', id: rec.id, open: next });
+      saveLocal();
+    }
+  }
+
+  /* ---------- наведение на дверь/замок + подсказка ---------- */
+  var _intRay = null;
+  var aim = { hit: false, en: null, onLock: false, t: 0 };
+  var doorHintEl = null;
+  function ensureDoorHint() {
+    if (doorHintEl) return doorHintEl;
+    doorHintEl = document.createElement('div');
+    doorHintEl.id = 'brixDoorHint';
+    doorHintEl.style.cssText = 'position:fixed;left:50%;top:56%;transform:translateX(-50%);' +
+      'z-index:8;color:#ffe9b8;font:13px/1.4 Consolas,monospace;letter-spacing:.06em;' +
+      'text-shadow:0 1px 4px rgba(0,0,0,.95);pointer-events:none;display:none;';
+    document.body.appendChild(doorHintEl);
+    return doorHintEl;
+  }
+  function doorHintText(en, onLock) {
+    var rec = en.rec;
+    if (onLock && isOwner(rec)) {
+      return rec.hc ? L('F — СМЕНИТЬ КОД ЗАМКА', 'F — CHANGE LOCK CODE')
+                    : L('F — ЗАДАТЬ КОД ЗАМКА', 'F — SET LOCK CODE');
+    }
+    if (rec.open) return L('F — ЗАКРЫТЬ ДВЕРЬ', 'F — CLOSE DOOR');
+    if (doorAuth(rec)) return L('F — ОТКРЫТЬ ДВЕРЬ', 'F — OPEN DOOR');
+    if (rec.hc) return L('F — ВВЕСТИ КОД', 'F — ENTER CODE');
+    return '';
+  }
+  function aimCheck(force) {
+    if (!force && aim.t > 0) return;
+    aim.t = 0.12;
+    aim.hit = false; aim.en = null; aim.onLock = false;
+    if (!_intRay || !_camera) return;
+    if (pad.open || vault || menu.open || uiBlocked() ||
+        !window.BrixGame || BrixGame.state.phase !== 'playing') return;
+    var targets = [];
+    doorEntries.forEach(function (en) {
+      if (en.leaf) targets.push(en.leaf);
+      if (en.lock) targets.push(en.lock);
+      if (en.lockHit) targets.push(en.lockHit);   // ✅ fix 0.4.12: большой хитбокс
+      if (en.dot) targets.push(en.dot);
+    });
+    if (!targets.length) return;
+    _intRay.setFromCamera(center2, _camera);
+    _intRay.far = 3.4;
+    var hits = _intRay.intersectObjects(targets, false);
+    if (!hits.length) return;
+    var m = hits[0].object;
+    var en = m.userData && m.userData.bid ? doorEntries.get(m.userData.bid) : null;
+    if (!en) return;
+    aim.hit = true; aim.en = en;
+    aim.onLock = !!(m.userData.bdot || m.userData.block);
+  }
+  function updateDoorHint() {
+    aimCheck(false);
+    var el = ensureDoorHint();
+    var txt = aim.hit ? doorHintText(aim.en, aim.onLock) : '';
+    if (!txt) { el.style.display = 'none'; return; }
+    if (el.textContent !== txt) el.textContent = txt;
+    el.style.display = 'block';
+  }
+
+  /** F — дверь/замок. Вызывается gameworld ПЕРЕД tryPickup;
+      true = «я обработал F» (подбор лута не запускается) */
+  function interact() {
+    if (!inited) return false;
+    /* ✅ fix 0.4.12: клавиатура открыта — F закрывает её ЗДЕСЬ (раньше
+       полагались на padKeyDown, но gameworld теперь гасит событие через
+       stopImmediatePropagation — закрытие переехало сюда) */
+    if (pad.open) { closePad(); return true; }
+    if (vault || menu.open || uiBlocked()) return false;
+    if (!window.BrixGame || BrixGame.state.phase !== 'playing') return false;
+    aimCheck(true);
+    if (!aim.hit || !aim.en) return false;
+    var rec = aim.en.rec;
+    if (aim.onLock && isOwner(rec)) { openPad('set', rec.id); return true; }
+    if (doorAuth(rec)) { toggleDoor(aim.en); return true; }
+    if (rec.open) { toggleDoor(aim.en); return true; }   // открытую чужую можно закрыть
+    openPad('enter', rec.id);                            // чужой закрытый — код
+    return true;
+  }
+
+  /* ---------- КЛАВИАТУРА КОДОВОГО ЗАМКА (как на референсе) ---------- */
+  var pad = { open: false, mode: null, id: null, code: '', el: null, openedAt: 0 };
+  function ensurePad() {
+    if (pad.el) return;
+    var el = document.createElement('div');
+    el.id = 'brixPad';
+    el.style.cssText = 'position:fixed;inset:0;z-index:72;display:none;' +
+      'background:rgba(8,8,6,0.55);align-items:center;justify-content:center;';
+    var btk = 'background:#2b2a26;border:1px solid #56524a;color:#efe9db;' +
+      'font:20px/1 Consolas,monospace;width:56px;height:46px;margin:3px;' +
+      'border-radius:5px;cursor:pointer;box-shadow:0 2px 0 #191713;';
+    var html =
+      '<div style="background:#171512;border:2px solid #5c564b;border-radius:10px;' +
+      'width:246px;padding:14px 16px 16px;box-shadow:0 18px 60px rgba(0,0,0,.7);">' +
+      '<div id="brixPadTitle" class="font-h" style="text-align:center;color:#e8dfc8;' +
+      'font-size:11px;letter-spacing:.14em;margin-bottom:8px;"></div>' +
+      '<div id="brixPadDisp" style="background:#0c0b09;border:1px solid #46413a;' +
+      'border-radius:6px;color:#ffd23e;font:26px/1.4 Consolas,monospace;letter-spacing:.35em;' +
+      'text-align:center;height:40px;margin-bottom:4px;"></div>' +
+      '<div id="brixPadMsg" style="text-align:center;color:#9a948a;font:11px/1.6 ' +
+      'Consolas,monospace;min-height:16px;margin-bottom:6px;"></div>' +
+      '<div style="display:flex;justify-content:center;flex-wrap:wrap;">';
+    var keys = ['7','8','9','4','5','6','1','2','3','0','C'];
+    for (var i = 0; i < keys.length; i++) {
+      html += '<button data-k="' + keys[i] + '" style="' + btk + '">' + keys[i] + '</button>';
+    }
+    html += '</div>' +
+      '<div style="text-align:center;color:#6f6a60;font:10px Consolas,monospace;margin-top:8px;">' +
+      L('цифры на клавиатуре · F/Esc — закрыть', 'keyboard digits · F/Esc — close') + '</div></div>';
+    el.innerHTML = html;
+    document.body.appendChild(el);
+    el.addEventListener('mousedown', function (ev) {
+      var b = ev.target && ev.target.closest ? ev.target.closest('button[data-k]') : null;
+      if (b) { ev.preventDefault(); padKey(b.getAttribute('data-k')); }
+    });
+    pad.el = el;
+    pad.disp = el.querySelector('#brixPadDisp');
+    pad.msg = el.querySelector('#brixPadMsg');
+    pad.title = el.querySelector('#brixPadTitle');
+  }
+  function openPad(mode, id) {
+    ensurePad();
+    pad.open = true; pad.mode = mode; pad.id = id; pad.code = '';
+    /* ✅ fix 0.4.12 «ПРОСТО ИГРАЕТ ЗВУК»: запоминаем время открытия —
+       ТО ЖЕ САМОЕ нажатие F, что открыло клавиатуру, докатывается до
+       слушателя padKeyDown (оба на document) и МГНОВЕННО закрывало
+       панель: игрок видел только звук клика. Теперь F/Esc в первые
+       250 мс после открытия игнорируются (см. padKeyDown) */
+    pad.openedAt = performance.now();
+    /* ✅ fix 0.4.11 «ОТКРЫВАЕТСЯ ПАУЗА»: раньше здесь был exitPointerLock —
+       игра считала мышь «потерянной» и показывала СТАРОЕ мини-меню ПАУЗА
+       («Кликните по экрану…») ПОВЕРХ клавиатуры замка. Теперь pointer lock
+       НЕ трогаем: мышь и так отключена (controls.enabled=false при
+       открытом pad), код вводится ЦИФРАМИ с клавиатуры, F/Esc — закрыть.
+       Если игрок был в паузе — гасим её сами (onPad) */
+    if (_onPad) _onPad(true);
+    pad.el.style.display = 'flex';
+    if (pad.title) {
+      pad.title.textContent = mode === 'set'
+        ? L('КОДОВЫЙ ЗАМОК · НОВЫЙ КОД', 'CODE LOCK · SET CODE')
+        : L('КОДОВЫЙ ЗАМОК · ВВЕДИТЕ КОД', 'CODE LOCK · ENTER CODE');
+    }
+    padMsg('', '#9a948a');
+    refreshPad();
+    if (window.menuAudio) menuAudio.click();
+  }
+  function closePad() {
+    if (!pad.open) return;
+    pad.open = false;
+    if (pad.el) pad.el.style.display = 'none';
+    pad.code = '';
+    /* ✅ fix 0.4.11: после закрытия возвращаем мышь в игру сами — игроку
+       не нужно кликать по экрану паузы */
+    if (_onPad) _onPad(false);
+    if (window.menuAudio) menuAudio.click();
+  }
+  function padMsg(txt, color) {
+    if (pad.msg) { pad.msg.textContent = txt || ''; pad.msg.style.color = color || '#9a948a'; }
+  }
+  function refreshPad() {
+    if (pad.disp) pad.disp.textContent = pad.code || '····';
+  }
+  function padKey(k) {
+    if (!pad.open) return;
+    if (k === 'C') { pad.code = ''; padMsg('', '#9a948a'); refreshPad(); return; }
+    if (pad.code.length >= 4) return;
+    if (!/^[0-9]$/.test(k)) return;
+    pad.code += k;
+    refreshPad();
+    if (pad.code.length === 4) setTimeout(padSubmit, 160);
+  }
+  function padSubmit() {
+    if (!pad.open || pad.code.length !== 4) return;
+    var rec = findRec(pad.id);
+    if (pad.mode === 'set') {
+      // ВЛАДЕЛЕЦ задаёт/меняет код: сервер сбрасывает «разгаданность» у всех
+      if (window.BrixNet && BrixNet.mode === 'server') {
+        BrixNet.send({ t: 'bcode', id: pad.id, code: pad.code });
+      } else {
+        if (rec) { rec.code = pad.code; rec.hc = 1; rec.unl = {}; updateLight(findEntry(rec.id)); }
+        // «разгаданность» старого кода больше не действует (у других
+        // вкладок то же самое сделает приходящий block → onBlock)
+        delete myUnl[pad.id];
+        if (window.BrixNet && BrixNet.mode === 'tabs') {
+          BrixNet.send({ t: 'block', id: pad.id, hc: 1 });
+        }
+        saveLocal();
+      }
+      padMsg(L('Код сохранён — лампа горит красным', 'Code saved — lamp is red'), '#8fd07a');
+      setTimeout(closePad, 500);
+    } else {
+      // ЧУЖОЙ вводит код
+      if (window.BrixNet && BrixNet.mode === 'server') {
+        BrixNet.send({ t: 'btry', id: pad.id, code: pad.code });
+        padMsg(L('Проверяем…', 'Checking…'), '#cfc8bb');
+      } else if (rec && String(rec.code || '') === pad.code) {
+        myUnl[pad.id] = true;
+        var en = findEntry(pad.id);
+        if (en) setDoorLocal(en, 1);
+        padMsg(L('Верно! Дверь открыта', 'Correct! Door opened'), '#8fd07a');
+        setTimeout(closePad, 400);
+      } else {
+        padMsg(L('Неверный код', 'Wrong code'), '#e0685c');
+        pad.code = '';
+        refreshPad();
+      }
+    }
+  }
+  function padKeyDown(e) {
+    if (!pad.open) return;
+    /* ✅ fix 0.4.12: то же нажатие F, что ОТКРЫЛО панель, не должно её
+       закрывать (см. openPad). Повторное нажатие (после 250 мс) работает */
+    if ((e.code === 'Escape' || e.code === 'KeyF') &&
+        performance.now() - pad.openedAt < 250) return;
+    if (e.code === 'Escape' || e.code === 'KeyF') { closePad(); e.preventDefault(); return; }
+    if (e.code === 'Backspace') { pad.code = pad.code.slice(0, -1); refreshPad(); e.preventDefault(); return; }
+    var m = /^Digit([0-9])$/.exec(e.code) || /^Numpad([0-9])$/.exec(e.code);
+    if (m) { padKey(m[1]); e.preventDefault(); }
+  }
+
+  /* ============================================================
+     ✅ v0.4.10 ПЕРЕЛАЗ ЧЕРЕЗ ОКНО: прыжок в упор к окну —
+     скриптовая анимация переносит игрока сквозь проём
+     ============================================================ */
+  var vault = null;
+  var vaultCd = 0;
+  function lerp(a, b, k) { return a + (b - a) * k; }
+  /** плоскость окна: ось нормали, координата плоскости, центр по стене */
+  function windowPlane(rec) {
+    var half = CELL / 2;
+    if (rec.e === 0) return { axis: 'z', plane: rec.gz * CELL - half, along0: rec.gx * CELL, top: rec.top };
+    if (rec.e === 2) return { axis: 'z', plane: rec.gz * CELL + half, along0: rec.gx * CELL, top: rec.top };
+    if (rec.e === 1) return { axis: 'x', plane: rec.gx * CELL + half, along0: rec.gz * CELL, top: rec.top };
+    return { axis: 'x', plane: rec.gx * CELL - half, along0: rec.gz * CELL, top: rec.top };
+  }
+  function vaultTick(dt) {
+    if (!_controls) return;
+    if (vault) {
+      // ИГРАЕТ АНИМАЦИЯ: управление заморожено, путь ведёт через проём
+      vault.t += dt;
+      var t = Math.min(1, vault.t / vault.dur);
+      var perp;
+      if (t < 0.42) perp = lerp(vault.s * 0.62, vault.s * 0.10, t / 0.42);
+      else if (t < 0.58) perp = lerp(vault.s * 0.10, -vault.s * 0.12, (t - 0.42) / 0.16);
+      else perp = lerp(-vault.s * 0.12, -vault.s * 0.80, (t - 0.58) / 0.42);
+      var along = t < 0.5 ? lerp(vault.along0, 0, t / 0.5) : 0;
+      var feet;
+      if (t < 0.45) feet = lerp(vault.feet0, 1.12, t / 0.45);        // подъем к проёму
+      else if (t < 0.62) feet = lerp(1.12, 1.00, (t - 0.45) / 0.17); // над подоконником
+      else feet = lerp(1.00, vault.endFeet, (t - 0.62) / 0.38);      // спуск по ту сторону
+      var wx = vault.axis === 'z' ? vault.along0 + along : vault.plane + perp;
+      var wz = vault.axis === 'z' ? vault.plane + perp : vault.along0 + along;
+      _controls.position.set(wx, vault.top + feet + EYE, wz);
+      _controls._grounded = false;
+      _controls._vy = 0;
+      // камера: взгляд вверх при подъеме, вниз при спуске
+      _controls.pitch = vault.pitch0 +
+        (t < 0.5 ? 0.34 * Math.sin(t / 0.5 * Math.PI)
+                 : -0.22 * Math.sin((t - 0.5) / 0.5 * Math.PI));
+      if (t >= 1) {
+        _controls.position.set(vault.endX, vault.top + vault.endFeet + EYE, vault.endZ);
+        _controls._grounded = true;
+        _controls._vy = 0;
+        _controls.pitch = vault.pitch0;
+        vaultCd = 1.2;
+        vault = null;
+      }
+      return;
+    }
+    if (vaultCd > 0) { vaultCd -= dt; return; }
+    if (!window.BrixGame || BrixGame.state.phase !== 'playing' || uiBlocked() || pad.open) return;
+    var st = _controls.getMoveState ? _controls.getMoveState() : null;
+    if (!st || !st.moving || st.onGround) return;   // надо ПРЫЖОК + движение
+    var pos = _controls.position;
+    var feetG = pos.y - EYE;
+    var done = false;
+    edgeRecs.forEach(function (en) {
+      if (done || en.rec.ty !== 'wi') return;
+      var pl = windowPlane(en.rec);
+      var perp2 = pl.axis === 'z' ? pos.z - pl.plane : pos.x - pl.plane;
+      var along2 = pl.axis === 'z' ? pos.x - pl.along0 : pos.z - pl.along0;
+      var rf = feetG - pl.top;                     // ноги над низом стены
+      if (rf < 0.30 || rf > 1.5) return;           // высота прыжка у окна
+      if (Math.abs(perp2) > 0.62 || Math.abs(along2) > 1.05) return;  // в упор
+      var s = perp2 >= 0 ? 1 : -1;
+      var endPerp = -s * 0.80;                     // приземлиться по ту сторону
+      var ex = pl.axis === 'z' ? pl.along0 : pl.plane + endPerp;
+      var ez = pl.axis === 'z' ? pl.plane + endPerp : pl.along0;
+      var fl = floorAt(ex, ez, pl.top + 0.6);
+      /* ✅ fix 0.4.11 «КИДАЕТ В НЕБО»: раньше endFeet был АБСОЛЮТНОЙ мировой
+         высотой (pl.top — уровень палубы), а ниже он ПРИБАВЛЯЛСЯ К НЕЙ ЖЕ
+         ещё раз: position.y = top + endFeet + EYE → игрока взлетало на
+         6+ м вверх в конце перелаза. Теперь приземление — ОТНОСИТЕЛЬНО
+         палубы: берём самую высокую опору по ту сторону (палуба/рельеф/
+         потолок) и считаем её ПРЕВЫШЕНИЕ над палубой (максимум 1.25 м) */
+      var landing = Math.max(pl.top, _groundY ? _groundY(ex, ez) : 0,
+        (fl !== null && fl !== undefined) ? fl : -1e9);
+      var endFeet = Math.max(0, Math.min(1.25, landing - pl.top));
+      vault = {
+        axis: pl.axis, plane: pl.plane, top: pl.top,
+        along0: Math.max(-0.5, Math.min(0.5, along2)),
+        s: s, t: 0, dur: 0.95,
+        feet0: Math.max(0.3, Math.min(1.4, rf)),
+        endFeet: endFeet, endX: ex, endZ: ez,
+        pitch0: _controls.pitch || 0
+      };
+      done = true;
+    });
+  }
+
+  /** UI занят для игры: чужие меню + наша клавиатура + перелаз */
+  function isUiBlocked() {
+    return !!vault || pad.open || uiBlocked();
+  }
+
+  /* ---------- ✅ v0.4.10 ПУЛЯ: где её останавливает постройка.
+     Возвращает {p, d} или null. В проёме окна/двери меша нет — пуля
+     летит; стену/потолок/палубу/раму/полотно — ловит */
+  var _bRay = null;
+  function bulletBlock(origin, dir, maxDist) {
+    if (!inited || !_bRay) return null;
+    var targets = rayTargets.concat(solidMeshes);
+    if (!targets.length) return null;
+    _bRay.set(origin, dir);
+    _bRay.far = maxDist || 140;
+    var hits = _bRay.intersectObjects(targets, false);
+    if (!hits.length) return null;
+    return { p: hits[0].point, d: hits[0].distance };
+  }
+
+  /* ---------- сеть v0.4.10: дверь/замок живут на сервере ---------- */
+  function onBrem(msg) {
+    if (!msg || !msg.id) return;
+    removeRecord(findRec(msg.id));
+  }
+  function onBdoor(msg) {
+    if (!msg || !msg.id) return;
+    var en = findEntry(msg.id);
+    if (en) setDoorLocal(en, !!msg.open);
+  }
+  function onBlock(msg) {
+    if (!msg || !msg.id) return;
+    var rec = findRec(msg.id);
+    if (!rec) return;
+    rec.hc = msg.hc ? 1 : 0;
+    if (rec.hc) delete myUnl[rec.id];   // владелец сменил код — все вводят заново
+    updateLight(findEntry(rec.id));
+  }
+  function onDunl(msg) {
+    if (!msg || !msg.id) return;
+    myUnl[msg.id] = true;
+    if (pad.open && pad.id === msg.id && pad.mode === 'enter') {
+      padMsg(L('Верно! Дверь открыта', 'Correct! Door opened'), '#8fd07a');
+      setTimeout(closePad, 350);
+    }
+  }
+  function onBdenyD(msg) {
+    if (pad.open && pad.mode === 'enter') {
+      padMsg(L('Неверный код', 'Wrong code'), '#e0685c');
+      pad.code = '';
+      refreshPad();
+      return;
+    }
+    /* ✅ fix 0.4.11: сервер ОТКАЗАЛ во включении двери (чужой закрытый
+       замок) — раньше оптимистично открытая дверь ОСТАВАЛАСЬ открытой
+       локально, только тост. Теперь: откат двери + СРАЗУ клавиатура
+       кода (как в Rust: замок не пускает — вводи код) */
+    if (lastTog && msg && lastTog.id === msg.id) {
+      var en0 = findEntry(lastTog.id);
+      if (en0) setDoorLocal(en0, !lastTog.to, true);
+      lastTog = null;
+      if (window.BrixHud) {
+        BrixHud.toast(L('Замок: доступ запрещён — введите код', 'Lock: access denied — enter code'));
+      }
+      openPad('enter', msg.id);
+      return;
+    }
+    if (window.BrixHud) BrixHud.toast(L('Замок: доступ запрещён', 'Lock: access denied'));
   }
 
   /* ============================================================
@@ -802,6 +1808,25 @@ window.BrixBuilding = (function () {
       return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24">' +
         '<rect x="3.5" y="4.5" width="17" height="15" ' + stroke + '/>' +
         '<path d="M3.5 9.5h17M3.5 14.5h17M9.2 4.5v5M14.8 9.5v5M9.2 14.5v5" ' + stroke + '/></svg>';
+    }
+    if (kind === 'wi') {
+      // ✅ v0.4.10 окно: стена с квадратным проёмом
+      return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24">' +
+        '<rect x="3.5" y="4.5" width="17" height="15" ' + stroke + '/>' +
+        '<rect x="8.5" y="9" width="7" height="6" ' + stroke + '/></svg>';
+    }
+    if (kind === 'dw') {
+      // ✅ v0.4.10 дверной проём: стена с высоким проходом
+      return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24">' +
+        '<rect x="3.5" y="4.5" width="17" height="15" ' + stroke + '/>' +
+        '<path d="M8.5 19.5v-9h7v9" ' + stroke + '/></svg>';
+    }
+    if (kind === 'dr') {
+      // ✅ v0.4.10 дверь: полотно с ручкой, приоткрытая
+      return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24">' +
+        '<path d="M5 4.5h9.5v15H5z" ' + stroke + '/>' +
+        '<path d="M14.5 4.5L19 7v10l-4.5 2.5" ' + stroke + '/>' +
+        '<circle cx="12" cy="12.5" r="0.9" fill="#e8e4da"/></svg>';
     }
     // потолок: плита
     return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24">' +
@@ -927,7 +1952,7 @@ window.BrixBuilding = (function () {
       var d = Math.abs(((a - PIECE_ANGLES[i]) % 360 + 540) % 360 - 180);
       if (d < bestD) { bestD = d; best = i; }
     }
-    menu.hover = bestD < 66 ? best : -1;
+    menu.hover = bestD < 34 ? best : -1;   // 6 сегментов: окно выбора уже
     paintMenuSelection();
   }
 
@@ -958,7 +1983,7 @@ window.BrixBuilding = (function () {
   function updateHint() {
     var el = ensureHint();
     var on = holdingPlan() && !menu.open && window.BrixGame &&
-      BrixGame.state.phase === 'playing' && !uiBlocked();
+      BrixGame.state.phase === 'playing' && !isUiBlocked();
     if (!on) { el.style.display = 'none'; return; }
     var piece = PIECES[PIECES.map(function (p) { return p.id; }).indexOf(current)];
     el.textContent = L('ПЛАН · ' + piece.name.toUpperCase() +
@@ -979,6 +2004,7 @@ window.BrixBuilding = (function () {
     _controls = opts.controls;
     _getPos = opts.getPos || null;
     _quality = opts.quality || 'medium';
+    _onPad = opts.onPad || null;   /* ✅ fix 0.4.11: пауза не мешает клавиатуре замка */
     try {
       myName = (window.BrixNet && BrixNet.NAME) || myName;
     } catch (e) { /* ник по умолчанию */ }
@@ -988,19 +2014,38 @@ window.BrixBuilding = (function () {
     buildMaterials();
     ray = new THREE.Raycaster();
     center2 = new THREE.Vector2(0, 0);
+    _intRay = new THREE.Raycaster();   // ✅ v0.4.10: луч F по двери/замку
+    _bRay = new THREE.Raycaster();     // ✅ v0.4.10: луч пули по постройкам
     rebuildGhost();
+
+    // ✅ v0.4.9: СРАЗУ после сборки материалов/призрака — раньше inited
+    // ставился В КОНЦЕ init(), и loadLocal() ниже молча терял ВСЕ
+    // постройки из localStorage (applyRecord выходил по !inited) —
+    // дом исчезал при каждом перезаходе без сервера. Теперь бэкап
+    // применяется всегда; очередь pendingSnapshot — на случай,
+    // если bnew/snapshot придёт между подпиской и этой строкой
+    inited = true;
 
     // звуки строительства (3 сэмпла от пользователя, играют рандомно)
     if (window.BrixSfx) {
       BrixSfx.load('build1', sfxUrl('assets/sfx/build/Construction_Wooden_Build_03.wav'));
       BrixSfx.load('build2', sfxUrl('assets/sfx/build/Construction_Wooden_Build_04.wav'));
       BrixSfx.load('build3', sfxUrl('assets/sfx/build/Construction_Wooden_PickUp_04.wav'));
+      BrixSfx.load('doorMove', sfxUrl('assets/sfx/wood/chop_2.wav'));   // ✅ v0.4.10
     }
 
     // сеть: постройки авторитетны у сервера; вкладки — через BroadcastChannel
     if (window.BrixNet) {
       BrixNet.on('bnew', onBnew);
       BrixNet.on('bdeny', onBdeny);
+      // ✅ v0.4.10: дверь/замок — события сервера (и вкладок)
+      BrixNet.on('brem', onBrem);
+      BrixNet.on('bdoor', onBdoor);
+      BrixNet.on('block', onBlock);
+      BrixNet.on('dunl', onDunl);
+      BrixNet.on('bcodedeny', onBdenyD);
+      BrixNet.on('bdeny-d', onBdenyD);
+      BrixNet.on('bwipe', onBwipe);   // ✅ v0.4.13: мир очищен батником
     }
     if (window.BrixNet && BrixNet.mode !== 'server') loadLocal();
     else {
@@ -1008,22 +2053,33 @@ window.BrixBuilding = (function () {
       // Загружаем ПОКА снимок сервера не пришёл, чтобы дом был виден сразу
       loadLocal();
     }
+    // ✅ v0.4.9: применяем постройки, пришедшие ДО готовности мира
+    if (pendingSnapshot && pendingSnapshot.length) {
+      var snap = pendingSnapshot;
+      var snapEp = pendingEp;          // ✅ v0.4.13
+      pendingSnapshot = null; pendingEp = 0;
+      applySnapshot(snap, snapEp);
+    }
 
     // мышь: меню выбора детали живёт на дельтах pointer lock
     document.addEventListener('mousemove', menuMouseMove);
+    // ✅ v0.4.10: клавиатура кодового замка (цифры/F/Esc)
+    document.addEventListener('keydown', padKeyDown);
     _onLockChange = function () {
       if (!document.pointerLockElement && menu.open) closeMenu(true);
     };
     document.addEventListener('pointerlockchange', _onLockChange);
 
-    inited = true;
-    console.log('[BrixBuilding] v0.4.7 строительство готово: фундамент/стена/потолок, ' +
-      'план в инвентаре (клик — в руки, Z — меню), ЛКМ — поставить, ' +
-      'коллизии стен/потолков, плавный бег между фундаментами');
+    console.log('[BrixBuilding] v0.4.13 строительство готово: 6 деталей ' +
+      '(фундамент/стена/окно/проём/дверь/потолок), окно — перелаз прыжком, ' +
+      'дверь на F с кодовым замком (зелёная/красная лампа), ' +
+      'всё сохраняется на сервере + localStorage-бэкап, ' +
+      'epoch мира — очистка батником работает');
   }
 
   function sfxUrl(u) { return window.BrixAsset ? window.BrixAsset(u) : u; }
   var _onLockChange = null;
+  var _onPad = null;          /* ✅ fix 0.4.11: колбэк «замок открыт/закрыт» из gameworld */
 
   function tick(dt) {
     if (!inited) return;
@@ -1032,11 +2088,27 @@ window.BrixBuilding = (function () {
     if (menu.open && !holdingPlan()) closeMenu(true);
     updateGhost();
     updateHint();
+    // ✅ v0.4.10: анимация дверей (плавное вращение полотна)
+    doorEntries.forEach(function (en) {
+      if (en.anim && en.leafPivot) {
+        en.anim.t += dt;
+        var k = Math.min(1, en.anim.t / 0.5);
+        k = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;   // easeInOut
+        en.leafPivot.rotation.y = en.anim.from + (en.anim.to - en.anim.from) * k;
+        if (en.anim.t >= 0.5) { en.leafPivot.rotation.y = en.anim.to; en.anim = null; }
+      }
+    });
+    vaultTick(dt);          // перелаз через окно
+    updateDoorHint();       // подсказка F у двери/замка
   }
 
   function shutdown() {
     if (!inited) return;
+    // ✅ v0.4.9: СНАЧАЛА бэкап в localStorage (пока записи живы),
+    // потом teardown — дом не теряется при выходе в меню
+    saveLocal();
     document.removeEventListener('mousemove', menuMouseMove);
+    document.removeEventListener('keydown', padKeyDown);   // ✅ v0.4.10
     if (_onLockChange) document.removeEventListener('pointerlockchange', _onLockChange);
     if (ghost.group && _scene) _scene.remove(ghost.group);
     cellRecs.forEach(function (cell) {
@@ -1044,14 +2116,17 @@ window.BrixBuilding = (function () {
       if (cell.c) destroyEntry(cell.c);
     });
     edgeRecs.forEach(destroyEntry);
-    cellRecs.clear(); edgeRecs.clear(); fTop.clear();
-    rayTargets.length = 0; wallBoxes.length = 0;
+    cellRecs.clear(); edgeRecs.clear(); fTop.clear(); doorEntries.clear();
+    rayTargets.length = 0; wallBoxes.length = 0; solidMeshes.length = 0;
+    myUnl = {}; vault = null; vaultCd = 0; closePad();
     for (var tid in pendingPlace) { clearTimeout(pendingPlace[tid].timer); }
     pendingPlace = {};
     if (menu.el && menu.el.parentElement) menu.el.parentElement.removeChild(menu.el);
     menu.el = null; menu.open = false;
     if (hintEl && hintEl.parentElement) hintEl.parentElement.removeChild(hintEl);
     hintEl = null;
+    if (doorHintEl && doorHintEl.parentElement) doorHintEl.parentElement.removeChild(doorHintEl);
+    doorHintEl = null;
     _disposables.forEach(function (d) { if (d.dispose) d.dispose(); });
     _disposables.length = 0;
     _mat = null; _geo = null; _scene = null; _camera = null; _terrainMesh = null;
@@ -1074,6 +2149,33 @@ window.BrixBuilding = (function () {
     applySnapshot: applySnapshot,
     applyRecord: applyRecord,
     count: function () { return allRecords().length; },
-    CURRENT: function () { return current; }
+    CURRENT: function () { return current; },
+    /* ✅ v0.4.10: дверь/замок/окно */
+    interact: interact,                 // F — дверь/замок (gameworld вызывает первой)
+    bulletBlock: bulletBlock,           // где пуля встречает постройку
+    isUiBlocked: isUiBlocked,           // клавиатура замка/перелаз — гасят движение
+    applyUnl: applyUnl,                 // «какие замки я разгадал» из welcome
+    findRec: findRec,
+    doorCount: function () { var n = 0; doorEntries.forEach(function () { n++; }); return n; },
+    /* внутренности для тестов (jsdom) */
+    _test: function () {
+      return {
+        edgeRecs: edgeRecs, cellRecs: cellRecs, doorEntries: doorEntries,
+        solidMeshes: solidMeshes, wallBoxes: wallBoxes, myUnl: myUnl,
+        vault: function () { return vault; }, pad: pad,
+        setVault: function (v) { vault = v; }, ownerKey: ownerKey,
+        isOwner: isOwner, doorAuth: doorAuth, setDoorLocal: setDoorLocal,
+        windowPlane: windowPlane, PIECES: PIECES,
+        /* ✅ fix 0.4.11: план-функции и откат двери — для автотестов */
+        planOnEdge: planOnEdge, planFoundation: planFoundation,
+        planDoor: planDoor, planCeiling: planCeiling, fTop: fTop,
+        toggleDoor: toggleDoor, lastTog: function () { return lastTog; },
+        onBdenyD: onBdenyD, onBdoor: onBdoor, myNick: myNick,
+        /* ✅ fix 0.4.12: клавиатура замка — тест потока клавиш F */
+        openPad: openPad, closePad: closePad, padKeyDown: padKeyDown,
+        interact: interact, onBdeny: onBdeny,
+        setInited: function (v) { inited = !!v; }
+      };
+    }
   };
 })();

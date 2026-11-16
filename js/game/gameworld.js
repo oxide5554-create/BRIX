@@ -183,9 +183,11 @@ window.BrixGameWorld = (function () {
     }
 
     /* ✅ v0.4.3: МИНИ-МЕНЮ (M) или КАРТА открыты — управление стоит,
-       но рендер и сеть живут: игрок остаётся на сервере и виден */
+       но рендер и сеть живут: игрок остаётся на сервере и виден
+       ✅ v0.4.15: панель разработчика (9) — то же самое */
     function isMiniOpen() {
-      return !!(window.BrixMiniMenu && BrixMiniMenu.isAnyOpen());
+      return !!(window.BrixMiniMenu && BrixMiniMenu.isAnyOpen()) ||
+        !!(window.BrixAdmin && BrixAdmin.isOpen());
     }
 
     /* ✅ fix 0.4.5a: захват мыши с АВТО-ПОВТОРОМ. После выхода из pointer
@@ -222,7 +224,11 @@ window.BrixGameWorld = (function () {
       var pause = document.getElementById('pauseOverlay');
       hud.classList.toggle('dimmed', !v && !isInvOpen() && !isLootOpen() && !isMiniOpen());
       // инвентарь/лут-меню/мини-меню открыты — паузу не показываем (своя панель поверх игры)
-      pause.classList.toggle('hidden', v || isInvOpen() || isLootOpen() || isMiniOpen());
+      // ✅ fix 0.4.11: клавиатура кодового замка / перелаз — паузу ТОЖЕ не
+      // показываем. Раньше F по замку выходил из pointer lock и игра
+      // накрывала клавиатуру СТАРЫМ МЕНЮ ПАУЗЫ («Кликните по экрану…»)
+      var bUi = !!(window.BrixBuilding && BrixBuilding.isUiBlocked && BrixBuilding.isUiBlocked());
+      pause.classList.toggle('hidden', v || isInvOpen() || isLootOpen() || isMiniOpen() || bUi);
     }
 
     /* ---------- инвентарь, рука с топором, звуки ---------- */
@@ -633,7 +639,20 @@ window.BrixGameWorld = (function () {
     document.addEventListener('keydown', function (e) {
       // ✅ v0.4.3: мини-меню/карта открыты — F не подбирает лут
       if (isMiniOpen()) return;
-      if (e.code === 'KeyF') tryPickup();
+      /* ✅ v0.4.10: F — сначала ДВЕРЬ/ЗАМОК (BrixBuilding.interact вернёт
+         true, если навели на дверь — открыли/закрыли/ввели код);
+         иначе — обычный подбор лута */
+      if (e.code === 'KeyF') {
+        if (window.BrixBuilding && BrixBuilding.interact && BrixBuilding.interact()) {
+          /* ✅ fix 0.4.12: F обработан дверью/замком — не даём событию
+             дойти до клавиатуры замка (padKeyDown), иначе ТО ЖЕ нажатие
+             мгновенно закрывало панель кода: игрок видел только звук */
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        } else {
+          tryPickup();
+        }
+      }
       // ✅ v0.4.5: R — перезарядка револьвера (собирает 6 патронов из запаса)
       if (e.code === 'KeyR') tryReload();
       /* ✅ v0.4.6 СТРОИТЕЛЬСТВО: Z — открыть/закрыть меню выбора детали.
@@ -1183,21 +1202,38 @@ window.BrixGameWorld = (function () {
       for (var rk in remotes) {
         if (!remotes[rk].dead) pids.push(remotes[rk].group);
       }
-      var end = null, victimId = null;
+      var end = null, victimId = null, endD = Infinity;
       if (pids.length) {
         var ph = raycaster.intersectObjects(pids, true);
         if (ph.length) {
           victimId = findPid(ph[0].object);
           end = ph[0].point;
+          endD = camera.position.distanceTo(end);
         }
+      }
+      /* ✅ v0.4.10: ПОСТРОЙКИ встречают пулю — через стену/потолок/дверь
+         она не летит, а через проём ОКНА и открытый проход двери летит
+         (в проёме просто нет меша). Если постройка ближе жертвы —
+         пуля втыкается в неё, трассер до неё же */
+      var blk = (window.BrixBuilding && BrixBuilding.bulletBlock)
+        ? BrixBuilding.bulletBlock(camera.position, raycaster.ray.direction, SHOOT_RANGE)
+        : null;
+      if (blk && blk.d < endD) {
+        victimId = null;
+        end = blk.p;
+        endD = blk.d;
       }
       if (!end && terrain) {
         var th = raycaster.intersectObject(terrain, false);
-        if (th.length) end = th[0].point;
+        if (th.length) {
+          var td = camera.position.distanceTo(th[0].point);
+          end = (blk && blk.d < td) ? blk.p : th[0].point;
+        }
       }
       if (!end) {
-        end = camera.position.clone()
-          .addScaledVector(raycaster.ray.direction, SHOOT_RANGE);
+        end = blk ? blk.p
+          : camera.position.clone()
+              .addScaledVector(raycaster.ray.direction, SHOOT_RANGE);
       }
       var mz = muzzleWorldPos(new THREE.Vector3());
       addTracer(mz, end);
@@ -1239,6 +1275,12 @@ window.BrixGameWorld = (function () {
     /* ---------- ПвП: ХП, попадания, смерть, возрождение ---------- */
     function onPlayerHit(msg) {
       if (msg.tid === BrixNet.id) {
+        /* ✅ v0.4.15: у админа БЕСКОНЕЧНОЕ ХП — урон не применяется
+           (сервер и так не снижает хп админу — это защита режима вкладок) */
+        if (window.BrixAdmin && BrixAdmin.god) {
+          setMyHp(PLAYER_MAX_HP);
+          return;
+        }
         // попали в МЕНЯ: у сервера — точное хп, во вкладках — вычитаем сами
         var hp = (msg.hp !== undefined && msg.hp !== null)
           ? msg.hp : Math.max(0, myHp - (msg.dmg || 0));
@@ -1557,8 +1599,15 @@ window.BrixGameWorld = (function () {
           if (msg.objs) buildObjects(msg.objs);
           // ✅ v0.4.6: ПОСТРОЙКИ (фундаменты/стены/потолки) — новый игрок
           //    сразу видит дом; хранятся у сервера в world-objs.json
+          // ✅ v0.4.13: ep — поколение мира (для защиты от «воскрешения»
+          //    постройки, очищенной CLEAR-BUILDS.bat)
           if (msg.objs && msg.objs.bd && window.BrixBuilding) {
-            BrixBuilding.applySnapshot(msg.objs.bd);
+            BrixBuilding.applySnapshot(msg.objs.bd, msg.objs.ep);
+          }
+          // ✅ v0.4.10: какие замки я уже разгадал (сервер помнит по BRIX-ID,
+          // после перезахода верный код заново не спрашивается)
+          if (msg.objs && msg.objs.dunl && window.BrixBuilding) {
+            BrixBuilding.applyUnl(msg.objs.dunl);
           }
         });
         if (!window.__brixObjLocalInit) {
@@ -1648,8 +1697,15 @@ window.BrixGameWorld = (function () {
         (hudEl || mount).appendChild(diagEl);
         var serverAlive = null;   // null = ещё не проверяли, true/false = pong
         function renderDiag() {
-          var ver = 'BRIX v0.4.7';
-          var net = BrixNet.mode === 'server' ? 'СЕТЬ: сервер' : 'СЕТЬ: вкладки';
+          /* ✅ v0.4.17: версия из index.html (BRIX_VER) — раньше была
+             зашита «v0.4.12» и врала. Плюс версия СЕРВЕРА: новый server.js
+             присылает её в welcome.sv; пусто = сервер старый (панели в
+             нём нет); «вкладки» = игра вообще без server.js */
+          var ver = 'BRIX v' + (window.BRIX_VER || '0.4.17');
+          var net = BrixNet.mode === 'server'
+            ? ('СЕТЬ: сервер' + (BrixNet.serverSv ? ' (v' + BrixNet.serverSv + ')'
+                : ' (СТАРЫЙ server.js — без панели!)'))
+            : 'СЕТЬ: вкладки (БЕЗ сервера!)';
           var hp;
           if (BrixNet.mode !== 'server') hp = '· сервер не нужен';
           else if (serverAlive === null) hp = '· сервер: проверяю…';
@@ -1747,7 +1803,35 @@ window.BrixGameWorld = (function () {
             groundY: T.heightAt,
             controls: controls,
             quality: quality,
-            getPos: function () { return controls.position; }
+            getPos: function () { return controls.position; },
+            /* ✅ fix 0.4.11: клавиатура кодового замка живёт БЕЗ выхода из
+               pointer lock. openPad: гасим паузу (если была); closePad:
+               возвращаем мышь сами (авто-повтор, как в fix 0.4.5a) —
+               игрок после ввода кода сразу продолжает игру */
+            onPad: function (padOpen) {
+              var pause = document.getElementById('pauseOverlay');
+              if (padOpen) {
+                if (pause) pause.classList.add('hidden');
+                return;
+              }
+              var canvas = document.querySelector('#gameMount canvas');
+              if (canvas && BrixGame.state.phase === 'playing' &&
+                  !isInvOpen() && !isLootOpen() && !isMiniOpen()) {
+                lockPointerSoon(canvas);
+              }
+              /* страховка: если захват мыши так и не удался (кулдаун
+                 браузера после Esc) — через 2.5 с возвращаем стандартный
+                 экран «Кликните по экрану, чтобы вернуться в игру»,
+                 чтобы игрок не остался без курсора и без подсказки */
+              setTimeout(function () {
+                if (BrixGame.state.phase !== 'playing') return;
+                if (document.pointerLockElement) return;
+                if (window.BrixBuilding && BrixBuilding.isUiBlocked &&
+                    BrixBuilding.isUiBlocked()) return;
+                if (isInvOpen() || isLootOpen() || isMiniOpen()) return;
+                if (pause) pause.classList.remove('hidden');
+              }, 2500);
+            }
           });
           if (controls.setBoxColliders) controls.setBoxColliders(BrixBuilding.wallBoxes());
         }
@@ -1801,6 +1885,20 @@ window.BrixGameWorld = (function () {
           });
         }
 
+        /* ✅ v0.4.15: ПАНЕЛЬ РАЗРАБОТЧИКА (клавиша 9, только для ID
+           владельца — подтверждает сервер). getPos — подставить свои
+           координаты в телепорт; tp — применить телепорт от сервера */
+        if (window.BrixAdmin) {
+          BrixAdmin.init({
+            getPos: function () {
+              return { x: controls.position.x, z: controls.position.z };
+            },
+            tp: function (x, z) {
+              controls.spawnAt(x, z, controls.yaw);
+            }
+          });
+        }
+
         /* цикл рендера */
         var clock = new THREE.Clock();
         var loop = function () {
@@ -1817,7 +1915,10 @@ window.BrixGameWorld = (function () {
           //    ✅ v0.4.3: мини-меню (M) и карта — управление тоже стоит,
           //    но рендер и сеть продолжаются (игрок виден на сервере)
           //    ✅ v0.4.5: мёртв — управления нет (окно возрождения)
-          controls.enabled = !dead && !isInvOpen() && !isLootOpen() && !isMiniOpen();
+          //    ✅ v0.4.10: клавиатура кодового замка / перелаз через окно —
+          //    управление тоже стоит (BrixBuilding.isUiBlocked)
+          controls.enabled = !dead && !isInvOpen() && !isLootOpen() && !isMiniOpen() &&
+            !(window.BrixBuilding && BrixBuilding.isUiBlocked && BrixBuilding.isUiBlocked());
           // ✅ v0.4.5: во время перезарядки игрок идёт МЕДЛЕННО даже бегом
           controls.slowFactor = reloading ? RELOAD_SLOW : 1;
           // прицеливание замедляет поворот мыши (наводка точнее)
@@ -1851,12 +1952,10 @@ window.BrixGameWorld = (function () {
             mpSendT = 1 / 12;
             var mv2 = controls.getMoveState();
             var sel2 = inventory.getSelectedItem();
-            // ✅ v0.4.7: если план строителя взят в руки КЛИКОМ из
-            // инвентаря — другим игрокам тоже уходит tool 'plan'
-            // (✅ v0.4.5: getSelectedItem возвращает САМ ПРЕДМЕТ)
-            var tool2 = (inventory.isPlanEquipped && inventory.isPlanEquipped())
-              ? 'plan'
-              : (sel2 ? (sel2.tool || (sel2.item && sel2.item.tool) || '') : '');
+            // ✅ v0.4.9: план строителя в руках = выбран слот хотбара с
+            // планом — tool 'plan' уходит другим автоматически через
+            // getSelectedItem (механика planEquipped удалена)
+            var tool2 = sel2 ? (sel2.tool || (sel2.item && sel2.item.tool) || '') : '';
             // анимация для других: перезарядка/выстрел/удар/прыжок/бег/покой
             var anim2 = 'idle';
             var ph2 = 0;
@@ -1938,6 +2037,9 @@ window.BrixGameWorld = (function () {
       cancelled = true;
       // ✅ v0.4.3: мини-меню/карта закрываются вместе с миром
       if (window.BrixMiniMenu) BrixMiniMenu.shutdown();
+      // ✅ v0.4.15: панель разработчика закрывается вместе с миром
+      // (сервер заново подтвердит админа при следующем входе)
+      if (window.BrixAdmin) BrixAdmin.shutdown();
       // ✅ v0.4.6: система строительства выключается вместе с миром
       if (window.BrixBuilding) BrixBuilding.shutdown();
       window.removeEventListener('resize', onResize);

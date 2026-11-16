@@ -195,7 +195,9 @@ window.BrixControls = (function () {
     var moving = fx !== 0 || fz !== 0;
     var sprint = this._keys.has('ShiftLeft') || this._keys.has('ShiftRight');
     // ✅ v0.4.5: slowFactor < 1 — перезарядка револьвера (медленно даже бегом)
-    var speed = (sprint ? SPRINT_SPEED : WALK_SPEED) * (this.slowFactor || 1);
+    // ✅ v0.4.15: BrixAdmin.speedOn — СКОРОСТЬ ×2 из панели разработчика
+    var adminMul = (window.BrixAdmin && BrixAdmin.speedOn) ? 2 : 1;
+    var speed = (sprint ? SPRINT_SPEED : WALK_SPEED) * (this.slowFactor || 1) * adminMul;
 
     // по колено в воде — медленнее (✅ v0.4.6: feetY — по палубе фундамента
     // вода под домом не замедляет)

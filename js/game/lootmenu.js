@@ -128,7 +128,7 @@ window.BrixLootMenu = (function () {
     if (onTake) onTake(curId, item, take);
   }
   /** ПЕРЕТАЩИЛИ СВОЙ слот idx В ЯЩИК: положить весь стек.
-      ✅ v0.4.7: ПЛАН СТРОИТЕЛЯ в ящик НЕ положить — он закреплён */
+      ✅ v0.4.8: ПЛАН СТРОИТЕЛЯ в ящик положить по-прежнему НЕЛЬЗЯ */
   function dropOwnToCrate(idx) {
     var s = inv().slots[idx];
     if (!s || !curId) return;
@@ -211,23 +211,23 @@ window.BrixLootMenu = (function () {
         el.appendChild(c);
       }
       el.title = itemName(slot.item.id);
-      // ✅ v0.4.7: план строителя не перетаскивается (закреплён в рюкзаке)
-      if (slot.item.tool !== 'plan') {
-        el.draggable = true;
-        el.addEventListener('dragstart', function (e) {
-          onDragStart(e, { src: 'own', index: idx });
-        });
-      }
+      // ✅ v0.4.8: план строителя ТОЖЕ перетаскивается — можно переставить
+      // его между рюкзаком и хотбаром, пока открыт ящик (в сам ящик нельзя)
+      el.draggable = true;
+      el.addEventListener('dragstart', function (e) {
+        onDragStart(e, { src: 'own', index: idx });
+      });
     }
     el.addEventListener('dragover', onDragOver);
     el.addEventListener('dragleave', onDragLeave);
-    // ✅ v0.4.7: на слот с планом нельзя бросить предмет из ящика
+    // ✅ v0.4.8: на слот с планом можно бросить СВОЙ предмет (обмен местами),
+    // а предмет из ЯЩИКА на план не кладётся (план не заменяется лутом)
     el.addEventListener('drop', function (e) {
       e.preventDefault();
       el.classList.remove('drag-over');
       var data; try { data = JSON.parse(e.dataTransfer.getData('text/plain')); } catch (err) { return; }
       if (!data) return;
-      if (slot && slot.item && slot.item.tool === 'plan') return;
+      if (data.src === 'crate' && slot && slot.item && slot.item.tool === 'plan') return;
       if (data.src === 'crate') dropCrateToOwn(data.item, idx);
       else if (data.src === 'own' && typeof data.index === 'number') dropOwnToOwn(data.index, idx);
     });

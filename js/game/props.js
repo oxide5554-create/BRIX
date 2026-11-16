@@ -723,6 +723,14 @@ window.BrixProps = (function () {
     delete drops[id];
   }
 
+  /* ✅ v0.4.15: убрать ВСЕ дропы (админ-панель, сервер прислал dclr) */
+  function clearDrops() {
+    if (_scene) {
+      for (var id in drops) _scene.remove(drops[id].group);
+    }
+    drops = {};
+  }
+
   /* ---------- обломки бочки (визуал, как в репозитории) ---------- */
 
   function spawnDebris(x, z) {
@@ -941,6 +949,7 @@ window.BrixProps = (function () {
     padAt: padAt,
     spawnDrop: spawnDrop,
     removeDrop: removeDrop,
+    clearDrops: clearDrops,   // ✅ v0.4.15: админ-панель — «убрать все дропы»
     removeCrate: removeCrate,
     respawnCrate: respawnCrate,
     crateLoot: function (id) {

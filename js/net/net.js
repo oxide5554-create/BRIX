@@ -35,7 +35,8 @@ window.BrixNet = (function () {
   var ws = null;          // WebSocket или null
   var bc = null;          // BroadcastChannel или null
   var mode = 'off';
-  var serverVer = 0;   // ✅ v0.4.2: версия протокола сервера (welcome.ver)       // 'server' | 'tabs' | 'off'
+  var serverVer = 0;   // ✅ v0.4.2: версия протокола сервера (welcome.ver)
+  var serverSv = '';   // ✅ v0.4.17: версия СЕРВЕРА (welcome.sv) — пусто = сервер СТАРЫЙ       // 'server' | 'tabs' | 'off'
   var statusEl = null;
   var handlers = {
     welcome: null,        // (msg) — ростер + мир от сервера
@@ -54,7 +55,18 @@ window.BrixNet = (function () {
     try { return (window.BrixState && BrixState.data.level) || 1; } catch (e) { return 1; }
   }
   function ownAid() {
-    try { return (window.BrixState && BrixState.data.profileId) || ''; } catch (e) { return ''; }
+    /* ✅ fix 0.4.11: BRIX-ID создаётся СРАЗУ при подключении, а не при
+       первом открытии профиля. Раньше: игрок входил без ID → сервер
+       писал владельцем двери «n:ник» → позже появлялся ID → клиент
+       переставал узнавать свою дверь (F требовал код). Теперь ключ
+       владельца стабилен с первого входа */
+    try {
+      if (window.BrixState && BrixState.ensureProfileId) {
+        var id = BrixState.ensureProfileId();
+        if (id) return String(id);
+      }
+      return (window.BrixState && BrixState.data.profileId) || '';
+    } catch (e) { return ''; }
   }
 
   function peersCount() {
@@ -75,6 +87,7 @@ window.BrixNet = (function () {
     switch (msg.t) {
       case 'welcome':
         serverVer = msg.ver || 0;   // ✅ v0.4.2: версия протокола сервера (welcome.ver)
+        serverSv = String(msg.sv || '');   // ✅ v0.4.17: старый server.js версии НЕ пришлёт
         ID = msg.id;
         // ✅ v0.4.3: ростер от сервера — истина для списка игроков
         roster = {};
@@ -159,6 +172,52 @@ window.BrixNet = (function () {
         break;
       case 'bdeny':
         if (handlers.bdeny) handlers.bdeny(msg);
+        break;
+      /* ✅ v0.4.10 ДВЕРИ/ОКНА/ЗАМКИ: снос заменённой детали (brem),
+         дверь открыли/закрыли (bdoor), лампа замка — код задан/сменён
+         (block), «ты разгадал этот замок» (dunl), отказы сервера */
+      case 'brem':
+        if (handlers.brem) handlers.brem(msg);
+        break;
+      case 'bdoor':
+        if (handlers.bdoor) handlers.bdoor(msg);
+        break;
+      case 'block':
+        if (handlers.block) handlers.block(msg);
+        break;
+      case 'dunl':
+        if (handlers.dunl) handlers.dunl(msg);
+        break;
+      case 'bcodedeny':
+        if (handlers.bcodedeny) handlers.bcodedeny(msg);
+        break;
+      case 'bdeny-d':
+        if (handlers["bdeny-d"]) handlers["bdeny-d"](msg);
+        break;
+      /* --- ✅ v0.4.15 АДМИН-ПАНЕЛЬ РАЗРАБОТЧИКА (клавиша 9) ---
+         adminon — ты админ (сервер подтвердил по BRIX-ID);
+         adeny   — сервер ОТКАЗАЛ в команде (не админ/неизвестная op);
+         aok     — команда выполнена (info — текст для тоста);
+         atp     — сервер телепортирует тебя (x, z);
+         banned  — твой аккаунт забанен (соединение закроется);
+         dclr    — сервер убрал все дропы (клиент чистит мешы) */
+      case 'adminon':
+        if (handlers.adminon) handlers.adminon(msg);
+        break;
+      case 'adeny':
+        if (handlers.adeny) handlers.adeny(msg);
+        break;
+      case 'aok':
+        if (handlers.aok) handlers.aok(msg);
+        break;
+      case 'atp':
+        if (handlers.atp) handlers.atp(msg);
+        break;
+      case 'banned':
+        if (handlers.banned) handlers.banned(msg);
+        break;
+      case 'dclr':
+        if (handlers.dclr) handlers.dclr(msg);
         break;
       case 'cnt':
         // счётчик онлайна пушит сервер — мгновенно, каждому.
@@ -402,13 +461,18 @@ window.BrixNet = (function () {
      ty: 'f' фундамент | 'w' стена | 'c' потолок;
      gx/gz — клетка сетки 3 м, e — край (стены), top — высота
      (только фундамент: высоту палубы считает клиент по рельефу,
-     стена/потолок берут высоту фундамента у СЕРВЕРА) */
-  function sendBplace(ty, gx, gz, e, top, tid) {
+     стена/потолок берут высоту фундамента у СЕРВЕРА).
+     ✅ v0.4.12: px/pz — ТОЧКА ПРИЦЕЛА (мировые координаты). Сервер
+     привязывает постройку к клетке под лучом сам — расхождение
+     координат клиент/сервер («старые фундаменты») больше не мешает */
+  function sendBplace(ty, gx, gz, e, top, tid, px, pz) {
     if (mode === 'off') return;
     var m = { t: 'bplace', ty: ty, gx: gx, gz: gz };
     if (e !== undefined && e !== null) m.e = e;
     if (top !== undefined && top !== null) m.top = top;
     if (tid) m.tid = tid;
+    if (typeof px === 'number' && isFinite(px)) m.px = Math.round(px * 100) / 100;
+    if (typeof pz === 'number' && isFinite(pz)) m.pz = Math.round(pz * 100) / 100;
     send(m);
   }
   function sendPhit(tid, dmg, kind) {
@@ -457,6 +521,7 @@ window.BrixNet = (function () {
     on: function (name, fn) { handlers[name] = fn; },
     get mode() { return mode; },
     get serverVer() { return serverVer; },
+    get serverSv() { return serverSv; },   // ✅ v0.4.17: для диагностики панели (9)
     get id() { return ID; },
     peersCount: peersCount,
     /* ✅ v0.4.3: список игроков для мини-меню (ник, уровень, BRIX-ID).
