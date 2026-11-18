@@ -27,6 +27,7 @@ window.BrixLootMenu = (function () {
   var curId = null;
   var curLoot = null;
   var curMil = 0;
+  var curMode = null;   /* ✅ v0.4.22: 'chest' — меню сундука «наоборот» */
   var onTake = null;   // (cbId, item, amt) — забрать из ящика
   var onPut = null;    // (cbId, item, amt, fromIndex) — положить в ящик
   var onClose = null;
@@ -40,7 +41,9 @@ window.BrixLootMenu = (function () {
   }
   function itemIcon(id) {
     var d = (window.BrixItems && BrixItems[id]) || {};
-    return d.icon || '';
+    /* ✅ v0.4.25: если на предмет надет СКИН — иконка скина */
+    var sk = window.BrixWeaponSkins ? BrixWeaponSkins.iconFor(id) : null;
+    return sk || d.icon || '';
   }
   /* лимит стека предмета (BrixItems: stackable + stack) */
   function stackLimit(id) {
@@ -73,7 +76,7 @@ window.BrixLootMenu = (function () {
       '    <div class="crate-title font-h" style="margin-top:8px">' + t('loot.hotbar') + '</div>' +
       '    <div class="crate-grid crate-grid-hot" id="lootHotbarGrid"></div>' +
       '  </div>' +
-      '  <div class="crate-close-hint">' + t('loot.hint') + '</div>' +
+      '  <div class="crate-close-hint" id="lootHint">' + t('loot.hint') + '</div>' +
       '</div>';
     document.body.appendChild(root);
     document.getElementById('lootClose').onclick = function () { close(); };
@@ -195,7 +198,8 @@ window.BrixLootMenu = (function () {
   }
 
   /** свой слот (0–19): можно перетащить сюда предмет из ящика,
-      свой предмет можно унести в другой слот или в ящик */
+      свой предмет можно унести в другой слот или в ящик.
+      ✅ v0.4.22: в режиме сундука КЛИК по своему предмету — положить стек В СУНДУК */
   function renderOwnSlot(container, slot, idx) {
     var el = document.createElement('div');
     el.className = 'crate-slot crate-slot-own' + (idx < 6 ? ' own-hot' : '');
@@ -217,6 +221,15 @@ window.BrixLootMenu = (function () {
       el.addEventListener('dragstart', function (e) {
         onDragStart(e, { src: 'own', index: idx });
       });
+      /* ✅ v0.4.22 СУНДУК «наоборот»: один клик — весь стек в сундук */
+      if (curMode === 'chest') {
+        el.classList.add('crate-slot-put');
+        el.addEventListener('click', function () {
+          if (!slot || !curId || !onPut) return;
+          if (slot.item && slot.item.tool === 'plan') return;  // план — нельзя
+          onPut(curId, slot.item.id, slot.count, idx);
+        });
+      }
     }
     el.addEventListener('dragover', onDragOver);
     el.addEventListener('dragleave', onDragLeave);
@@ -238,7 +251,8 @@ window.BrixLootMenu = (function () {
     var grid = document.getElementById('lootCrateGrid');
     var invGrid = document.getElementById('lootInvGrid');
     var hotGrid = document.getElementById('lootHotbarGrid');
-    var size = curMil ? 18 : 12;   // военный 18, деревянный 12 (как в репозитории)
+    /* ✅ v0.4.22: у сундука 16 слотов (ящики: деревянный 12 / военный 18) */
+    var size = curMode === 'chest' ? 16 : (curMil ? 18 : 12);
 
     // --- ящик: лут разворачиваем в слоты ---
     grid.innerHTML = '';
@@ -258,13 +272,20 @@ window.BrixLootMenu = (function () {
     for (var h = 0; h < 6; h++) renderOwnSlot(hotGrid, I.slots[h], h);
   }
 
-  /** открыть меню ящика (id чекблока, лут, mil) */
-  function open(id, loot, mil) {
+  /** открыть меню ящика (id чекблока, лут, mil, mode — ✅ v0.4.22 'chest') */
+  function open(id, loot, mil, mode) {
     ensure();
     curId = id;
     curMil = mil || 0;
+    curMode = mode || null;
     lastOpen = performance.now();
-    document.getElementById('lootTitle').textContent = crateTitle(curMil);
+    document.getElementById('lootTitle').textContent =
+      curMode === 'chest' ? t('loot.titleChest') : crateTitle(curMil);
+    /* ✅ v0.4.22: у сундука своя подсказка — «класть» на первом месте */
+    var hintEl = document.getElementById('lootHint');
+    if (hintEl) {
+      hintEl.textContent = curMode === 'chest' ? t('loot.hintChest') : t('loot.hint');
+    }
     document.getElementById('lootInvCap').innerHTML =
       t('loot.inv') + ' <span style="color:#8a8a8a;font-weight:400">· ' + backpackCount() + '</span>';
     curLoot = loot || {};
@@ -284,10 +305,12 @@ window.BrixLootMenu = (function () {
 
   function close() {
     if (!root || root.classList.contains('hidden')) return;
+    var closingId = curId;              /* ✅ v0.4.22: id уходит в onClose (крышка сундука) */
     root.classList.add('hidden');
     curId = null;
     curLoot = null;
-    if (onClose) onClose();
+    curMode = null;
+    if (onClose) onClose(closingId);
   }
 
   function isOpen() { return !!(root && !root.classList.contains('hidden')); }

@@ -41,6 +41,32 @@ window.BrixItems = {
     id: 'revolver', name: 'Револьвер', nameEn: 'Revolver',
     icon: BrixAx('assets/icons/revolver.png'), stackable: false, tool: 'revolver'
   },
+  /* ✅ v0.4.19 ДРОБОВИК (модель shotgun.glb из репозитория
+     oxide5554-create/-glm, сконвертирована в GLB с текстурами):
+     стреляет ДРОБЬЮ — 8 дробин за выстрел, обойма 2, урон 12 за дробину;
+     в слоте показывает остаток (0–2) — slot.mag, как у револьвера */
+  shotgun: {
+    id: 'shotgun', name: 'Дробовик', nameEn: 'Shotgun',
+    icon: BrixAx('assets/icons/shotgun.png'), stackable: false, tool: 'shotgun'
+  },
+  /* ✅ v0.4.19 патроны для дробовика (штабелируются; иконка от пользователя) */
+  shotgunShell: {
+    id: 'shotgunShell', name: 'Патрон дробовика', nameEn: 'Shotgun Shell',
+    icon: BrixAx('assets/icons/shotgun_shell.png'), stackable: true, stack: 64
+  },
+  /* ✅ v0.4.21 КАЛАШ (модель ak47.glb из репозитория -glm, хват/руки/прицел
+     как там): стреляет ОДИНОЧНЫМИ с автоогнем при зажатой ЛКМ (0.10 с между
+     выстрелами, 600 в/мин), обойма 30, урон 20; в слоте показывает остаток
+     (0–30) — slot.mag, как у револьвера/дробовика */
+  rifleAk: {
+    id: 'rifleAk', name: 'Калаш', nameEn: 'AK Rifle',
+    icon: BrixAx('assets/icons/rifle_ak.png'), stackable: false, tool: 'rifle'
+  },
+  /* ✅ v0.4.21 винтовочные патроны для калаша (штабелируются; иконка от пользователя) */
+  rifleBullet: {
+    id: 'rifleBullet', name: 'Патрон калаша', nameEn: 'Rifle Bullet',
+    icon: BrixAx('assets/icons/rifle_bullet.png'), stackable: true, stack: 128
+  },
   /* ✅ v0.4.7 ПЛАН СТРОИТЕЛЯ — живёт В ИНВЕНТАРЕ (не в хотбаре):
      открой инвентарь (E) и КЛИКНИ по плану — он в руках (синий ватман),
      дальше Z — меню строительства (фундамент/стена/потолок),
@@ -117,11 +143,19 @@ window.BrixInventory = (function () {
     return BrixState.data.lang === 'en' ? (item.nameEn || item.name) : item.name;
   }
 
-  /** иконка предмета — img на весь слот (как renderIcon в репозитории) */
+  /** иконка предмета — img на весь слот (как renderIcon в репозитории)
+   *  ✅ v0.4.25: если на предмет надет СКИН (панель разработчика) —
+   *  в слоте показывается ИКОНКА СКИНА (рендер от пользователя) */
   function renderIcon(item) {
     if (!item) return '';
-    if (item.icon) {
-      return '<img src="' + item.icon + '" alt="' + langName(item) + '" draggable="false">' +
+    var icon = item.icon;
+    try {
+      if (window.BrixWeaponSkins) {
+        icon = BrixWeaponSkins.iconFor(item.id) || icon;
+      }
+    } catch (e) {}
+    if (icon) {
+      return '<img src="' + icon + '" alt="' + langName(item) + '" draggable="false">' +
         '<i class="bx-icon-fallback"></i>';
     }
     return '';
@@ -205,8 +239,11 @@ window.BrixInventory = (function () {
     this._onKeyDown = function (e) {
       if (BrixGame.state.phase !== 'playing') return;
       /* ✅ v0.4.15: панель разработчика открыта — играют только её поля:
-         цифры в её инпутах не переключают хотбар, E не открывает инвентарь */
+         цифры в её инпутах не переключают хотбар, E не открывает инвентарь
+         ✅ v0.4.25: то же при открытой КРАФТ-ПАНЕЛИ (Q) — цифры в поле
+         количества вводят число, а не дёргают слоты */
       if (window.BrixAdmin && BrixAdmin.isOpen()) return;
+      if (window.BrixCraft && BrixCraft.isOpen()) return;
       /* ✅ fix 0.4.12: открыт кодовый замок/перелаз — цифры ВВОДЯТ КОД,
          а не переключают слоты хотбара (иначе код «1234» дёргал слоты) */
       if (!self.isOpen && e.code.indexOf('Digit') === 0 &&
@@ -218,6 +255,8 @@ window.BrixInventory = (function () {
       // ✅ v0.4.4: мини-меню (M) или карта открыты — инвентарь не открываем
       // (как просил игрок: с открытым меню ничего из игровой UI не открывается)
       if (e.code === 'KeyE') {
+        // ✅ v0.4.25: крафт-панель (Q) открыта — E не открывает инвентарь
+        if (window.BrixCraft && BrixCraft.isOpen()) return;
         if (window.BrixMiniMenu && BrixMiniMenu.isAnyOpen()) return;
         e.preventDefault();
         self.toggle();
@@ -283,7 +322,12 @@ window.BrixInventory = (function () {
       for (var j = from2; j < to2 && count > 0; j++) {
         if (!this.slots[j]) {
           var put = item.stackable ? Math.min(item.stack, count) : count;
+          /* ✅ fix v0.4.20: у ОГНЕСТРЕЛА в слоте сразу есть ОБОЙМА (mag).
+             Раньше дробовик/револьвер из админ-панели или ящика приходил
+             БЕЗ mag — перезарядка считала «2 − undefined = NaN» и обойма
+             не заполнялась, сколько патронов ни было в запасе */
           this.slots[j] = { item: item, count: put };
+          if (item.tool === 'revolver' || item.tool === 'shotgun' || item.tool === 'rifle') this.slots[j].mag = 0;
           count -= put; changed = true;
         }
       }
@@ -403,7 +447,9 @@ window.BrixInventory = (function () {
       }
       // ✅ v0.4.5: У РЕВОЛЬВЕРА — остаток ОБОЙМЫ (0–6) СНИЗУ иконки:
       // игрок всегда видит, сколько патронов заряжено
-      if (slot.item.tool === 'revolver') {
+      // ✅ v0.4.19: то же у ДРОБОВИКА (0–2)
+      // ✅ v0.4.21: то же у КАЛАША (0–30)
+      if (slot.item.tool === 'revolver' || slot.item.tool === 'shotgun' || slot.item.tool === 'rifle') {
         inner += '<span class="bx-mag' + (!slot.mag ? ' empty' : '') + '">' +
           (slot.mag || 0) + '</span>';
       }
@@ -555,6 +601,12 @@ window.BrixInventory = (function () {
     window.removeEventListener('wheel', this._onWheel);
     if (this.dom && this.dom.root.parentNode) this.dom.root.parentNode.removeChild(this.dom.root);
     this.dom = null;
+  };
+
+  /* ✅ v0.4.25: смена скина — перерисовать хотбар/рюкзак (иконки)
+     (подписку ставит gameworld.js: BrixWeaponSkins.on(...)) */
+  Inventory.prototype.renderForSkin = function () {
+    this.renderAll();
   };
 
   /* ================= singleton ================= */

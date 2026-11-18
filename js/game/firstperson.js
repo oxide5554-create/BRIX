@@ -45,19 +45,22 @@ window.BrixFirstPerson = (function () {
   // Хват топора (из preview-claude.html репозитория)
   var GRIP = { sS: 0.52, sC: 1.0, sT: 0.8, sG: 0.14, sX: 0.72, sP: 0.032, sR: 90 };
   var ARMS_SCALE = 1.4;
-  var AXE_TARGET_LEN = 0.55; // длина топора в руке, м
+  /* ✅ v0.4.27 РАЗМЕР КАК У ЖЕЛЕЗНОГО ТОПОРА (тест 0.4.26 «имба»):
+     все инструменты в руках теперь 0.78 м — почти как калаш (0.85).
+     Рукоять в кулаке, выросла сама модель. Вернуть как было: 0.55. */
+  var AXE_TARGET_LEN = 0.78; // длина каменного топора в руке, м (v0.4.27, было 0.55)
   var AXE_YAW = 0;           // доворот головы топора вокруг рукояти (град)
 
   // ✅ КАМЕННАЯ КИРКА — одна правая рука, машет как топор (как в v0.2.4)
   var GRIP_SPICK = Object.assign({}, GRIP);
-  var SPICK_TARGET_LEN = 0.55; // длина каменной кирки в руке, м
+  var SPICK_TARGET_LEN = 0.78; // длина каменной кирки в руке, м (v0.4.27, было 0.55)
   var SPICK_YAW = 0;           // доворот головы вокруг рукояти (град)
 
   // ✅ v0.2.8 ЖЕЛЕЗНАЯ КИРКА была ДВУРУКОЙ
   // ✅ v0.2.10 железная кирка — ТОЧНО КАК ТОПОР: одна правая рука,
   //    левая скрыта, тот же хват и тот же размер рукояти в руке
   var GRIP_PICKAXE = Object.assign({}, GRIP);
-  var PICKAXE_TARGET_LEN = 0.58;   // длина железной кирки в руке, м — как у топора
+  var PICKAXE_TARGET_LEN = 0.78;   // длина железной кирки в руке, м (v0.4.27, было 0.58)
   var PICKAXE_PIVOT_Y = 0;         // сдвиг кирки по рукояти (в единицах модели)
   var PICKAXE_YAW = 0;             // ✅ v0.2.10: доворот головы кирки вокруг рукояти.
                                    // шипы кирки теперь ВПЕРЁД (по направлению удара),
@@ -66,7 +69,12 @@ window.BrixFirstPerson = (function () {
   // ✅ v0.2.9 ЖЕЛЕЗНЫЙ ТОПОР — одна правая рука, левая скрыта,
   // один удар atk1 (без бокового замаха atk2)
   var GRIP_IRONAXE = Object.assign({}, GRIP);
-  var IRON_AXE_TARGET_LEN = 0.58;  // длина железного топора в руке, м
+  /* ✅ v0.4.26 ТЕСТ РАЗМЕРА: железный топор почти как КАЛАШ.
+     Калаш в руках = 0.85 м (см. _attachRifle). Было 0.58 — «мелкий, руки
+     торчат». Ставим 0.78 — почти как калаш, рукоять по-прежнему в кисти
+     (fitToolLikeAxe держит нижний конец рукояти в ладони, растёт голова).
+     Если надо тоньше — крути число, больше 0.85 не поднимать (перекроет экран). */
+  var IRON_AXE_TARGET_LEN = 0.78;  // длина железного топора в руке, м (ТЕСТ v0.4.26)
   var IRON_AXE_YAW = 180;          // ✅ v0.3.6: топор смотрит ВПЕРЁД (был развёрнут на игрока)
                                    // лезвие железного топора смотрит ВПЕРЁД-ВПРАВО
                                    // ТОЧНО КАК У КАМЕННОГО ТОПОРА (широкая грань
@@ -110,6 +118,112 @@ window.BrixFirstPerson = (function () {
   // базовая позиция правой руки (в долях длины руки от плеча):
   // rx — вбок (+ вправо), ry — вверх/вниз, rz — вперёд
   var RV = { rx: 0.12, ry: 0.02, rz: 0.62 };
+
+  /* ✅ v0.4.19 ДРОБОВИК — та же система, что у револьвера: fitGun сам
+     находит ствол и рукоять (ствол → вперёд, рукоять → в ладонь),
+     размер задаёт SGN.len. Модель из репозитория oxide5554-create/-glm
+     (shotgun.fbx → shotgun.glb с текстурами).
+     Настраивается вживую из консоли (F12), например:
+       BrixFirstPerson.SGN.len = 0.56;  BrixFirstPerson.SGN.pitch = -5;
+       BrixFirstPerson.SGN.flip = true;  // если ствол вдруг смотрит назад */
+  var SHOTGUN_URL = 'assets/models/shotgun.glb';
+  var SGN = {
+    len: 0.62,       // длина дробовика в руках, м (в -glm модель шла 0.85)
+    palm: 0.62,      // где в ладони рукоять: доля длины кисти от запястья
+    palmN: 0.03,     // сдвиг рукояти от ладони (глубина хвата)
+    ox: 0, oy: 0, oz: 0,   // тонкий сдвиг модели (в долях длины дробовика)
+    pitch: -3,       // ствол вверх(+)/вниз(−), град (в прицеливании → 0)
+    yaw: 0,          // ствол влево(+)/вправо(−), град
+    roll: 0,         // крен вокруг ствола, град
+    flip: false,     // true — если авто-поиск перепутал ствол и рукоять
+    upDown: false,   // true — если дробовик вверх ногами
+    // ✅ v0.4.20: левая рука У ДРОБОВИКА УБРАНА (просьба игрока) — дробовик
+    // держит ТОЛЬКО правая рука, левая схлопывается и не рисуется.
+    // Хочешь вернуть поддержку цевья — поставь true из консоли:
+    //   BrixFirstPerson.SGN.left = true;
+    left: false,     // левая рука на цевье (ВЫКЛ — только правая держит)
+    lr: -0.12,       // левая кисть относительно правой: вбок (− = влево), в длинах кисти
+    lu: 0.5,         //   вверх(+)/вниз(−) — на уровне цевья (ствол чуть выше рукояти)
+    lf: 2.0,         //   вперёд(+)/назад(−) — на цевье, ~0.25 м от рукояти
+    lwrap: 0.55,     // наклон пальцев левой руки внутрь (охват цевья)
+    lcurl: 0.85,     // сжатие пальцев левой руки
+    lthumb: 0.30     // большой палец левой руки
+  };
+
+  /* ✅ v0.4.21 КАЛАШ (АК) — порт 1-в-1 из референс-репозитория
+     oxide5554-create/-glm (scr/3d/firstPersonPlayer.js, модель scr/3d/ak47.glb).
+     Хват «как в репозитории»: правая рука на пистолетной рукояти (GRIP_AK),
+     левая ПРИВЯЗАНА К САМОЙ МОДЕЛИ цевья (GRIP_AK_LEFT + rifleLeftTarget —
+     не уезжает при беге/отдаче), ПКМ — прицел по линии целик→мушка (ADS_AK),
+     при беге автомат прижимается К ГРУДИ по диагонали (F_RUN_AK — приклад
+     у правого плеча, дуло вверх-влево), отдача — пружиной с зигзагом.
+     Настраивается вживую из консоли (F12): BrixFirstPerson.AK.sS = 0.9 … */
+  var RIFLE_URL = 'assets/models/ak47.glb';
+  // хват ПРАВОЙ руки (числа из репозитория)
+  var GRIP_AK = {
+    sS: 0.840,     // размер АК в руке
+    sX: 0.890,     // вдоль пальцев правой
+    sP: 0.054,     // от ладони
+    sR: 0.0        // поворот по Y в кисти (град)
+  };
+  // ✅ ЛЕВАЯ РУКА НА ЦЕВЬЕ (C-grip): ладонь снизу, большой палец слева вдоль
+  // цевья, четыре пальца обхватывают справа. Координаты — в единицах ak47.glb
+  var GRIP_AK_LEFT = {
+    yPref: -1.85,    // где держим цевьё (ближе к дулу)
+    yRear: -1.30,    // самая задняя точка (перед магазином), если рука не достаёт
+    zCenter: 0.40,   // высота оси цевья
+    fingerAng: 50,   // угол пальцев от ствола вправо: 0 = вдоль ствола, 90 = поперёк
+    palmTilt: 0.30,  // наклон ладони вправо (к цевью)
+    palmThick: 0.20, // зазор ладонь↔цевьё (доли длины ладони)
+    palmFrac: 0.50,  // центр ладони от запястья (доля длины ладони)
+    curl: 0.55,      // сжатие пальцев
+    thumb: 0.25,     // большой палец
+    twistShare: 0.5  // часть скручивания уходит предплечью (запястье не выкручивается)
+  };
+  // ✅ ПРИЦЕЛ (ПКМ): линия целик → мушка ставится на ось камеры
+  var ADS_AK = {
+    rear:  { y: -1.80, z: 1.10 },  // целик (координаты модели ak47.glb)
+    front: { y: -4.40, z: 1.12 },  // мушка
+    dist:  0.85,     // глаз далеко от калаша (не внутри модели)
+    fov:   55,       // FOV камеры рук при прицеливании
+    speed: 11        // скорость входа/выхода из прицела
+  };
+  var AK_HALFH = 0.40;       // полувысота цевья (ед. модели)
+  var AK_HALFW = 0.19;       // полуширина цевья
+  var AK_RELOAD_DUR = 3.4;   // перезарядка калаша = длительность звука (wav 3.33 c)
+  // ✅ зигзаг-отдача по паттерну (как в репозитории): [вбок, вверх]
+  var AK_RECOIL_PATTERN = [
+    [0.0, 1.0], [0.8, 0.7], [0.3, 1.0], [-0.9, 0.6],
+    [-0.4, 1.0], [1.0, 0.5], [0.5, 0.9], [-0.7, 0.8]
+  ];
+
+  // ✅ Поза idle с АК — по референсу PUBG: правая на пистолетной рукояти
+  // (низко, справа, у спуска), левая на цевье (привязана к модели сама)
+  var FIDLE_AK = {
+    hy: 0, sx: 0, sy: 0, hx: 0,
+    ltx: 0, ltk: 0, rtx: 0, rtk: 0,
+    rx: 0.230, ry: 0.290, rz: 0.500,   // правая кисть — на рукояти
+    rphi: 0.0, ryaw: 5, roll: 90,
+    curl: 0.500, thumb: 0.280,         // правая сжимает рукоять
+    lx: 0.450, ly: 0.300, lz: 0.950,   // (не используется — левая от модели)
+    lcurl: 0.450,
+    // доп. поля «ручного» хвата (как AK_EXTRA в репозитории):
+    gw: 0, gyaw: 0, gpitch: 0, groll: 0,  // явная ориентация ствола (в idle выкл)
+    ppitch: 0, pyaw: 0, proll: 0,         // добавочные повороты (отдача/дрожь)
+    ox: 0, oy: 0, oz: 0,                  // смещения автомата в камере (м)
+    ljx: 0, ljy: 0, ljz: 0,               // дрожь левой кисти
+    ads: 0                                 // прицеливание 0..1
+  };
+
+  // ✅ БЕГ с АК: автомат ПРИЖАТ К ГРУДИ по диагонали — приклад у правого
+  // плеча, дуло вверх и влево (то самое «сжимается к груди при беге» из
+  // репозитория, F_RUN_AK). Левая рука держит цевьё сама
+  var F_RUN_AK = Object.assign({}, FIDLE_AK, {
+    rx: -0.12, ry: -0.04, rz: 0.38,
+    gw: 1, gyaw: -22, gpitch: 38, groll: 0,
+    curl: 0.85, thumb: 0.60,
+    sx: 3, sy: -4
+  });
 
   // Камера рук (должна совпадать с renderOverlay) — ЗНАЧЕНИЯ ИЗ РЕПОЗИТОРА:
   // позиция (0, 1.7, 0), прицел (0, 1.0, 5).
@@ -317,6 +431,15 @@ window.BrixFirstPerson = (function () {
     lcurl: 0.7
   });
 
+  // ✅ v0.4.22 БЕГ с револьвером/дробовиком: оружие ПРИЖИМАЕТСЯ К ГРУДИ —
+  // рука поднимается выше и ближе к телу (rz меньше — локоть согнут);
+  // ствол вверх-влево по диагонали делает placeRevolver/placeShotgun
+  // (плавный поворот по _runW) — та же идея, что F_RUN_AK у калаша
+  var F_RUN_GUN = Object.assign({}, FIDLE_REV, {
+    rx: -0.02, ry: 0.16, rz: 0.44, rphi: 0, ryaw: 0, curl: 1, thumb: 1,
+    lcurl: 0.7
+  });
+
   function lerpP(a, b, t) {
     var o = {};
     for (var k in a) o[k] = (typeof a[k] === 'number' && typeof b[k] === 'number') ? a[k] + (b[k] - a[k]) * t : a[k];
@@ -329,6 +452,7 @@ window.BrixFirstPerson = (function () {
   var k1Axe = mk(FIDLE_AXE);
   var k1Pick = mk(FIDLE_PICK);
   var k1Rev = mk(FIDLE_REV);   // ✅ v0.4.5: кейфреймы револьвера
+  var k1Sg = mk(FIDLE_REV);    // ✅ v0.4.19: кейфреймы дробовика (стойка та же)
 
   var CL = {
     atk1: {
@@ -396,6 +520,30 @@ window.BrixFirstPerson = (function () {
         k1Rev(1.95, { ry: RV.ry - 0.15, rz: RV.rz - 0.10, rx: RV.rx + 0.02, rphi: 12, curl: 0.97, sx: 3 }),
         k1Rev(2.2,  {})
       ]
+    },
+    /* ✅ v0.4.19 ОТДАЧА ДРОБОВИКА (0.5 с ≈ кулдаун 0.9 с): сильный толчок
+       ВВЕРХ-НАЗАД — дробовик бьёт в плечо заметно жёстче револьвера */
+    shootSg: {
+      dur: 0.5,
+      keys: [
+        k1Sg(0,    {}),
+        k1Sg(0.08, { ry: RV.ry + 0.05, rz: RV.rz - 0.16, rx: RV.rx - 0.04, rphi: -20, sx: -1.8 }),
+        k1Sg(0.18, { ry: RV.ry + 0.03, rz: RV.rz - 0.12, rx: RV.rx - 0.02, rphi: -12, sx: -1.2 }),
+        k1Sg(0.50, {})
+      ]
+    },
+    /* ✅ v0.4.19 ПЕРЕЗАРЯДКА ДРОБОВИКА (2.6 с = SG_RELOAD_DUR):
+       опускает ствол вниз-вбок — два патрона в помпу */
+    reloadSg: {
+      dur: 2.6,
+      keys: [
+        k1Sg(0,    {}),
+        k1Sg(0.45, { ry: RV.ry - 0.48, rz: RV.rz - 0.18, rx: RV.rx + 0.10, rphi: 30, curl: 1, sx: 5 }, 'in'),
+        k1Sg(0.70, { ry: RV.ry - 0.54, rz: RV.rz - 0.22, rx: RV.rx + 0.12, rphi: 34, curl: 1, sx: 6 }),
+        k1Sg(1.85, { ry: RV.ry - 0.54, rz: RV.rz - 0.22, rx: RV.rx + 0.12, rphi: 34, curl: 1, sx: 6 }),
+        k1Sg(2.10, { ry: RV.ry - 0.14, rz: RV.rz - 0.10, rx: RV.rx + 0.02, rphi: 12, curl: 0.97, sx: 3 }),
+        k1Sg(2.6,  {})
+      ]
     }
   };
 
@@ -443,6 +591,16 @@ window.BrixFirstPerson = (function () {
     this.ironPick = null;     // {holder, wrap} — железная кирка
     this.ironAxe = null;      // {holder, wrap} — железный топор (v0.2.9)
     this.revolver = null;     // {holder, wrap} — револьвер (v0.4.5)
+    this.shotgun = null;      // {holder, wrap} — дробовик (v0.4.19)
+    this.rifle = null;        // {holder, proto} — калаш (v0.4.21)
+    this._ads = 0;            // 0..1 прицеливание калаша
+    this._runW = 0;           // 0..1 бег (автомат к груди)
+    this._rec = 0; this._recV = 0;  // пружина отдачи
+    this._shake = 0;          // дрожь после выстрела
+    this._recSide = 0; this._recVert = 1;  // зигзаг отдачи
+    this._shotCount = 0;
+    this._rifleReload = false; this._rifleReloadT = 0;
+    this._isRunning = false;
     this.axeHolder = null;    // ссылки для совместимости
     this.pickaxeHolder = null;
     this.handBone = null;
@@ -481,6 +639,19 @@ window.BrixFirstPerson = (function () {
         if (self._attachRevolver) self._attachRevolver(rvg);
       }).catch(function () {
         console.warn('[BrixFirstPerson] револьвер не загрузился (запускай через сервер) — руки работают, револьвер будет без модели');
+      });
+      // ✅ v0.4.19: дробовик тоже грузится ОТДЕЛЬНО (на file:// его нет во
+      // встроенных моделях — руки остаются работоспособными без него)
+      loadModel(SHOTGUN_URL).then(function (sg) {
+        if (self._attachShotgun) self._attachShotgun(sg);
+      }).catch(function () {
+        console.warn('[BrixFirstPerson] дробовик не загрузился (запускай через сервер) — руки работают, дробовик будет без модели');
+      });
+      // ✅ v0.4.21: КАЛАШ тоже грузится отдельно (как револьвер/дробовик)
+      loadModel(RIFLE_URL).then(function (akg) {
+        if (self._attachRifle) self._attachRifle(akg);
+      }).catch(function () {
+        console.warn('[BrixFirstPerson] калаш не загрузился (запускай через сервер) — руки работают, калаш будет без модели');
       });
       console.log('[BrixFirstPerson] руки готовы: топоры, кирки (v0.4.5, револьвер догружается отдельно)');
     }).catch(function (err) {
@@ -700,6 +871,65 @@ window.BrixFirstPerson = (function () {
       self._revUD = REV.upDown;
     };
 
+    /* ✅ v0.4.19 ДРОБОВИК — сборка по образцу револьвера: fitGun сам находит
+       ствол и рукоять, размер задаёт SGN.len. Модель тяжёлая метал-дерево —
+       после walkMat возвращаем честный PBR (walkMat обнуляет metalness,
+       а ствол и бандажи должны бликовать) */
+    this._attachShotgun = function (sg) {
+      if (self.shotgun) return;
+      walkMat(sg);
+      sg.traverse(function (o) {
+        if (o.isMesh && o.material) {
+          o.material.metalness = 1;
+          o.material.roughness = 1;
+        }
+      });
+      var wrap = new THREE.Group();
+      wrap.add(sg);
+      var holder = new THREE.Group();
+      holder.add(wrap);
+      B.RightHand.add(holder);
+      holder.visible = self.currentWeapon === 'shotgun' && self.visible;
+      self.shotgun = { holder: holder, wrap: wrap, proto: sg };
+      self._refitShotgun();
+      console.log('[BrixFirstPerson] дробовик в руках готов');
+    };
+    // пересборка подгонки (вызывается и «вживую», если меняли SGN.flip / SGN.upDown)
+    this._refitShotgun = function () {
+      if (!self.shotgun) return;
+      fitGun(self.shotgun.proto, !!SGN.flip, !!SGN.upDown);
+      self._sgFlip = SGN.flip;
+      self._sgUD = SGN.upDown;
+    };
+
+    /* ✅ v0.4.21 КАЛАШ — сборка 1-в-1 из репозитория -glm: длина 0.85,
+       материалы как в репозитории (metalness НЕ трогаем — там честный
+       металл/дерево), holder в правой кисти; ориентацию/размер каждый
+       кадр ставит placeRifle по кадру ладони (GRIP_AK) */
+    this._attachRifle = function (akg) {
+      if (self.rifle) return;
+      var box = new THREE.Box3().setFromObject(akg);
+      var size = box.getSize(new THREE.Vector3());
+      var len = Math.max(size.x, size.y, size.z);
+      if (len > 1) { akg.scale.multiplyScalar(0.85 / len); akg.updateMatrixWorld(true); }
+      var walkAK = function (o) {
+        if (!o) return;
+        if (o.isMesh) {
+          o.castShadow = false; o.receiveShadow = false; o.frustumCulled = false;
+          var m = o.material;
+          if (m) { m.side = THREE.DoubleSide; if (m.map) m.map.anisotropy = 8; }
+        }
+        if (o.children) for (var i = 0; i < o.children.length; i++) walkAK(o.children[i]);
+      };
+      walkAK(akg);
+      var holder = new THREE.Group();
+      holder.add(akg);
+      B.RightHand.add(holder);
+      holder.visible = self.currentWeapon === 'rifle' && self.visible;
+      self.rifle = { holder: holder, proto: akg };
+      console.log('[BrixFirstPerson] калаш в руках готов');
+    };
+
     this.handBone = B.RightHand;
 
     this._poseHelpers();
@@ -709,6 +939,12 @@ window.BrixFirstPerson = (function () {
     // (раньше setVisible(this.visible) всегда ставил 'axe' и перетирал
     // револьвер сразу после загрузки моделей)
     this.setWeapon(this.currentWeapon === 'none' ? null : this.currentWeapon);
+    // ✅ v0.4.25: если скин выбрали, пока модель ещё грузилась — применяем сейчас
+    if (this._skinPending !== undefined) {
+      var pend = this._skinPending;
+      this._skinPending = undefined;
+      if (this.currentWeapon === 'ironPickaxe') this.applySkin(pend || BrixWeaponSkinUrlSafe());
+    }
 
     // для хотбара: топор считается выбранным, если setVisible(true)
   };
@@ -827,12 +1063,131 @@ window.BrixFirstPerson = (function () {
       var gf = self._gunF || self.FW, ga = self._gunA || self.UP;
       var gcr = new THREE.Vector3().crossVectors(gf, ga);
       var qg = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(gf, ga, gcr));
-      var pitch = REV.pitch * (1 - (self._aimBlend || 0));
-      qg.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(REV.roll * D, REV.yaw * D, pitch * D, 'XYZ')));
+      /* ✅ v0.4.22 БЕГ: ствол вверх-влево к груди, плавно по _runW (0..1);
+         при ударе/перезарядке (_swingType) наклон не добавляем */
+      var runW = self._swingType ? 0 : (self._runW || 0);
+      var pitch = (REV.pitch + 40 * runW) * (1 - (self._aimBlend || 0));
+      var yawR = REV.yaw - 22 * runW;
+      qg.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(REV.roll * D, yawR * D, pitch * D, 'XYZ')));
       var hq = hb.getWorldQuaternion(new THREE.Quaternion()).invert();
       rv.holder.quaternion.copy(hq.multiply(qg));
       rv.wrap.rotation.set(0, 0, 0);
       rv.wrap.position.set(REV.ox, REV.oy, REV.oz);
+    };
+
+    // ✅ v0.4.19 хват ДРОБОВИКА — то же тело, что у револьвера, но со своими
+    // SGN-настройками (длиннее, тяжелее; левая рука вынесена под цевьё)
+    this.placeShotgun = function () {
+      var sg = self.shotgun;
+      if (self._sgFlip !== SGN.flip || self._sgUD !== SGN.upDown) self._refitShotgun();
+      var H = self.HF.Right, hb = self.bones.RightHand;
+      var pos = H.h0.clone()
+        .addScaledVector(H.f, H.palmLen * SGN.palm)
+        .addScaledVector(H.n, SGN.palmN)
+        .applyMatrix4(H.inv);
+      sg.holder.position.copy(pos);
+      var hs = new THREE.Vector3().setFromMatrixScale(hb.matrixWorld).x || 1;
+      sg.holder.scale.setScalar(SGN.len / hs);   // модель = 1 по длине → SGN.len метров
+      var gf = self._gunF || self.FW, ga = self._gunA || self.UP;
+      var gcr = new THREE.Vector3().crossVectors(gf, ga);
+      var qg = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(gf, ga, gcr));
+      /* ✅ v0.4.22 БЕГ: длинный ствол дробовика тоже вверх-влево к груди */
+      var runW = self._swingType ? 0 : (self._runW || 0);
+      var pitch = (SGN.pitch + 34 * runW) * (1 - (self._aimBlend || 0));
+      var yawS = SGN.yaw - 18 * runW;
+      qg.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(SGN.roll * D, yawS * D, pitch * D, 'XYZ')));
+      var hq = hb.getWorldQuaternion(new THREE.Quaternion()).invert();
+      sg.holder.quaternion.copy(hq.multiply(qg));
+      sg.wrap.rotation.set(0, 0, 0);
+      sg.wrap.position.set(SGN.ox, SGN.oy, SGN.oz);
+    };
+
+    // ✅ v0.4.21 хват КАЛАША — порт placeAK из репозитория: автомат висит
+    // на правой кисти (пистолетная рукоять в ладони, GRIP_AK), ствол вперёд
+    this.placeRifle = function () {
+      var rf = self.rifle;
+      if (!rf) return;
+      var H = self.HF.Right;
+      var pos = H.h0.clone()
+        .addScaledVector(H.f, H.palmLen * GRIP_AK.sX)
+        .addScaledVector(H.n, GRIP_AK.sP)
+        .applyMatrix4(H.inv);
+      rf.holder.position.copy(pos);
+      var fl = H.f.clone().applyQuaternion(H.wq.clone().invert());
+      var al = H.a.clone().applyQuaternion(H.wq.clone().invert());
+      var cl = new THREE.Vector3().crossVectors(fl, al);
+      var qb = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(fl, al, cl));
+      rf.holder.quaternion.copy(qb).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), GRIP_AK.sR * D));
+      rf.holder.scale.setScalar(GRIP_AK.sS / (H.ws || 1));
+      rf.proto.position.set(0, 0, 0);
+      rf.proto.rotation.set(0, Math.PI / 2, 0);   // ствол из Y → вперёд по пальцам (как в репозитории)
+    };
+
+    // ✅ v0.4.21 явная ориентация ствола в камере (порт gunFrame):
+    // yaw (+вправо), pitch (+дуло вверх), roll (+по часовой), градусы
+    this.gunFrame = function (yaw, pitch, roll) {
+      var c = self.camFrame;
+      var q = new THREE.Quaternion().setFromAxisAngle(c.u, -yaw * D)
+        .multiply(new THREE.Quaternion().setFromAxisAngle(c.r, pitch * D));
+      var f = c.f.clone().applyQuaternion(q);
+      var u = c.u.clone().applyQuaternion(q);
+      u.applyQuaternion(new THREE.Quaternion().setFromAxisAngle(f, roll * D));
+      return { f: f, a: u };
+    };
+
+    // ✅ v0.4.21 цель ЛЕВОЙ руки (порт leftGunTarget): считается от РЕАЛЬНОГО
+    // положения автомата в мире — рука привязана к цевью и не уезжает
+    // при беге/отдаче/прицеливании. shortfall > 0 — на сколько не достаёт
+    this.rifleLeftTarget = function (LL, SL) {
+      var B = self.bones, G = GRIP_AK_LEFT;
+      var obj = self.rifle.proto, objW = obj.matrixWorld;
+      var fwd = new THREE.Vector3(0, 0, 1).transformDirection(objW);   // куда смотрит дуло
+      var up = new THREE.Vector3(0, 1, 0).transformDirection(objW);    // верх оружия
+      var right = new THREE.Vector3().crossVectors(fwd, up).normalize();
+      var unit = new THREE.Vector3().setFromMatrixScale(objW).x;       // метров на ед. модели
+      var palmLenW = wp(B.LeftHand).distanceTo(wp(B.LeftHandMiddle1));
+      // ладонь смотрит вверх и чуть вправо (к оружию), пальцы вперёд-вправо
+      var pd = up.clone().addScaledVector(right, G.palmTilt).normalize();
+      var fa = G.fingerAng * D;
+      var f2 = fwd.clone().multiplyScalar(Math.cos(fa)).addScaledVector(right, Math.sin(fa));
+      f2.addScaledVector(pd, -f2.dot(pd)).normalize();
+      var c2 = pd.clone().multiplyScalar(-self.SG.Left.curl);
+      var a2 = new THREE.Vector3().crossVectors(c2, f2).normalize();
+      // от центра ладони до оси цевья
+      var halfExt = (Math.abs(pd.dot(up)) * AK_HALFH + Math.abs(pd.dot(right)) * AK_HALFW) * unit;
+      var dist = halfExt + G.palmThick * palmLenW;
+      // ищем самую переднюю точку цевья, до которой рука достаёт
+      var reachMax = LL * 0.985;
+      var t0 = G.yPref, t1 = G.yRear, W = null, bestW = null, bestD = Infinity, N = 12;
+      for (var i = 0; i < N; i++) {
+        var t = t0 + (t1 - t0) * (i / (N - 1));
+        var gc = obj.localToWorld(new THREE.Vector3(0, G.zCenter, -t));
+        var w = gc.addScaledVector(pd, -dist).addScaledVector(f2, -G.palmFrac * palmLenW);
+        var d = w.distanceTo(SL);
+        if (d < bestD) { bestD = d; bestW = w; }
+        if (d <= reachMax) { W = w; break; }
+      }
+      return { W: W || bestW, f2: f2, a2: a2, shortfall: W ? 0 : (bestD - reachMax) };
+    };
+
+    // ✅ v0.4.21 левая рука НА цевье калаша (порт poseLeftHandGun)
+    this.poseLeftHandRifle = function (LL, SL, pole) {
+      var G = GRIP_AK_LEFT, H = self.HF.Left;
+      var T = self.rifleLeftTarget(LL, SL);
+      self.ik(self.bones.LeftArm, self.bones.LeftForeArm, self.bones.LeftHand, T.W, pole);
+      // часть разворота ладони отдаём предплечью (запястье не «выкручивается»)
+      var e = wp(self.bones.LeftHand).sub(wp(self.bones.LeftForeArm)).normalize();
+      var R = self.bones.LeftHand.getWorldQuaternion(new THREE.Quaternion()).multiply(H.wq.clone().invert());
+      var aCur = H.a.clone().applyQuaternion(R);
+      aCur.addScaledVector(e, -aCur.dot(e));
+      var aTgt = T.a2.clone().addScaledVector(e, -T.a2.dot(e));
+      if (aCur.lengthSq() > 1e-6 && aTgt.lengthSq() > 1e-6) {
+        aCur.normalize(); aTgt.normalize();
+        var ang = Math.atan2(e.dot(new THREE.Vector3().crossVectors(aCur, aTgt)), aCur.dot(aTgt));
+        self.rotW(self.bones.LeftForeArm, e, ang * G.twistShare);
+      }
+      self.orientHand('Left', T.f2, T.a2);
+      self.fingers('Left', G.curl, G.thumb);
     };
 
     // рамка камеры рук
@@ -892,7 +1247,18 @@ window.BrixFirstPerson = (function () {
       var leftPole  = Ut.clone().multiplyScalar(-1).addScaledVector(Rt, -0.5).addScaledVector(Ft, -0.3);
 
       /* ✅ ПРАВАЯ РУКА + оружие (топор ИЛИ кирка) */
-      self.ik(B.RightArm, B.RightForeArm, B.RightHand, tgt(SR, LR, p.rx, p.ry, p.rz), rightPole);
+      // ✅ v0.4.21: у КАЛАША отдача/дрожь — смещения в осях камеры (метры),
+      // двигают ВЕСЬ автомат вместе с кистью (порт off из репозитория)
+      var rkOff = null;
+      if (self.currentWeapon === 'rifle' && self.rifle && self.camFrame) {
+        rkOff = new THREE.Vector3()
+          .addScaledVector(self.camFrame.r, p.ox || 0)
+          .addScaledVector(self.camFrame.u, p.oy || 0)
+          .addScaledVector(self.camFrame.f, p.oz || 0);
+      }
+      var rTgt = tgt(SR, LR, p.rx, p.ry, p.rz);
+      if (rkOff) rTgt.add(rkOff);
+      self.ik(B.RightArm, B.RightForeArm, B.RightHand, rTgt, rightPole);
       var ph = p.rphi * D;
       var a2 = Ut.clone().multiplyScalar(Math.cos(ph)).addScaledVector(Ft, Math.sin(ph))
         .applyAxisAngle(Ut, p.ryaw * D).normalize();
@@ -908,24 +1274,89 @@ window.BrixFirstPerson = (function () {
       self._gunA = a2.clone();   // «вверх» ладони
       self.fingers('Right', p.curl, p.thumb);
 
+      /* ✅ v0.4.21 КАЛАШ: явная ориентация (gw — при беге ствол к груди) →
+         прицел ПКМ (линия целик→мушка на ось камеры, как в репозитории) →
+         добавочные повороты отдачи → автомат на кисти → левая рука
+         ПРИВЯЗАНА К ЦЕВЬЮ (считается от реальной модели). Общая поза
+         дальше не нужна — выходим */
+      if (self.currentWeapon === 'rifle' && self.rifle) {
+        var fF = f2.clone(), aF = a2.clone();
+        if ((p.gw || 0) > 0.001) {
+          var ge = self.gunFrame(p.gyaw || 0, p.gpitch || 0, p.groll || 0);
+          fF.lerp(ge.f, p.gw).normalize();
+          aF.lerp(ge.a, p.gw); aF.addScaledVector(fF, -aF.dot(fF)).normalize();
+        }
+        var adsK = p.ads || 0;
+        var ptAk = function (q) { return new THREE.Vector3(q.x || 0, q.z, -q.y); };
+        var anchorAk = function () { return self.rifle.proto.localToWorld(ptAk(ADS_AK.rear)); };
+        var PnAk = null;
+        if (adsK > 0.001) {
+          // где целик был бы БЕЗ прицеливания — переход плавный
+          self.orientHand('Right', fF, aF);
+          self.model.updateMatrixWorld(true);
+          self.placeRifle();
+          self.model.updateMatrixWorld(true);
+          PnAk = anchorAk().clone();
+          var rearL = ptAk(ADS_AK.rear), frontL = ptAk(ADS_AK.front);
+          var gam = Math.atan2(frontL.y - rearL.y, frontL.z - rearL.z);
+          var cfA = self.camFrame;
+          var fAim = cfA.f.clone().multiplyScalar(Math.cos(gam)).addScaledVector(cfA.u, -Math.sin(gam)).normalize();
+          var aAim = cfA.u.clone().multiplyScalar(Math.cos(gam)).addScaledVector(cfA.f, Math.sin(gam)).normalize();
+          fF.lerp(fAim, adsK).normalize();
+          aF.lerp(aAim, adsK); aF.addScaledVector(fF, -aF.dot(fF)).normalize();
+        }
+        if (p.ppitch || p.pyaw || p.proll) {
+          var cfD = self.camFrame;
+          var qd = new THREE.Quaternion().setFromAxisAngle(cfD.u, -(p.pyaw || 0) * D)
+            .multiply(new THREE.Quaternion().setFromAxisAngle(cfD.r, (p.ppitch || 0) * D))
+            .multiply(new THREE.Quaternion().setFromAxisAngle(cfD.f, (p.proll || 0) * D));
+          fF.applyQuaternion(qd); aF.applyQuaternion(qd);
+        }
+        self.orientHand('Right', fF, aF);
+        if (adsK > 0.001 && PnAk) {
+          // двигаем кисть так, чтобы целик лёг на ось камеры
+          self.model.updateMatrixWorld(true);
+          self.placeRifle();
+          self.model.updateMatrixWorld(true);
+          var Pa = self.camFrame.pos.clone().addScaledVector(self.camFrame.f, ADS_AK.dist)
+            .add(rkOff || new THREE.Vector3());
+          var Pt = PnAk.clone().lerp(Pa, adsK);
+          var Wr = wp(B.RightHand).clone().add(Pt.sub(anchorAk()));
+          self.ik(B.RightArm, B.RightForeArm, B.RightHand, Wr, rightPole);
+          self.orientHand('Right', fF, aF);
+        }
+        self.fingers('Right', p.curl, p.thumb);
+        // автомат на правой руке → левая к цевью (привязана к модели)
+        self.model.updateMatrixWorld(true);
+        self.placeRifle();
+        self.model.updateMatrixWorld(true);
+        self.poseLeftHandRifle(LL, SL, leftPole);
+        self.model.updateMatrixWorld(true);
+        return;
+      }
+
       /* ЛЕВАЯ РУКА */
-      if (self.currentWeapon === 'revolver' && self.revolver && REV.left) {
-        // ✅ v0.4.6 РЕВОЛЬВЕР: левая кисть ставится ОТ ПРАВОЙ — с ЛЕВОЙ стороны
-        // рукояти (а не сверху на правой), пальцы охватывают рукоять спереди
+      var gunCfg = null;
+      if (self.currentWeapon === 'revolver' && self.revolver && REV.left) gunCfg = REV;
+      else if (self.currentWeapon === 'shotgun' && self.shotgun && SGN.left) gunCfg = SGN;
+      if (gunCfg) {
+        // ✅ v0.4.6 РЕВОЛЬВЕР / ✅ v0.4.19 ДРОБОВИК: левая кисть ставится ОТ
+        // ПРАВОЙ (у дробовика — под цевьём, см. SGN.lr/lu/lf), пальцы охватывают
         var gF = self._gunF, gA = self._gunA;
         var gR = new THREE.Vector3().crossVectors(gF, gA);      // вправо
         var uu = self.HF.Right.palmLen * ARMS_SCALE;            // длина кисти в мире
         var wr = wpp(B.RightHand);
         var tL = wr.clone()
-          .addScaledVector(gR, REV.lr * uu)
-          .addScaledVector(gA, REV.lu * uu)
-          .addScaledVector(gF, REV.lf * uu);
+          .addScaledVector(gR, gunCfg.lr * uu)
+          .addScaledVector(gA, gunCfg.lu * uu)
+          .addScaledVector(gF, gunCfg.lf * uu);
         self.ik(B.LeftArm, B.LeftForeArm, B.LeftHand, tL, leftPole);
-        var fL = gF.clone().addScaledVector(gR, REV.lwrap).addScaledVector(gA, -0.1).normalize();
+        var fL = gF.clone().addScaledVector(gR, gunCfg.lwrap).addScaledVector(gA, -0.1).normalize();
         var aL = gA.clone().addScaledVector(fL, -gA.dot(fL)).normalize();
         self.orientHand('Left', fL, aL);
-        self.fingers('Left', REV.lcurl, REV.lthumb);
-      } else if ((self.currentWeapon === 'ironAxe' && self.ironAxe) ||
+        self.fingers('Left', gunCfg.lcurl, gunCfg.lthumb);
+      } else if (self.currentWeapon === 'shotgun' ||
+          (self.currentWeapon === 'ironAxe' && self.ironAxe) ||
           (self.currentWeapon === 'ironPickaxe' && self.ironPick)) {
         // ✅ v0.2.9 ЖЕЛЕЗНЫЙ ТОПОР / ✅ v0.2.10 ЖЕЛЕЗНАЯ КИРКА — левая рука
         // СКРЫТА: кости левой руки схлопываются (scale → ~0). Риг — SkinnedMesh:
@@ -933,6 +1364,8 @@ window.BrixFirstPerson = (function () {
         // рука исчезает (в 1-м лице виден только материал *arms*, остальное тело
         // скрыто, так что деформаций больше нигде не видно). Правая рука с
         // инструментом уже заняла своё место, инструмент ставится ниже.
+        // ✅ v0.4.20 ДРОБОВИК — то же самое: левая рука УБРАНА, дробовик
+        // держит только ПРАВАЯ рука (по просьбе игрока), даже при перезарядке.
         B.LeftArm.scale.setScalar(0.001);
         B.LeftForeArm.scale.setScalar(0.001);
         B.LeftHand.scale.setScalar(0.001);
@@ -956,6 +1389,7 @@ window.BrixFirstPerson = (function () {
       else if (self.currentWeapon === 'ironPickaxe') self.placeIronPick(p.roll !== undefined ? p.roll : 90);
       else if (self.currentWeapon === 'plan' && self.plan) self.placePlan(p.roll !== undefined ? p.roll : 90);
       else if (self.currentWeapon === 'revolver' && self.revolver) self.placeRevolver();
+      else if (self.currentWeapon === 'shotgun' && self.shotgun) self.placeShotgun();
     };
   };
 
@@ -1034,7 +1468,9 @@ window.BrixFirstPerson = (function () {
                    this.currentWeapon === 'ironPickaxe' ||
                    this.currentWeapon === 'ironAxe' ||
                    this.currentWeapon === 'plan' ||
-                   this.currentWeapon === 'revolver';
+                   this.currentWeapon === 'revolver' ||
+                   this.currentWeapon === 'shotgun' ||
+                   this.currentWeapon === 'rifle';
     // запоминаем состояние ВСЕГДА: если модели ещё грузятся,
     // оно применится в _init после загрузки
     this.visible = showArms;
@@ -1049,21 +1485,105 @@ window.BrixFirstPerson = (function () {
     if (this.ironAxe) this.ironAxe.holder.visible = showArms && this.currentWeapon === 'ironAxe';
     if (this.plan) this.plan.holder.visible = showArms && this.currentWeapon === 'plan';
     if (this.revolver) this.revolver.holder.visible = showArms && this.currentWeapon === 'revolver';
+    if (this.shotgun) this.shotgun.holder.visible = showArms && this.currentWeapon === 'shotgun';
+    if (this.rifle) this.rifle.holder.visible = showArms && this.currentWeapon === 'rifle';
+    /* ✅ v0.4.25 СКИН: при выборе железной кирки накладываем обёртку
+       скина (если надет), при выборе другого оружия — обычная модель */
+    if (window.BrixWeaponSkins) {
+      var skinWrap = this.currentWeapon === 'ironPickaxe'
+        ? BrixWeaponSkins.wrapFor('ironPickaxe') : null;
+      this.applySkin(skinWrap);
+    }
   };
 
-  /** ✅ v0.4.5 ОТДАЧА: проиграть анимацию выстрела (короткий кик руки) */
+  /* ✅ v0.4.25 СКИН ОРУЖИЯ: накладывает UV-обёртку (текстуру) на модель
+   *  железной кирки в руках (или возвращает родную). url === null — снять.
+   *  Текстура грузится один раз и кэшируется по адресу; повторный вызов
+   *  с тем же url не перекрашивает модель заново */
+  FirstPersonPlayer.prototype.applySkin = function (url) {
+    var self = this;
+    if (!this.ironPick) { this._skinPending = url || null; return; }
+    if (this._skinUrl === (url || null)) return;   // ничего не изменилось
+    this._skinUrl = url || null;
+    var token = (this._skinToken = (this._skinToken || 0) + 1);
+    var proto = this.ironPick.wrap && this.ironPick.wrap.children[0];
+    if (!proto) return;
+    // вернуть родные карты/цвета
+    proto.traverse(function (o) {
+      if (!o.isMesh || !o.material) return;
+      var mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach(function (m) {
+        if (m.userData._origMap === undefined) {
+          m.userData._origMap = m.map || null;
+          m.userData._origColor = m.color ? m.color.getHex() : 0xffffff;
+        }
+        m.map = m.userData._origMap;
+        if (m.color) m.color.setHex(m.userData._origColor);
+        m.needsUpdate = true;
+      });
+    });
+    if (!url) return;
+    // грузим обёртку и накладываем
+    var loader = new THREE.TextureLoader();
+    loader.load(url, function (tex) {
+      if (self._skinToken !== token) return;      // пока грузили — скин сменили
+      if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      proto.traverse(function (o) {
+        if (!o.isMesh || !o.material) return;
+        var mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach(function (m) {
+          m.map = tex;                             // обёртка на все части кирки
+          if (m.color) m.color.setHex(0xffffff);   // белый цвет — текстура не темнит
+          m.needsUpdate = true;
+        });
+      });
+      console.log('[BrixFirstPerson] скин кирки надет: ' + url);
+    }, undefined, function () {
+      console.warn('[BrixFirstPerson] обёртка скина не загрузилась: ' + url);
+    });
+  };
+
+  /** ✅ v0.4.5 ОТДАЧА: проиграть анимацию выстрела (короткий кик руки).
+   *  ✅ v0.4.19: у дробовика своя, более тяжёлая отдача */
   FirstPersonPlayer.prototype.playShoot = function () {
-    if (!this.loaded || !this.visible || this.currentWeapon !== 'revolver') return;
-    this._swingType = 'shoot';
-    this._animTime = 0;
+    if (!this.loaded || !this.visible) return;
+    if (this.currentWeapon === 'revolver') {
+      this._swingType = 'shoot';
+      this._animTime = 0;
+    } else if (this.currentWeapon === 'shotgun') {
+      this._swingType = 'shootSg';
+      this._animTime = 0;
+    } else if (this.currentWeapon === 'rifle') {
+      // ✅ v0.4.21 отдача КАЛАША — пружина + зигзаг по паттерну (как в репозитории):
+      // ствол уводит вбок-вверх по очереди, чтобы автомат не «пилил» в одну точку
+      this._shotCount = (this._shotCount || 0) + 1;
+      var pk = AK_RECOIL_PATTERN[(this._shotCount - 1) % AK_RECOIL_PATTERN.length];
+      this._recSide = pk[0]; this._recVert = pk[1];
+      this._rec = Math.min(1.8, (this._rec || 0) + 0.55 + Math.random() * 0.2);
+      this._shake = Math.min((this._shake || 0) + 0.5, 1.2);
+    }
   };
 
-  /** ✅ v0.4.5 ПЕРЕЗАРЯДКА: опустить револьвер вниз и вернуть (2.2 с) */
+  /** ✅ v0.4.5 ПЕРЕЗАРЯДКА: опустить оружие вниз и вернуть (2.2 с револьвер,
+   *  2.6 с дробовик — v0.4.19) */
   FirstPersonPlayer.prototype.playReload = function () {
-    if (!this.loaded || !this.visible || this.currentWeapon !== 'revolver') return;
-    this._swingType = 'reload';
-    this._animTime = 0;
-    this._aiming = false;
+    if (!this.loaded || !this.visible) return;
+    if (this.currentWeapon === 'revolver') {
+      this._swingType = 'reload';
+      this._animTime = 0;
+      this._aiming = false;
+    } else if (this.currentWeapon === 'shotgun') {
+      this._swingType = 'reloadSg';
+      this._animTime = 0;
+      this._aiming = false;
+    } else if (this.currentWeapon === 'rifle') {
+      // ✅ v0.4.21 перезарядка калаша — автомат уходит вниз-влево (магазин)
+      this._rifleReload = true;
+      this._rifleReloadT = 0;
+      this._aiming = false;
+    }
   };
 
   /** ✅ v0.4.5 ПРИЦЕЛИВАНИЕ (ПКМ): on=true — плавно подводим к глазам */
@@ -1089,24 +1609,103 @@ window.BrixFirstPerson = (function () {
     this._animTime = 0;
   };
 
+  /** ✅ v0.4.21 БЕГ: бег игрока — автомат прижимается к груди (setRunning из gameworld) */
+  FirstPersonPlayer.prototype.setRunning = function (v) {
+    this._isRunning = !!v;
+  };
+
+  /** ✅ v0.4.21 ПОЗА КАЛАША (порт _gunPose из репозитория -glm):
+   *  idle ↔ БЕГ (автомат прижат к груди) ↔ прицел (ПКМ) + пружина отдачи,
+   *  зигзаг по паттерну, дрожь кистей и перезарядка (дуло вниз-влево) */
+  FirstPersonPlayer.prototype._riflePose = function (dt) {
+    var A = ADS_AK, t = this._clock;
+    var sm1 = function (cur, tgt, rate) {
+      var n = cur + (tgt - cur) * (1 - Math.exp(-rate * dt));
+      return Math.abs(n - tgt) < 0.002 ? tgt : n;
+    };
+    var wantAds = this._aiming && !this._isRunning && !this._rifleReload;
+    this._ads = sm1(this._ads, wantAds ? 1 : 0, A.speed);
+    this._runW = sm1(this._runW, this._isRunning ? 1 : 0, 9);
+
+    // пружина отдачи: лёгкий «пинок» назад и мягкий возврат с отскоком
+    var h = Math.min(dt, 1 / 30) / 2;
+    for (var i = 0; i < 2; i++) {
+      this._recV += (-420 * this._rec - 26 * this._recV) * h;
+      this._rec += this._recV * h;
+    }
+    this._rec = Math.max(-0.4, Math.min(1.8, this._rec));
+    this._shake *= Math.exp(-dt * 7);
+
+    // перезарядка: фаза 0..1 — автомат уходит вниз-влево и возвращается
+    var relDip = 0;
+    if (this._rifleReload) {
+      this._rifleReloadT += dt;
+      var rp = Math.min(1, this._rifleReloadT / AK_RELOAD_DUR);
+      if (rp >= 1) this._rifleReload = false;
+      else relDip = rp < 0.2 ? rp / 0.2 : rp > 0.85 ? Math.max(0, (1 - rp) / 0.15) : 1;
+    }
+
+    var idle = Object.assign({}, FIDLE_AK);
+    idle.sx += Math.sin(t * 1.8) * 0.8;   // дыхание в покое
+    idle.sy += Math.sin(t * 1.5) * 0.5;
+    var run = Object.assign({}, F_RUN_AK);
+    run.sx += Math.sin(t * 8) * 1.2;      // покачивание при беге
+    run.gpitch += Math.sin(t * 8) * 1.2;
+    run.gyaw += Math.cos(t * 4) * 1.0;
+    var p = lerpP(idle, run, this._runW);
+
+    var ads = this._ads;
+    p.ads = ads;
+    p.sx *= (1 - 0.8 * ads); p.sy *= (1 - 0.8 * ads);
+
+    // дрожь: сумма двух синусов; отдача — по осям камеры + перезарядка
+    var tr = function (f1, f2, ph) { return Math.sin(t * f1 + ph) + 0.6 * Math.sin(t * f2 + ph * 1.7); };
+    var rec = this._rec, sh = this._shake, damp = 1 - 0.5 * ads;
+    var recVert = this._recVert || 1.0, recSide = this._recSide || 0;
+    p.oz = (-0.018 * rec + 0.0025 * sh * tr(23, 37, 2.1)) * damp - 0.08 * relDip;
+    p.oy = (0.004 * rec + 0.0022 * sh * tr(29, 41, 0.8)) * damp + Math.sin(t * 1.6) * 0.0012 * ads;
+    p.ox = (0.0022 * sh * tr(31, 43, 1.7)) * damp;
+    p.ppitch = (0.55 * recVert * rec + 0.35 * sh * tr(27, 39, 0.3)) * damp + 4 * relDip;
+    p.pyaw = (0.45 * recSide * rec + 0.30 * sh * tr(25, 35, 1.1)) * damp;
+    p.proll = (0.40 * sh * tr(21, 33, 2.6) + 0.15 * recSide * rec) * damp + 8 * relDip;
+    p.ljx = 0.0035 * sh * tr(33, 47, 0.9);
+    p.ljy = 0.0030 * sh * tr(26, 45, 2.2);
+    p.ljz = 0.0020 * sh * tr(30, 40, 1.4);
+    // перезарядка: ствол явно вниз-влево (gw-рамка, как при беге)
+    if (relDip > 0) {
+      p.gw = 1;
+      p.gyaw = p.gyaw + (-34 - p.gyaw) * relDip;
+      p.gpitch = p.gpitch + (-26 - p.gpitch) * relDip;
+    }
+    return p;
+  };
+
   /** обновление позы каждый кадр (без рендера) */
   FirstPersonPlayer.prototype.update = function (dt, opts) {
     if (!this.loaded) return;
     this._clock += dt;
 
     // ✅ v0.4.5: покой зависит от оружия — с револьвером своя стойка
+    // ✅ v0.4.19: та же стойка с дробовиком
+    // ✅ v0.4.21: у КАЛАША своя машина поз (idle↔бег↔прицел+отдача)
     var idle;
-    if (this.currentWeapon === 'revolver') idle = FIDLE_REV;
+    if (this.currentWeapon === 'revolver' || this.currentWeapon === 'shotgun') idle = FIDLE_REV;
     else idle = FIDLE_AXE;
 
     // ✅ v0.4.5 ПРИЦЕЛИВАНИЕ: плавно 0..1 (не мгновенно). Прицел работает
-    // только с револьвером в руках и пока не играет выстрел/перезарядка
-    var wantAim = this._aiming && this.currentWeapon === 'revolver' && !this._swingType;
+    // с револьвером И дробовиком в руках и пока не играет выстрел/перезарядка
+    // (у калаша свой ADS — см. _riflePose)
+    // ✅ v0.4.22: НА БЕГУ прицела нет — оружие прижато к груди
+    var wantAim = this._aiming &&
+      (this.currentWeapon === 'revolver' || this.currentWeapon === 'shotgun') &&
+      !this._swingType && !this._isRunning;
     this._aimBlend += ((wantAim ? 1 : 0) - this._aimBlend) * Math.min(1, dt * 9);
     if (this._aimBlend < 0.002) this._aimBlend = 0;
 
     var p;
-    if (this._swingType) {
+    if (this.currentWeapon === 'rifle') {
+      p = this._riflePose(dt);
+    } else if (this._swingType) {
       var c = CL[this._swingType];
       this._animTime += dt;
       if (this._animTime >= c.dur) {
@@ -1116,8 +1715,18 @@ window.BrixFirstPerson = (function () {
         p = sample(c.keys, Math.max(0, this._animTime) / c.dur);
       }
     } else {
+      /* ✅ v0.4.22: сглаживание бега для револьвера/дробовика/инструментов
+         (у калаша своё — в _riflePose) */
+      this._runW += ((this._isRunning ? 1 : 0) - this._runW) * Math.min(1, dt * 9);
+      if (this._runW < 0.002) this._runW = 0;
       p = Object.assign({}, idle);
       p.sx += Math.sin(this._clock * 1.8) * 0.8; // дыхание в покое
+      if ((this.currentWeapon === 'revolver' || this.currentWeapon === 'shotgun') &&
+          this._runW > 0) {
+        var runP = Object.assign({}, F_RUN_GUN);
+        runP.sx += Math.sin(this._clock * 8) * 1.2;   // покачивание при беге
+        p = lerpP(p, runP, this._runW);
+      }
     }
 
     // прицеливание накладывается ПОВЕРХ (лёгкий лер): даже во время
@@ -1140,7 +1749,18 @@ window.BrixFirstPerson = (function () {
     this.handsCamera.position.copy(HANDS_CAM_POS);
     this.handsCamera.up.set(0, 1, 0);
     this.handsCamera.lookAt(HANDS_CAM_TARGET);
+    // ✅ v0.4.21: рамка камеры обновляется КАЖДЫЙ кадр — прицел калаша
+    // (линия целик→мушка) считается от живой камеры
+    var cf = HANDS_CAM_TARGET.clone().sub(HANDS_CAM_POS).normalize();
+    var cr = new THREE.Vector3().crossVectors(cf, new THREE.Vector3(0, 1, 0)).normalize();
+    var cu = new THREE.Vector3().crossVectors(cr, cf).normalize();
+    this.camFrame = { pos: HANDS_CAM_POS.clone(), f: cf, u: cu, r: cr };
+    // ✅ v0.4.21: при прицеливании калаша камера рук сужает FOV (74 → 55,
+    // как в репозитории) — мушка и целик крупнее
     this.handsCamera.fov = 74;
+    if (this.currentWeapon === 'rifle') {
+      this.handsCamera.fov = 74 + (ADS_AK.fov - 74) * (this._ads || 0);
+    }
     this.handsCamera.aspect = this.camera.aspect;
     this.handsCamera.near = 0.02;
     this.handsCamera.far = 200;
@@ -1174,12 +1794,26 @@ window.BrixFirstPerson = (function () {
     this.ironPick = null;
     this.ironAxe = null;
     this.revolver = null;
+    this.shotgun = null;
+    this.rifle = null;
     this.pickaxeHolder = null;
     this.bones = null;
     this.loaded = false;
     this.visible = false;
   };
 
+  // ✅ v0.4.25 безопасный запрос обёртки скина (модуль может быть не загружен)
+  function BrixWeaponSkinUrlSafe() {
+    try {
+      return window.BrixWeaponSkins ? BrixWeaponSkins.wrapFor('ironPickaxe') : null;
+    } catch (e) { return null; }
+  }
+
   FirstPersonPlayer.REV = REV;   // настройка револьвера из консоли: BrixFirstPerson.REV.len = 0.34
+  FirstPersonPlayer.SGN = SGN;   // ✅ v0.4.19 настройка дробовика: BrixFirstPerson.SGN.len = 0.56
+  // ✅ v0.4.21 настройка КАЛАША из консоли (F12): BrixFirstPerson.AK.sS = 0.9
+  FirstPersonPlayer.AK = GRIP_AK;
+  FirstPersonPlayer.AK_LEFT = GRIP_AK_LEFT;   // левая рука на цевье
+  FirstPersonPlayer.AK_ADS = ADS_AK;          // прицел (целик/мушка/FOV)
   return FirstPersonPlayer;
 })();

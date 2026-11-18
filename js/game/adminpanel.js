@@ -121,8 +121,28 @@ window.BrixAdmin = (function () {
       }
     });
     BrixNet.on('adeny', function (msg) {
-      toast(ru('Server denied the admin command',
-        'Сервер отклонил команду админа'), 5);
+      /* ✅ v0.4.23: РАЗНЫЕ причины отказа — разный текст.
+         why='unknown'  -> на сервере СТАРЫЙ server.js (команды 'god' там
+                           ещё нет; он и бессмертие защищал по-старому)
+         why='notadmin' -> сервер новый, но твой BRIX-ID не в admins.json
+                           (или сервер не перезапущен после правки)
+         без why        -> тоже «не админ» (очень старый server.js) */
+      var sv = (window.BrixNet && BrixNet.serverSv) || '';
+      if (msg && msg.why === 'unknown') {
+        toast('Команду отклонил СТАРЫЙ server.js' + (sv ? ' (v' + sv + ')' : '') +
+          ': в нём ещё нет тумблера бессмертия. Замени server.js на новый и ' +
+          'ОБЯЗАТЕЛЬНО ПЕРЕЗАПУСТИ сервер: закрой чёрное окно (Ctrl+C) и запусти ' +
+          'заново — в шапке окна должно быть «BRIX server v' +
+          (window.BRIX_VER || '0.4.23') + '»', 14);
+      } else if (msg && msg.why === 'notadmin') {
+        toast('Сервер не подтвердил тебя как АДМИНА: впиши свой BRIX-ID в ' +
+          'admins.json (рядом с server.js) и перезапусти сервер. Проверить: ' +
+          'открой в браузере http://' + (location.hostname || 'localhost') +
+          ':8787/status — там папка сервера и список админов', 14);
+      } else {
+        toast(ru('Server denied the admin command',
+          'Сервер отклонил команду админа'), 5);
+      }
     });
     BrixNet.on('aok', function (msg) {
       if (msg && msg.info) toast(msg.info, 6);
@@ -187,7 +207,7 @@ window.BrixAdmin = (function () {
     /* шапка */
     var head = el('div', 'bap-head');
     head.appendChild(el('div', 'bap-title font-h', 'PANEL DEVELOPERA'));
-    head.appendChild(el('div', 'bap-sub', 'BRIX · v0.4.17 · только для владельца сервера'));
+    head.appendChild(el('div', 'bap-sub', 'BRIX · v0.4.25 · только для владельца сервера'));
     var x = el('button', 'bap-close');
     x.innerHTML = window.BrixIcon ? BrixIcon('x', 16) : '✕';
     x.onclick = function () { if (window.menuAudio) menuAudio.back(); close(); };
@@ -202,7 +222,17 @@ window.BrixAdmin = (function () {
     var flags = el('div', 'bap-flags');
     flags.appendChild(toggleBtn('БЕСКОНЕЧНОЕ ХП',
       function () { return god; },
-      function (v) { god = v; if (v && window.BrixGame && BrixGame.state.phase === 'playing') healSelf(); }));
+      function (v) {
+        god = v;
+        /* ✅ v0.4.22 ФИКС «ИГРОКИ НЕ УМИРАЮТ»: бессмертие синхронизируется
+           с СЕРВЕРОМ — урон не применяется только при включённом тумблере
+           (раньше админский BRIX-ID был неуязвим ВСЕГДА, даже во второй
+           тест-вкладке с тем же аккаунтом — игроки не умирали) */
+        if (window.BrixNet && BrixNet.mode === 'server' && BrixNet.send) {
+          BrixNet.send({ t: 'admin', op: 'god', v: v });
+        }
+        if (v && window.BrixGame && BrixGame.state.phase === 'playing') healSelf();
+      }));
     flags.appendChild(toggleBtn('ОТКРЫВАТЬ ЛЮБЫЕ ЗАМКИ',
       function () { return masterkey; },
       function (v) { masterkey = v; }));
@@ -328,6 +358,54 @@ window.BrixAdmin = (function () {
     };
     body.appendChild(dcl);
 
+    /* ---------- 7. ✅ v0.4.25 СКИНЫ (ТЕСТ) ----------
+       Скины оружия: пока ТОЛЬКО отсюда, для теста.
+       В магазин скинов (меню игры) скин НЕ добавляется. */
+    body.appendChild(secTitle('СКИНЫ (ТЕСТ — В МАГАЗИНЕ НЕТ)'));
+    var skinBox = el('div', 'bap-skins');
+    body.appendChild(skinBox);
+    body.appendChild(el('div', 'bap-note',
+      'Надеть/снять скин. Пока он надет — железная кирка выглядит «Ретро» ' +
+      'в руках и в инвентаре. В магазине скинов его НЕТ — это тест.'));
+    paintSkins();
+
+    function paintSkins() {
+      skinBox.innerHTML = '';
+      var list = (window.BrixWeaponSkins && BrixWeaponSkins.list()) || [];
+      if (!list.length) {
+        skinBox.appendChild(el('div', 'bap-note', 'Скинов пока нет.'));
+        return;
+      }
+      list.forEach(function (sk) {
+        var it = (window.BrixInventory && BrixInventory.ITEMS[sk.item]) || {};
+        var isOn = window.BrixWeaponSkins && !!BrixWeaponSkins.equipped(sk.item);
+        var nm = (BrixState.data.lang === 'en') ? (sk.name.en || sk.name.ru) : (sk.name.ru || sk.name.en);
+        var row = el('div', 'bap-skin' + (isOn ? ' on' : ''));
+        var ico = el('img', 'bap-skin-ico');
+        ico.src = sk.icon; ico.alt = nm; ico.draggable = false;
+        row.appendChild(ico);
+        var mid = el('div', 'bap-skin-mid');
+        mid.appendChild(el('div', 'bap-skin-name', nm));
+        mid.appendChild(el('div', 'bap-skin-item', 'на предмет: ' + (it.name || sk.item)));
+        row.appendChild(mid);
+        var btn = el('button', 'bap-btn bap-btn-small font-h', isOn ? 'СНЯТЬ' : 'НАДЕТЬ');
+        btn.onclick = function () {
+          if (window.menuAudio) menuAudio.click();
+          if (!window.BrixWeaponSkins) return;
+          if (isOn) {
+            BrixWeaponSkins.unequipItem(sk.item);
+            toast('Скин снят: ' + nm, 4);
+          } else {
+            BrixWeaponSkins.setEquip(sk.id);
+            toast('Скин надет: ' + nm + ' — выбери железную кирку в хотбаре (клавиша 5)', 6);
+          }
+          paintSkins();   // перерисовать кнопки
+        };
+        row.appendChild(btn);
+        skinBox.appendChild(row);
+      });
+    }
+
     card.appendChild(body);
 
     document.body.appendChild(root);
@@ -412,6 +490,8 @@ window.BrixAdmin = (function () {
     if (inv && inv.isOpen) return true;
     if (window.BrixLootMenu && BrixLootMenu.isOpen()) return true;
     if (window.BrixMiniMenu && BrixMiniMenu.isAnyOpen()) return true;
+    /* ✅ v0.4.25: крафт-панель (Q) открыта — 9 молчит */
+    if (window.BrixCraft && BrixCraft.isOpen()) return true;
     return false;
   }
 
@@ -501,6 +581,10 @@ window.BrixAdmin = (function () {
         заново подтвердит админа при следующем входе (adminon) */
     shutdown: function () {
       close();
+      /* ✅ v0.4.22: при выходе из мира сообщаем серверу, что бессмертие выключено */
+      if (god && window.BrixNet && BrixNet.mode === 'server' && BrixNet.send) {
+        BrixNet.send({ t: 'admin', op: 'god', v: false });
+      }
       enabled = false;
       toastOnce = false;
       hintShown = false;                     // ✅ v0.4.16: снова подсказать в новом мире

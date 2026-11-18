@@ -285,6 +285,25 @@ window.BrixWorld = (function () {
     }
     await yieldProgress(0.28);
 
+    var colliders = [];   // ✅ v0.2.9: цилиндры деревьев и рудных жил (и башни маяка)
+    var decorBoxes = [];  // ✅ v0.4.24: AABB маяка (стены/ступени/выступы/площадка)
+
+    /* ---- 0b. ✅ v0.4.24 ЛОКАЦИЯ «МАЯК» на Большом озере (61, 50) ----
+       Модель + коллайдеры (лестница/выступы/палуба/стены) — BrixLighthouse.
+       Не загрузился (нет файла / file://) — игра работает без него */
+    if (window.BrixLighthouse) {
+      try {
+        var lh = await BrixLighthouse.build(scene, loadModel, yieldProgress);
+        colliders.push.apply(colliders, lh.colliders);   // башня-цилиндр — в общий список
+        decorBoxes = lh.boxes;                           // AABB — отдельным списком (ниже)
+        console.log('[BrixWorld] маяк на озере построен: боксов ' + lh.boxes.length);
+      } catch (eLh) {
+        console.warn('[BrixWorld] маяк не загрузился (не критично):', eLh && eLh.message);
+      }
+    }
+    await yieldProgress(0.3);
+    await nextFrame();
+
     /* ---- 1. деревья: расстановка (как раньше) ---- */
     var trees = [];
     var treeTries = 3200;
@@ -341,7 +360,6 @@ window.BrixWorld = (function () {
     await nextFrame();
 
     /* записи по каждому дереву — для рубки (тряска/падение) + КОЛЛАЙДЕРЫ */
-    var colliders = [];   // ✅ v0.2.9: цилиндры деревьев и рудных жил
     var treeRecords = trees.map(function (p, idx) {
       var rec = {
         i: idx,
@@ -579,6 +597,7 @@ window.BrixWorld = (function () {
       oreTargets: oreTargets,
       ores: oreNodes,
       colliders: colliders,                    // ✅ v0.2.9: для физики игрока
+      lighthouseBoxes: decorBoxes,             // ✅ v0.4.24: AABB маяка (стены/ступени/выступы)
       tick: function (delta) {
         // ветер в траве (uTime в шейдере)
         grassTime.value += delta;

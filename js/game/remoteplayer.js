@@ -22,9 +22,27 @@ window.BrixRemotePlayer = (function () {
   var SWING_DUR = 0.55;      // длительность удара — как в 1-м лице
   // ✅ v0.4.5: длительности боевых анимаций (синхронно с 1-м лицом)
   var ANIM_DUR = { atk1: 0.55, atk2: 0.55, shoot: 0.35, reload: 2.2 };
+  // ✅ v0.4.19: у дробовика свои тайминги (синхронно с gameworld.js)
+  var SG_ANIM = { shoot: 0.9, reload: 2.6 };
+  var animDurFor = function (a, tool) {
+    if (tool === 'shotgun' && SG_ANIM[a] !== undefined) return SG_ANIM[a];
+    return ANIM_DUR[a] || SWING_DUR;
+  };
   // ✅ v0.4.5: разворот револьвера в кисти (ствол вперёд, как в 1-м лице)
   var REV_REMOTE = {
     rot: { x: -0.15, y: Math.PI / 2 + 0.05, z: 0 },
+    pos: { x: 0.02, y: -0.03, z: -0.06 }
+  };
+  // ✅ v0.4.19: разворот ДРОБОВИКА в кисти (длинный — чуть наклонён вниз,
+  // чтобы не тыкался в небо; рукоять в правой руке, ствол вперёд)
+  var SG_REMOTE = {
+    rot: { x: -0.08, y: Math.PI / 2 + 0.05, z: 0 },
+    pos: { x: 0.02, y: -0.03, z: -0.06 }
+  };
+  // ✅ v0.4.21: разворот КАЛАША в кисти (ствол длинный — чуть вниз;
+  // сам ak47.glb разворачивается в загрузчике: ствол из +Y → −Z)
+  var RIFLE_REMOTE = {
+    rot: { x: -0.08, y: Math.PI / 2 + 0.05, z: 0 },
     pos: { x: 0.02, y: -0.03, z: -0.06 }
   };
 
@@ -280,17 +298,24 @@ window.BrixRemotePlayer = (function () {
       pickaxe: ['assets/models/stone_pickaxe.glb', 0.55],
       ironPickaxe: ['assets/models/pickaxe.glb', 0.58],
       ironAxe: ['assets/models/iron_axe.glb', 0.58],
-      revolver: ['assets/models/revolver.glb', 0.30]   // ✅ v0.4.5
+      revolver: ['assets/models/revolver.glb', 0.30],   // ✅ v0.4.5
+      shotgun: ['assets/models/shotgun.glb', 0.62],     // ✅ v0.4.19
+      rifle: ['assets/models/ak47.glb', 0.72]           // ✅ v0.4.21
     };
     var left = Object.keys(defs).length;
     Object.keys(defs).forEach(function (key) {
       var url = window.BrixAsset ? window.BrixAsset(defs[key][0]) : defs[key][0];
       BrixGLB.load(url, function (group, size) {
-        if (key === 'revolver') {
-          // револьвер НЕ «топор»: не разворачиваем по длинной оси,
-          // просто масштабируем по габаритам — поворот в _applyTool
+        if (key === 'revolver' || key === 'shotgun' || key === 'rifle') {
+          // револьвер/дробовик/калаш НЕ «топор»: не разворачиваем по длинной
+          // оси, просто масштабируем по габаритам — поворот в _applyTool
           var sc = defs[key][1] / Math.max(size.x, size.y, size.z, 1e-6);
           group.scale.setScalar(sc);
+          if (key === 'rifle') {
+            // ✅ v0.4.21: у ak47.glb ствол вдоль +Y — преповорот +Y → −Z,
+            // чтобы стойка в _applyTool работала как у дробовика
+            group.rotation.x = -Math.PI / 2;
+          }
         } else {
           fitToolLikeAxe(group, defs[key][1]);   // рукоять вдоль +Y, голова вверх, низ в нуле
         }
@@ -395,10 +420,13 @@ window.BrixRemotePlayer = (function () {
     var proto = TOOLS[want];
     if (!proto) return;
     var m = proto.clone(true);
-    if (want === 'revolver') {
+    if (want === 'revolver' || want === 'shotgun' || want === 'rifle') {
       // ✅ v0.4.5: револьвер держится СВОЕЙ стороной — ствол вперёд
-      m.rotation.set(REV_REMOTE.rot.x, REV_REMOTE.rot.y, REV_REMOTE.rot.z);
-      m.position.set(REV_REMOTE.pos.x, REV_REMOTE.pos.y, REV_REMOTE.pos.z);
+      // ✅ v0.4.19: дробовик тоже (SG_REMOTE — чуть ниже наклон)
+      // ✅ v0.4.21: калаш (RIFLE_REMOTE)
+      var RC = want === 'shotgun' ? SG_REMOTE : want === 'rifle' ? RIFLE_REMOTE : REV_REMOTE;
+      m.rotation.set(RC.rot.x, RC.rot.y, RC.rot.z);
+      m.position.set(RC.pos.x, RC.pos.y, RC.pos.z);
       this.arms.R.holder.add(m);
       this._pendingTool = false;
       return;
@@ -497,8 +525,15 @@ window.BrixRemotePlayer = (function () {
     this.cur.yaw += dy * k;
 
     var g = this.group;
-    g.position.set(this.cur.x, this.cur.y - 1.7, this.cur.z);
+    /* ✅ v0.4.28: присед чужого игрока (st.c) — модель плавно ниже и приземистей:
+       стоя ноги на 1.7 ниже глаз, в приседе на 1.05; силуэт сжимается по Y */
+    var crT = this.tgt.c ? 1 : 0;
+    if (this._crK === undefined) this._crK = 0;
+    this._crK += (crT - this._crK) * Math.min(1, dt * 8);
+    var feet = 1.7 - 0.65 * this._crK;
+    g.position.set(this.cur.x, this.cur.y - feet, this.cur.z);
     g.rotation.y = this.cur.yaw;
+    g.scale.y = 1 - 0.38 * this._crK;
 
     // ✅ v0.4.5: смерть — игрок уходит под землю и исчезает
     if (this.dead) {
@@ -527,7 +562,7 @@ window.BrixRemotePlayer = (function () {
     // анимация) — перезапуск
     var a = this.tgt.a || 'idle';
     if (a === 'atk1' || a === 'atk2' || a === 'shoot' || a === 'reload') {
-      var dur = ANIM_DUR[a] || SWING_DUR;
+      var dur = animDurFor(a, this.curTool);
       if (a !== this.swingKind || this.tgt.ph < this.lastPh || this.swingT < 0) {
         this.swingKind = a;
         this.swingT = Math.max(this.tgt.ph, 0.001) * dur;
@@ -547,7 +582,7 @@ window.BrixRemotePlayer = (function () {
 
   RemotePlayer.prototype._pose = function () {
     var t = this.animT;
-    var swinging = this.swingT >= 0 && this.swingT < (ANIM_DUR[this.swingKind] || SWING_DUR);
+    var swinging = this.swingT >= 0 && this.swingT < animDurFor(this.swingKind, this.curTool);
 
     var bob = 0, lean = 0;
     var armP = { L: 6, R: 6 }, armY = { L: 14, R: -14 }, armB = { L: 16, R: 16 };
@@ -557,7 +592,7 @@ window.BrixRemotePlayer = (function () {
       if (this.swingKind === 'shoot') {
         // ✅ v0.4.5 ВЫСТРЕЛ: руки вскинуты вперёд (ствол в цель), короткий
         // кик отдачи вверх и плавный возврат
-        var sph = Math.min(this.swingT / ANIM_DUR.shoot, 1);
+        var sph = Math.min(this.swingT / animDurFor('shoot', this.curTool), 1);
         var kick = Math.sin(Math.min(sph * 1.7, 1) * Math.PI);
         armP.R = -80 - kick * 14;
         armY.R = -12;
@@ -567,7 +602,7 @@ window.BrixRemotePlayer = (function () {
         armB.L = 48;
       } else if (this.swingKind === 'reload') {
         // ✅ v0.4.5 ПЕРЕЗАРЯДКА: опустил оружие вниз, возится с барабаном
-        var rph = Math.min(this.swingT / ANIM_DUR.reload, 1);
+        var rph = Math.min(this.swingT / animDurFor('reload', this.curTool), 1);
         var dip = rph < 0.2 ? rph / 0.2 : rph > 0.85 ? Math.max(0, (1 - rph) / 0.15) : 1;
         armP.R = 6 - dip * 4;
         armY.R = -14;
@@ -594,9 +629,12 @@ window.BrixRemotePlayer = (function () {
         }
         armP.L = 12; armB.L = 22;
       }
-    } else if (this.curTool === 'revolver') {
+    } else if (this.curTool === 'revolver' || this.curTool === 'shotgun' ||
+               this.curTool === 'rifle') {
       // ✅ v0.4.5: С РЕВОЛЬВЕРОМ в руках — готовая стойка (руки вперёд),
       // а не «руки по швам»; бег/прыжок ниже переопределяют
+      // ✅ v0.4.19: та же стойка с ДРОБОВИКОМ
+      // ✅ v0.4.21: с КАЛАШОМ — обе руки вперёд (левая подхватывает цевьё)
       armP.R = -38; armY.R = -12; armB.R = 20;
       armP.L = -22; armY.L = 12; armB.L = 32;
       if (this.tgt.a === 'run') {
@@ -610,6 +648,20 @@ window.BrixRemotePlayer = (function () {
         armB.L = 36; armB.R = 22;
         bob = Math.abs(Math.sin(u2)) * 0.045;
         lean = 9;
+        /* ✅ v0.4.22: у револьвера/дробовика на бегу оружие ПРИЖАТО К ГРУДИ —
+           правая рука согнута сильнее (кисть у груди, ствол вверх-влево);
+           левая у револьвера машет свободно (у дробовика она и так опущена —
+           отдельный оверрайд ниже, v0.4.20) */
+        if (this.curTool === 'revolver' || this.curTool === 'shotgun') {
+          armP.R = 2 + Math.sin(u2) * 8;
+          armY.R = -24;
+          armB.R = 74;
+        }
+        if (this.curTool === 'revolver') {
+          armP.L = 8 + Math.sin(u2 + Math.PI) * 30;
+          armB.L = 42;
+          armY.L = 6;
+        }
       } else if (this.tgt.a === 'jump') {
         legP.L = legP.R = -38;
         legB.L = legB.R = 62;
@@ -644,6 +696,21 @@ window.BrixRemotePlayer = (function () {
       armP.L = 6 + br * 1.5; armP.R = 6 - br * 1.5;
       armB.L = 16 + br * 2; armB.R = 16 - br * 2;
       bob = br * 0.012;
+    }
+
+    /* ✅ v0.4.20: с ДРОБОВИКОМ левая рука УБРАНА — дробовик держит
+       ТОЛЬКО правая (как в 1-м лице). У чужих игроков левая рука висит
+       спокойно (покой/бег/прыжок/выстрел/перезарядка — везде опущена) */
+    if (this.curTool === 'shotgun') {
+      if (!swinging && this.tgt.a === 'run') {
+        armP.L = 8 + Math.sin(u2 + Math.PI) * 30;
+        armB.L = 42; armY.L = 14;
+      } else if (!swinging && this.tgt.a === 'jump') {
+        armP.L = -28; armB.L = 26; armY.L = 14;
+      } else {
+        var brL = Math.sin(t * 1.9);
+        armP.L = 6 + brL * 1.5; armB.L = 16 + brL * 2; armY.L = 14;
+      }
     }
 
     var bobM = bob * 0.6;

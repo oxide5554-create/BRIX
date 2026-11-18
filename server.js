@@ -36,7 +36,12 @@ const ROOT = __dirname;
    версии не присылает — и панель на 9 молчит). В консоли при старте
    печатается ПОЛНЫЙ ПУТЬ папки сервера — чтобы admins.json правился
    именно там, где сервер РЕАЛЬНО запущен */
-const SRV_VER = '0.4.17';
+const SRV_VER = '0.4.29';   /* ✅ v0.4.29: welcome несёт folder — клиент в красном баннере
+   «СЕРВЕР СТАРЫЙ» показывает ИЗ КАКОЙ ПАПКИ реально работает сервер
+   (99% «сервер старый» = жив старый процесс node или server.js заменён
+   не в той папке). Плюс: при занятом порте (EADDRINUSE) сервер вместо
+   падения печатает понятную инструкцию. Предыдущее 0.4.28: хп построек
+   на СЕРВЕРЕ (bhit/bhp/brem), phit несёт w+dist, присед в состоянии */
 const PLAYER_TIMEOUT = 90000;   // молчание дольше этого — игрок «выпал» (фоновые вкладки шлют pong)
 
 /* ✅ v0.3.8: РЕСПАВН ПО ТАЙМЕРУ СЕРВЕРА (не по перезагрузке клиента!) */
@@ -538,9 +543,16 @@ function loadWorldObjs() {
     const drops = new Map();
     (j.drops || []).forEach((d) => { if (d && d.id) drops.set(d.id, d); });
     const builds = Array.isArray(j.builds) ? j.builds.filter((b) =>
-      b && (b.ty === 'f' || b.ty === 'w' || b.ty === 'c' ||
-            b.ty === 'wi' || b.ty === 'dw' || b.ty === 'dr') &&
-      Number.isFinite(b.gx) && Number.isFinite(b.gz) && Number.isFinite(b.top)) : [];
+      b && (
+        /* сеточные постройки (фундамент/стена/потолок/окно/проём/дверь) */
+        ((b.ty === 'f' || b.ty === 'w' || b.ty === 'c' ||
+          b.ty === 'wi' || b.ty === 'dw' || b.ty === 'dr') &&
+         Number.isFinite(b.gx) && Number.isFinite(b.gz) && Number.isFinite(b.top)) ||
+        /* ✅ v0.4.22 СУНДУК — свободная постройка (не на сетке),
+           содержимое (cont) переживает перезапуск сервера */
+        (b.ty === 'ch' && Number.isFinite(b.x) && Number.isFinite(b.z) &&
+         Number.isFinite(b.y))
+      )) : [];
     return { cb: j.cb, drops, dropSeq: j.dropSeq || 0, builds,
       /* ✅ v0.4.14: берём МАКСИМУМ из файла и сайдкара — откат файла
          в прошлое поколение невозможен */
@@ -610,6 +622,11 @@ function canonicalEdge(gx, gz, e) {
 const buildCell = new Map();   // 'gx,gz' -> {f: rec, c: rec}
 const buildEdge = new Map();   // 'gx,gz,e' -> rec краевой детали
 worldObjs.builds.forEach((b) => {
+  /* ✅ v0.4.28: у старых построек (мир до обновления) hp нет — присваиваем
+     полный запас по типу, чтобы ломание работало сразу после апдейта */
+  if (b.hp === undefined) b.hp = maxBuildHp(b.ty);
+  /* ✅ v0.4.22: сундук — свободная постройка, в сеточные индексы не входит */
+  if (b.ty === 'ch') return;
   if (b.ty === 'w' || b.ty === 'wi' || b.ty === 'dw' || b.ty === 'dr') {
     const ce = canonicalEdge(b.gx, b.gz, b.e);
     b.gx = ce.gx; b.gz = ce.gz; b.e = ce.e;
@@ -630,14 +647,43 @@ function hasWallOnCell(gx, gz) {
 /* ✅ v0.4.10: публичная копия постройки — БЕЗ кода замка и списка
    разгадавших: код НИКОГДА не покидает сервер (в bnew/welcome едет
    только «есть код» hc и владелец own) */
+/* ============================================================
+   ✅ v0.4.28 ЛОМАНИЕ ПОСТРОЕК: ХП авторитет СЕРВЕРА.
+     фундамент/стена/окно/проём/потолок — 200, дверь — 150, сундук — 25.
+     Урон ТОЛЬКО топорами/кирками (камень — 67: 200 хп = 3 удара;
+     железо — 100: 2 удара; сундук 25 — с одного любого).
+     Клиент шлёт 'bhit' {id, tool}; сервер проверяет дистанцию (≤ 6 м),
+     снимает хп, шлёт 'bhp' всем (остаток) или 'brem' (сломал).
+     ХП пишется на диск СРАЗУ — переживает перезапуск сервера.
+   ============================================================ */
+function maxBuildHp(ty) {
+  if (ty === 'ch') return 25;
+  if (ty === 'dr') return 150;
+  return 200;   // f / w / wi / dw / c
+}
+const BUILD_DMG = { axe: 67, pickaxe: 67, ironAxe: 100, ironPickaxe: 100 };
+
 function publicBuild(b) {
   const out = { id: b.id, ty: b.ty, gx: b.gx, gz: b.gz, top: b.top,
     by: b.by, at: b.at };
   if (b.e !== undefined) out.e = b.e;
+  /* ✅ v0.4.28 ХП ПОСТРОЙКИ: едет во всех снапшотах/bnew, чтобы новые
+     игроки и перезашедшие знали остаток. Если записи ещё нет (мир старый) —
+     присваиваем полный запас по типу — он же уйдёт в persistence */
+  if (b.hp === undefined) b.hp = maxBuildHp(b.ty);
+  out.hp = b.hp;
   if (b.ty === 'dr') {
     out.open = b.open ? 1 : 0;
     out.hc = (b.code && String(b.code).length === 4) ? 1 : 0;
     out.own = b.own || '';
+  }
+  /* ✅ v0.4.22 СУНДУК: координаты/поворот + содержимое — оно общее,
+     все игроки видят и могут достать (как лут ящиков) */
+  if (b.ty === 'ch') {
+    out.x = b.x; out.z = b.z; out.y = b.y;
+    if (b.rot !== undefined) out.rot = b.rot;
+    out.own = b.own || '';
+    out.cont = b.cont || {};
   }
   return out;
 }
@@ -912,7 +958,10 @@ function dropSocket(p) {
 function adminOp(p, msg) {
   const op = String(msg.op || '');
   if (!isAdminP(p)) {
-    p.send({ t: 'adeny', op });
+    /* ✅ v0.4.23: why:'notadmin' — клиент отличит «ты не админ» от
+       «старый server.js не знает команду» (why:'unknown') и покажет
+       точную подсказку вместо общего «сервер отклонил» */
+    p.send({ t: 'adeny', op, why: 'notadmin' });
     console.log('[admin] ОТКАЗ (' + op + '): ' + p.name +
       ' не администратор (aid=' + (p.aid || 'нет') + ')');
     return;
@@ -1017,6 +1066,17 @@ function adminOp(p, msg) {
       broadcast({ t: 'dclr' }, null);
       p.send({ t: 'aok', op, info: 'Убрано дропов: ' + nd });
       console.log('[admin] ' + p.name + ' убрал дропы (' + nd + ')');
+      break;
+    }
+    /* ✅ v0.4.22 ФИКС «ИГРОКИ НЕ УМИРАЮТ»: бессмертие теперь включается
+       ТУМБЛЕРОМ в админ-панели (клиент шлёт op:'god'). Урон не применяется
+       только к тому соединению, где тумблер включён. Раньше сервер защищал
+       ЛЮБОГО игрока с админским BRIX-ID — а при тесте в двух вкладках/
+       браузерах BRIX-ID один и тот же, поэтому «второй игрок» был
+       неуязвим всегда, даже с выключенным бессмертием */
+    case 'god': {
+      p.god = !!msg.v;
+      console.log('[admin] ' + p.name + ' бессмертие: ' + (p.god ? 'ВКЛ' : 'ВЫКЛ'));
       break;
     }
     default:
@@ -1133,11 +1193,15 @@ server.on('upgrade', (req, sock) => {
         // АВТОРИТЕТНЫЙ welcome: свой id + ВСЕ игроки с позициями + мир
         p.send({
           t: 'welcome',
-          ver: 49,               // ✅ v0.4.12: геометрическая привязка (px/pz), добор (badopt)
+          ver: 50,               // ✅ v0.4.22: сундуки (chplace/chestopen/chestput/chesttake)
           /* ✅ v0.4.17: sv — версия СЕРВЕРА (клиент отличит новый сервер
              от старого), adm — подтвердил ли сервер ЭТОГО игрока админом
              (для диагностики; панель включается по adminon) */
           sv: SRV_VER,
+          /* ✅ v0.4.29: папка сервера в welcome — если версии не совпали,
+             клиент покажет в баннере, из какой папки сервер работает,
+             и игрок сразу увидит, что заменил server.js не там */
+          folder: ROOT,
           adm: isAdminP(p) ? 1 : 0,
           id: p.id,
           players: rosterFor().filter(function (r) { return r.id !== p.id; }),
@@ -1178,10 +1242,11 @@ server.on('upgrade', (req, sock) => {
           if (!p.state) pushCount();
           p.state = {
             x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw,
-            a: msg.a, tool: msg.tool, ph: msg.ph, n: p.name
+            a: msg.a, tool: msg.tool, ph: msg.ph, n: p.name,
+            c: msg.c ? 1 : 0   /* ✅ v0.4.28: присед — для чужих игроков */
           };
           broadcast({ t: 's', id: p.id, x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw,
-            a: msg.a, tool: msg.tool, ph: msg.ph, n: p.name }, p.id);
+            a: msg.a, tool: msg.tool, ph: msg.ph, c: msg.c ? 1 : 0, n: p.name }, p.id);
           break;
         case 'hit': {       // ЗАПРОС удара: решает сервер
           const res = applyHit(p, msg);
@@ -1317,6 +1382,97 @@ server.on('upgrade', (req, sock) => {
           console.log('[objs] ' + p.name + ' положил в ящик ' + c.id + ': ' + item + ' x' + amt);
           break;
         }
+        /* ============================================================
+           ✅ v0.4.22 СУНДУК-ХРАНИЛИЩЕ (ty:'ch') — новая постройка.
+           Содержимое живёт НА СЕРВЕРЕ в записи постройки: уезжает в
+           автосейв вместе с домами и приходит новичкам в welcome.
+           Положить/взять может ЛЮБОЙ игрок (как лут ящиков).
+           ============================================================ */
+        case 'chplace': {
+          if (!p.state) break;
+          const chx = Number(msg.x), chz = Number(msg.z), chy = Number(msg.y);
+          if (!Number.isFinite(chx) || !Number.isFinite(chz) || !Number.isFinite(chy) ||
+              Math.abs(chx) > 5000 || Math.abs(chz) > 5000 || chy < -50 || chy > 500) break;
+          if (dist2(p.state.x, p.state.z, chx, chz) > 36) break;   // дальше 6 м — не верим
+          /* рядом (1.2 м) не должно стоять другого сундука */
+          let clash = false;
+          worldObjs.builds.forEach((b) => {
+            if (b.ty !== 'ch') return;
+            const dx = b.x - chx, dz = b.z - chz;
+            if (dx * dx + dz * dz < 1.44) clash = true;
+          });
+          if (clash) { p.send({ t: 'bdeny', tid: msg.tid, why: 'clash' }); break; }
+          let chy2 = chy;
+          /* на фундаменте — высоту берём ИЗ серверного фундамента,
+             на земле — верим клиенту (рельеф детерминированный, как у домов) */
+          const chCell = buildCell.get(Math.floor(chx / CELL) + ',' + Math.floor(chz / CELL));
+          if (chCell && chCell.f && Math.abs(chy - chCell.f.rec.top) < 1.0) {
+            chy2 = chCell.f.rec.top;                               // стоит НА палубе
+          }
+          const chRec = { id: 'b' + (++buildSeq), ty: 'ch',
+            x: Math.round(chx * 100) / 100, z: Math.round(chz * 100) / 100,
+            y: Math.round(chy2 * 100) / 100,
+            rot: Math.round((Number(msg.rot) || 0) * 100) / 100,
+            by: p.name, at: Date.now(), own: p.aid || ('n:' + p.name), cont: {} };
+          worldObjs.builds.push(chRec);
+          broadcast({ t: 'bnew', pid: p.id, b: publicBuild(chRec) }, null);
+          markDirty();
+          console.log('[objs] ' + p.name + ' поставил сундук ' + chRec.id +
+            ' (' + chRec.x.toFixed(1) + ', ' + chRec.z.toFixed(1) + ')');
+          break;
+        }
+        case 'chestopen': {
+          const chest = worldObjs.builds.find((b) => b.ty === 'ch' && b.id === String(msg.id || ''));
+          if (!chest) break;
+          if (p.state && dist2(p.state.x, p.state.z, chest.x, chest.z) > 64) break;  // >8 м
+          p.send({ t: 'chestst', id: chest.id, cont: chest.cont, own: chest.own || '' });
+          break;
+        }
+        case 'chestput': {
+          const chest = worldObjs.builds.find((b) => b.ty === 'ch' && b.id === String(msg.id || ''));
+          if (!chest) break;
+          if (p.state && dist2(p.state.x, p.state.z, chest.x, chest.z) > 64) break;
+          const item = String(msg.item || '');
+          if (!item) break;
+          const amt = Math.max(1, Math.min(999, Math.floor(msg.amt || 1)));
+          chest.cont[item] = (chest.cont[item] || 0) + amt;
+          broadcast({ t: 'chestst', id: chest.id, cont: chest.cont, pid: p.id,
+            item, amt, put: true }, null);
+          markDirty();
+          console.log('[objs] ' + p.name + ' положил в сундук ' + chest.id + ': ' + item + ' x' + amt);
+          break;
+        }
+        case 'chesttake': {
+          const tid = String(msg.tid || '');
+          const chest = worldObjs.builds.find((b) => b.ty === 'ch' && b.id === String(msg.id || ''));
+          if (!chest) {
+            if (tid) p.send({ t: 'chestdeny', id: msg.id, item: msg.item, tid });
+            break;
+          }
+          if (p.state && dist2(p.state.x, p.state.z, chest.x, chest.z) > 64) {
+            if (tid) p.send({ t: 'chestdeny', id: msg.id, item: msg.item, tid });
+            break;
+          }
+          const item = String(msg.item || '');
+          const avail = (chest.cont && chest.cont[item]) || 0;
+          if (avail <= 0) {                        // такого предмета в сундуке уже нет
+            if (tid) p.send({ t: 'chestdeny', id: msg.id, item: msg.item, tid });
+            break;
+          }
+          const amt = (msg.amt > 0) ? Math.min(Math.floor(msg.amt), avail) : avail;
+          chest.cont[item] = avail - amt;
+          if (chest.cont[item] <= 0) delete chest.cont[item];
+          broadcast({ t: 'chestst', id: chest.id, cont: chest.cont, pid: p.id,
+            item, amt, take: true, tid }, null);
+          markDirty();
+          console.log('[objs] ' + p.name + ' взял из сундука ' + chest.id + ': ' + item + ' x' + amt);
+          break;
+        }
+        /* крышка сундука: анимация для остальных (без состояния) */
+        case 'chestanim': {
+          broadcast({ t: 'chestanim', id: String(msg.id || ''), open: msg.open ? 1 : 0 }, p.id);
+          break;
+        }
         /* ✅ v0.3.3: соцсеть — пересылка заявок в друзья адресату по имени.
            Сервер только доставляет: {t:'fsend', to:'Ник', kind, data} →
            адресату {t:'fsoc', from, fromId, kind, data} */
@@ -1348,9 +1504,12 @@ server.on('upgrade', (req, sock) => {
         case 'phit': {
           const target = players.get(String(msg.tid || ''));
           if (!target || !target.state || target.dead) break;
-          /* ✅ v0.4.15: у админа БЕСКОНЕЧНОЕ ХП — сервер не применяет урон,
-             полоска не падает и у стрелка не показывается */
-          if (isAdminP(target)) break;
+          /* ✅ v0.4.22 ФИКС «ИГРОКИ НЕ УМИРАЮТ»: урон не применяется только
+             к соединению с ВКЛЮЧЁННЫМ тумблером бессмертия (op:'god').
+             Раньше защищался любой игрок с админским BRIX-ID — при тесте
+             в двух вкладках у обеих ОДИН аккаунт, и «второй игрок» был
+             неуязвим всегда, даже с выключенным бессмертием */
+          if (target.god) break;
           if (!p.state) break;
           const kind = String(msg.kind || 'shot');
           const d2 = dist2(p.state.x, p.state.z, target.state.x, target.state.z);
@@ -1360,11 +1519,15 @@ server.on('upgrade', (req, sock) => {
             Math.floor(Number(msg.dmg) || 0)));
           if (!dmg) break;
           target.hp = Math.max(0, (target.hp === undefined ? 100 : target.hp) - dmg);
+          /* ✅ v0.4.28: в phit тоже едет оружие и дистанция — жертва в
+             момент смерти сразу видит их в меню смерти */
+          const w = String(msg.w || '');
           broadcast({ t: 'phit', tid: target.id, hp: target.hp,
-            by: p.id, kind }, null);
+            by: p.id, kind, w, dist: Math.round(Math.sqrt(d2)) }, null);
           if (target.hp <= 0) {
             target.dead = true;
-            broadcast({ t: 'pdeath', tid: target.id, by: p.id }, null);
+            broadcast({ t: 'pdeath', tid: target.id, by: p.id, w,
+              dist: Math.round(Math.sqrt(d2)) }, null);
             console.log('[mp] ' + p.name + ' убил ' + target.name +
               (kind === 'shot' ? ' (выстрел)' : ' (инструментом)'));
           }
@@ -1386,6 +1549,32 @@ server.on('upgrade', (req, sock) => {
           p.dead = false;
           p.hp = 100;
           broadcast({ t: 'prespawn', tid: p.id }, p.id);
+          break;
+        }
+        /* ✅ v0.4.28 ЛОМАНИЕ ПОСТРОЕК: клиент бьёт ЛКМ по детали —
+           сервер решает всё (хп/снос). Урон только топорами/кирками,
+           дистанция ≤ 6 м. Сломанное уходит из мира У ВСЕХ ('brem'),
+           остаток хп виден всем ('bhp'). Сундук при сносе теряет
+           содержимое. ХП пишется на диск сразу — переживает перезапуск */
+        case 'bhit': {
+          const b = worldObjs.builds.find((x) => x.id === String(msg.id || ''));
+          if (!b) break;
+          if (!p.state) break;
+          const wx = (b.ty === 'ch') ? b.x : b.gx * CELL;
+          const wz = (b.ty === 'ch') ? b.z : b.gz * CELL;
+          if (dist2(p.state.x, p.state.z, wx, wz) > 36) break;   // дальше 6 м
+          const bdmg = BUILD_DMG[String(msg.tool || '')] || 0;
+          if (!bdmg) break;                                      // не инструмент
+          b.hp = (b.hp === undefined ? maxBuildHp(b.ty) : b.hp) - bdmg;
+          if (b.hp <= 0) {
+            worldObjs.builds.splice(worldObjs.builds.indexOf(b), 1);
+            broadcast({ t: 'brem', id: b.id, by: p.id }, null);
+            console.log('[objs] ' + p.name + ' сломал постройку ' + b.id +
+              ' (' + b.ty + ')');
+          } else {
+            broadcast({ t: 'bhp', id: b.id, hp: b.hp, max: maxBuildHp(b.ty) }, null);
+          }
+          writeWorldNow();   // хп на диск сразу (как bplace)
           break;
         }
         /* ✅ v0.4.6 СТРОИТЕЛЬСТВО: заявка установки (фундамент/стена/потолок).
@@ -1602,6 +1791,38 @@ setInterval(() => {
 
 /* ---------- 5. Старт ---------- */
 
+/* ✅ v0.4.29: ПОРТ ЗАНЯТ — понятная инструкция вместо молчаливого падения.
+   Симптом «я 5 раз поменял server.js, а сервер всё равно СТАРЫЙ» почти
+   всегда означает: старый процесс node ЖИВ (окно закрыли крестом, а
+   процесс остался висеть), поэтому новый сервер НЕ МОЖЕТ занять порт
+   и игра ходит в СТАРЫЙ. Раньше node падал с красной EADDRINUSE,
+   которую никто не читал в консоли */
+server.on('error', (e) => {
+  if (e && e.code === 'EADDRINUSE') {
+    const t1 = '  ПОРТ ' + PORT + ' ЗАНЯТ — СТАРЫЙ СЕРВЕР ЕЩЁ РАБОТАЕТ';
+    console.log('');
+    console.log('  ╔' + '═'.repeat(61) + '╗');
+    console.log('  ║' + t1.padEnd(61) + '║');
+    console.log('  ╚' + '═'.repeat(61) + '╝');
+    console.log('  Игра сейчас ходит в СТАРЫЙ сервер — вот и «СЕРВЕР СТАРЫЙ».');
+    console.log('  Новый server.js не сможет запуститься, пока жив старый процесс.');
+    console.log('');
+    console.log('  КАК ПОЧИНИТЬ (30 секунд):');
+    console.log('    1) Ctrl+Shift+Esc (Диспетчер задач) → «Подробности» →');
+    console.log('       найди ВСЕ процессы node.exe → правый клик → «Снять задачу»');
+    console.log('       (или: Win+R → cmd → Enter → набрать taskkill /F /IM node.exe)');
+    console.log('    2) Запусти START-MULTIPLAYER.bat заново.');
+    console.log('    3) В шапке чёрного окна должно быть «BRIX server v' + SRV_VER + '».');
+    console.log('       Проверка в браузере: http://localhost:' + PORT + '/status —');
+    console.log('       там видно ver и папку РЕАЛЬНО работающего сервера.');
+    console.log('');
+    console.log('  Этот файл server.js лежит в: ' + ROOT);
+    console.log('');
+    process.exit(1);
+  }
+  console.log('[server] ошибка: ' + ((e && e.message) || e));
+});
+
 server.listen(PORT, () => {
   console.log('');
   console.log('  ╔══════════════════════════════════════════════╗');
@@ -1611,5 +1832,17 @@ server.listen(PORT, () => {
   console.log('  ║   (каждое новое окно — новый игрок)          ║');
   console.log('  ║   Остановить: Ctrl+C                         ║');
   console.log('  ╚══════════════════════════════════════════════╝');
+  /* ✅ v0.4.23: ВЕРСИЯ + ПАПКА крупно. 99% «сундук не ставится /
+     сервер отклонил / игроков нельзя убить» — это СТАРЫЙ сервер:
+     либо не перезапущен после замены server.js, либо запущен из
+     другой папки. Эта строка позволяет проверить за секунду */
+  console.log('  ВЕРСИЯ СЕРВЕРА: v' + SRV_VER + ' · если в игре сундук/бессмертие не работают — сервер СТАРЫЙ, замени server.js и перезапусти');
+  console.log('  ПАПКА СЕРВЕРА: ' + ROOT);
+  /* ✅ v0.4.29: полный путь до запущенного ФАЙЛА — если тут не та папка,
+     куда копировался новый server.js, игра ходит в старый сервер */
+  console.log('  ЗАПУЩЕН ФАЙЛ: ' + __filename);
+  console.log('  АДМИНЫ (admins.json): ' + (ADMIN_AIDS.size
+    ? Array.from(ADMIN_AIDS).join(', ')
+    : 'НЕТ — впиши свой BRIX-ID в admins.json и перезапусти сервер'));
   console.log('');
 });

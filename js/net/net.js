@@ -37,6 +37,78 @@ window.BrixNet = (function () {
   var mode = 'off';
   var serverVer = 0;   // ✅ v0.4.2: версия протокола сервера (welcome.ver)
   var serverSv = '';   // ✅ v0.4.17: версия СЕРВЕРА (welcome.sv) — пусто = сервер СТАРЫЙ       // 'server' | 'tabs' | 'off'
+  var serverFolder = '';   // ✅ v0.4.29: папка РЕАЛЬНО работающего сервера (welcome.folder)
+  var oldSrvWarned = false;   // ✅ v0.4.23: предупредили о старом сервере один раз
+
+  /* ✅ v0.4.23: сравнение версий «0.4.22» -> 40022. Если сервер СТАРЫЙ —
+     кричим об этом СРАЗУ при подключении (toast 15 сек + console.warn).
+     Без этого игрок меняет server.js, но не перезапускает сервер — и
+     получает «сундук не ставится» / «сервер отклонил» / «не умирают» */
+  function verNum(s) {
+    var a = String(s || '').split('.');
+    return (parseInt(a[0], 10) || 0) * 10000 +
+           (parseInt(a[1], 10) || 0) * 100 +
+           (parseInt(a[2], 10) || 0);
+  }
+  function escHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  /* ✅ v0.4.29: ПЕРСИСТЕНТНЫЙ красный баннер вместо 15-секундного toast.
+     Игрок не успевал прочитать короткий toast и продолжал играть на
+     старом сервере (ломание построек не работает). Баннер висит СВЕРХУ
+     пока версии не совпадут: hideVerBanner() срабатывает на каждом
+     welcome — как только игрок перезапустит сервер и переподключится,
+     баннер исчезнет сам. Также показывает ПАПКУ сервера — сразу видно,
+     что server.js заменили не в той папке */
+  function hideVerBanner() {
+    var b = document.getElementById('brixVerBanner');
+    if (b && b.parentNode) b.parentNode.removeChild(b);
+  }
+  function showVerBanner(cl, sv) {
+    hideVerBanner();
+    var b = document.createElement('div');
+    b.id = 'brixVerBanner';
+    var folder = serverFolder
+      ? 'Папка РЕАЛЬНО работающего сервера: <b>' + escHtml(serverFolder) + '</b>'
+      : 'Проверить версию и папку сервера: <b>http://localhost:8787/status</b>';
+    b.innerHTML =
+      '<div class="vbt"><b>СЕРВЕР СТАРЫЙ:</b> на сервере v' + escHtml(sv) + ', клиент v' + escHtml(cl) + '</div>' +
+      '<div class="vbs">Урон по постройкам, сундук и бессмертие НЕ работают, пока сервер не обновят.</div>' +
+      '<div class="vbs">' + folder + '</div>' +
+      '<div class="vbs">1) Ctrl+Shift+Esc → «Подробности» → все <b>node.exe</b> → «Снять задачу» (или taskkill /F /IM node.exe)</div>' +
+      '<div class="vbs">2) Запусти START-MULTIPLAYER.bat — в шапке должно быть «BRIX server v' + escHtml(cl) + '»</div>' +
+      '<div class="vbs">3) Ничего не вышло? Замени server.js в ТАМ папке из шага выше — не в другой копии игры</div>' +
+      '<div class="vbclose" id="brixVerBannerX">✕</div>';
+    b.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:400;' +
+      'max-width:660px;padding:14px 42px 14px 18px;background:linear-gradient(135deg,#5c1208,#8a1e10);' +
+      'color:#ffe7dc;border:1px solid #ff8a63;border-radius:6px;box-shadow:0 12px 50px rgba(0,0,0,.7);' +
+      'font:13px/1.55 Consolas,monospace;letter-spacing:.02em;text-align:left;';
+    var t = b.querySelector('.vbt');
+    if (t) t.style.cssText = 'font-size:16px;letter-spacing:.06em;margin-bottom:6px;';
+    var xs = b.querySelectorAll('.vbs');
+    for (var i = 0; i < xs.length; i++) xs[i].style.cssText = 'opacity:.92;margin:2px 0;';
+    var x = b.querySelector('.vbclose');
+    if (x) {
+      x.style.cssText = 'position:absolute;top:8px;right:12px;font:16px Consolas,monospace;cursor:pointer;color:#ffb59a;';
+      x.onclick = hideVerBanner;
+    }
+    document.body.appendChild(b);
+  }
+  function warnIfServerOld() {
+    var cl = String(window.BRIX_VER || '');
+    var sv = serverSv;
+    if (!cl || !sv || verNum(sv) >= verNum(cl)) {   // всё хорошо
+      oldSrvWarned = false;
+      hideVerBanner();
+      return;
+    }
+    if (oldSrvWarned) return;
+    oldSrvWarned = true;
+    console.warn('[net] СЕРВЕР СТАРЫЙ: сервер v' + sv + ', клиент v' + cl +
+      (serverFolder ? ', папка сервера: ' + serverFolder : ''));
+    showVerBanner(cl, sv);
+  }
+
   var statusEl = null;
   var handlers = {
     welcome: null,        // (msg) — ростер + мир от сервера
@@ -88,7 +160,15 @@ window.BrixNet = (function () {
       case 'welcome':
         serverVer = msg.ver || 0;   // ✅ v0.4.2: версия протокола сервера (welcome.ver)
         serverSv = String(msg.sv || '');   // ✅ v0.4.17: старый server.js версии НЕ пришлёт
+        serverFolder = String(msg.folder || '');   // ✅ v0.4.29: папка запущенного сервера
         ID = msg.id;
+        /* ✅ v0.4.23: СРАЗУ предупреждаем, если сервер СТАРЫЙ (старее клиента).
+           Симптомы старого server.js: «сундук не ставится», «сервер
+           отклонил команду админа» (тумблер бессмертия), «игроков нельзя
+           убить» (старый сервер защищал админский BRIX-ID всегда).
+           Причина почти всегда одна: server.js заменили, но СЕРВЕР НЕ
+           ПЕРЕЗАПУСТИЛИ — или запустили из другой папки */
+        try { warnIfServerOld(); } catch (e0) {}
         // ✅ v0.4.3: ростер от сервера — истина для списка игроков
         roster = {};
         (msg.players || []).forEach(function (p) {
@@ -193,6 +273,30 @@ window.BrixNet = (function () {
         break;
       case 'bdeny-d':
         if (handlers["bdeny-d"]) handlers["bdeny-d"](msg);
+        break;
+      /* ✅ v0.4.18 ОЧИСТКА ПОСТРОЕК: сервер стёр ВСЕ постройки (админ-
+         панель «УДАЛИТЬ ВСЕ ПОСТРОЙКИ» или CLEAR-BUILDS.bat) и разослал
+         bwipe с новым поколением мира (ep). Клиент обязан выбросить
+         старые 3D-модели, иначе остаётся «дом-призрак»: игрок его ВИДИТ,
+         а сервер про него НЕ ЗНАЕТ и отказывает в каждой стене
+         («нет фундамента»). ГЛАВНЫЙ ФИКС: раньше случая bwipe в этом
+         switch НЕ БЫЛО — сообщение молча терялось ЗДЕСЬ, обработчик
+         onBwipe в building.js никогда не вызывался, и модели висели */
+      case 'bwipe':
+        if (handlers.bwipe) handlers.bwipe(msg);
+        break;
+      /* --- ✅ v0.4.22 СУНДУК-ХРАНИЛИЩЕ ---
+         chestst   — содержимое сундука (открытие/кладка/взятие);
+         chestdeny — сервер отказал в взятии (откат оптимистичного);
+         chestanim — крышка открылась/закрылась у другого игрока */
+      case 'chestst':
+        if (handlers.chestst) handlers.chestst(msg);
+        break;
+      case 'chestdeny':
+        if (handlers.chestdeny) handlers.chestdeny(msg);
+        break;
+      case 'chestanim':
+        if (handlers.chestanim) handlers.chestanim(msg);
         break;
       /* --- ✅ v0.4.15 АДМИН-ПАНЕЛЬ РАЗРАБОТЧИКА (клавиша 9) ---
          adminon — ты админ (сервер подтвердил по BRIX-ID);
@@ -475,10 +579,38 @@ window.BrixNet = (function () {
     if (typeof pz === 'number' && isFinite(pz)) m.pz = Math.round(pz * 100) / 100;
     send(m);
   }
-  function sendPhit(tid, dmg, kind) {
+  /* ✅ v0.4.28: + w — id оружия (для меню смерти жертвы: «УБИТ: Garry — Дробовик») */
+  function sendPhit(tid, dmg, kind, w) {
     if (mode === 'off') return;
     send({ t: 'phit', tid: tid, dmg: Math.max(1, Math.floor(dmg || 1)),
-      kind: kind || 'shot' });
+      kind: kind || 'shot', w: String(w || '') });
+  }
+  /* ✅ v0.4.22 СУНДУК: установка, открытие, кладка, взятие, анимация крышки */
+  function sendChestPlace(x, z, y, rot, tid) {
+    if (mode === 'off') return;
+    var m = { t: 'chplace', x: Math.round(x * 100) / 100,
+      z: Math.round(z * 100) / 100, y: Math.round(y * 100) / 100,
+      rot: Math.round(rot * 100) / 100 };
+    if (tid) m.tid = tid;
+    send(m);
+  }
+  function sendChestOpen(id) {
+    if (mode === 'off') return;
+    send({ t: 'chestopen', id: id });
+  }
+  function sendChestPut(id, item, amt) {
+    if (mode === 'off') return;
+    send({ t: 'chestput', id: id, item: item, amt: amt });
+  }
+  function sendChestTake(id, item, amt, tid) {
+    if (mode === 'off') return;
+    var m = { t: 'chesttake', id: id, item: item, amt: amt };
+    if (tid) m.tid = tid;
+    send(m);
+  }
+  function sendChestAnim(id, open) {
+    if (mode === 'off') return;
+    send({ t: 'chestanim', id: id, open: open ? 1 : 0 });
   }
   function sendRespawn() {
     if (mode === 'off') return;
@@ -515,6 +647,12 @@ window.BrixNet = (function () {
     sendRespawn: sendRespawn,
     /* ✅ v0.4.6: строительство — заявка установки */
     sendBplace: sendBplace,
+    /* ✅ v0.4.22: сундук-хранилище */
+    sendChestPlace: sendChestPlace,
+    sendChestOpen: sendChestOpen,
+    sendChestPut: sendChestPut,
+    sendChestTake: sendChestTake,
+    sendChestAnim: sendChestAnim,
     sendSocial: sendSocial,
     sendWorldTo: sendWorldTo,
     setStatusEl: setStatusEl,

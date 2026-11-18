@@ -89,10 +89,14 @@ window.BrixBuilding = (function () {
       descEn: 'Aim at a doorway and place. F to open/close, coded lock' },
     { id: 'c', name: 'Потолок', nameEn: 'Ceiling',
       desc: 'Накрывает клетку, у которой есть стена',
-      descEn: 'Covers a cell that has a wall' }
+      descEn: 'Covers a cell that has a wall' },
+    /* ✅ v0.4.22 сундук-хранилище: содержимое живёт на сервере */
+    { id: 'ch', name: 'Сундук', nameEn: 'Chest',
+      desc: 'Хранилище: положи ресурсы — они сохранятся на сервере даже после выхода. Ставится на землю и на фундамент. F — открыть',
+      descEn: 'Storage: put resources in — the server keeps them after you leave. Place on ground or foundation. F to open' }
   ];
-  // углы деталей на колесе (экранные, 0° = вправо): 6 сегментов по кругу
-  var PIECE_ANGLES = [0, 60, 120, 180, 240, 300];
+  // углы деталей на колесе (экранные, 0° = вправо): 7 сегментов по кругу
+  var PIECE_ANGLES = [0, 51, 103, 154, 206, 257, 309];
   var EDGE_TY = { w: 1, wi: 1, dw: 1, dr: 1 };   // краевые детали (на край фундамента)
 
   function L(ru, en) {
@@ -236,6 +240,7 @@ window.BrixBuilding = (function () {
     var ceilTex = canvasTex(woodCanvas({ planks: 8, tone: [128, 96, 58] }));
     var postTex = canvasTex(woodCanvas({ planks: 3, vertical: true, tone: [110, 78, 44] }));
     var leafTex = canvasTex(woodCanvas({ planks: 5, vertical: true, tone: [124, 89, 50] }));
+    var chestTex = canvasTex(woodCanvas({ planks: 5, tone: [121, 86, 50] }));   // ✅ v0.4.22
     _mat = {
       deck: new THREE.MeshStandardMaterial({ map: deckTex, roughness: 0.88, metalness: 0.02 }),
       wall: new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9, metalness: 0.02 }),
@@ -247,9 +252,14 @@ window.BrixBuilding = (function () {
       leaf: new THREE.MeshStandardMaterial({ map: leafTex, roughness: 0.85, metalness: 0.02 }),
       lock: new THREE.MeshStandardMaterial({ color: 0x45464b, roughness: 0.45, metalness: 0.65 }),
       lampOn: new THREE.MeshBasicMaterial({ color: 0x46d95c }),   // зелёная — кода нет
-      lampOff: new THREE.MeshBasicMaterial({ color: 0xe23c2a })   // красная — код есть
+      lampOff: new THREE.MeshBasicMaterial({ color: 0xe23c2a }),  // красная — код есть
+      /* ✅ v0.4.22: сундук — доски, тёмные накладки, железо, латунь */
+      chestWood: new THREE.MeshStandardMaterial({ map: chestTex, roughness: 0.85, metalness: 0.02 }),
+      chestDark: new THREE.MeshStandardMaterial({ color: 0x392c1c, roughness: 0.92, metalness: 0.02 }),
+      chestIron: new THREE.MeshStandardMaterial({ color: 0x3a3d42, roughness: 0.5, metalness: 0.6 }),
+      chestBrass: new THREE.MeshStandardMaterial({ color: 0xb08d3f, roughness: 0.42, metalness: 0.65 })
     };
-    _disposables.push(deckTex, wallTex, ceilTex, postTex, leafTex);
+    _disposables.push(deckTex, wallTex, ceilTex, postTex, leafTex, chestTex);
     _geo = {
       deck: new THREE.BoxGeometry(CELL, DECK_T, CELL),
       wall: new THREE.BoxGeometry(CELL, WALL_H, WALL_T),
@@ -290,6 +300,23 @@ window.BrixBuilding = (function () {
   var fTop = new Map();       // 'gx,gz' -> высота палубы (магнит + серверная проверка)
   var rayTargets = [];        // палубы и стены — для луча призрака
   var wallBoxes = [];         // AABB стен (мутируем на месте; ссылку держит controls)
+
+  /* ============================================================
+     ✅ v0.4.28 ЛОМАНИЕ ПОСТРОЕК: у каждой детали есть ХП.
+       фундамент/стена/окно/проём/потолок — 200
+       дверь — 150, сундук — 25.
+     Урон ТОЛЬКО топорами/кирками (сервер решает):
+       каменные — 67 за удар (200 хп = 3 удара), железные — 100 (2 удара).
+     Сервер шлёт 'bhp' (остаток) и 'brem' (сломал). В соло/вкладках —
+     локальный урон (localHit). hitGroups — группы для луча удара,
+     pieceById — id -> запись (всплывающее ХП, звук, чистка)
+     ============================================================ */
+  var hitGroups = [];         // THREE.Group каждой живой детали
+  var pieceById = new Map();  // id -> entry { rec, group, ... }
+  var pieceHp = new Map();    // id -> хп (для соло/вкладок; в серверном режиме авторитет — сервер)
+  var BUILD_MAX_HP = { f: 200, w: 200, wi: 200, dw: 200, c: 200, dr: 150, ch: 25 };
+  var BUILD_DMG = { axe: 67, pickaxe: 67, ironAxe: 100, ironPickaxe: 100 };
+  function buildMaxHp(ty) { return BUILD_MAX_HP[ty] || 200; }
 
   var current = 'f';          // выбранная деталь
   var placeCd = 0;
@@ -505,6 +532,77 @@ window.BrixBuilding = (function () {
     return { group: g, slab: slab };
   }
 
+  /* ============================================================
+     ✅ v0.4.22 СУНДУК-ХРАНИЛИЩЕ — процедурная модель: корпус из
+     досок с тёмными швами, угловые накладки, две железные полосы,
+     петли, латунная щеколда. Крышка висит на ОСИ у ЗАДНЕЙ кромки
+     (lidPivot) и откидывается назад при открытии (анимация в tick)
+     ============================================================ */
+  var _chestGeo = null;
+  function chestGeo() {
+    if (_chestGeo) return _chestGeo;
+    _chestGeo = {
+      base: new THREE.BoxGeometry(0.86, 0.42, 0.52),
+      plinth: new THREE.BoxGeometry(0.92, 0.07, 0.58),
+      trim: new THREE.BoxGeometry(0.06, 0.42, 0.56),
+      gap: new THREE.BoxGeometry(0.015, 0.40, 0.012),
+      band: new THREE.BoxGeometry(0.90, 0.07, 0.56),
+      lid: new THREE.BoxGeometry(0.86, 0.10, 0.52),
+      lidBand: new THREE.BoxGeometry(0.90, 0.10, 0.04),
+      hinge: new THREE.BoxGeometry(0.10, 0.05, 0.06),
+      latch: new THREE.BoxGeometry(0.09, 0.12, 0.05),
+      hasp: new THREE.BoxGeometry(0.05, 0.09, 0.035)
+    };
+    _disposables.push({ dispose: function () {
+      if (!_chestGeo) return;
+      for (var k in _chestGeo) {
+        if (_chestGeo[k] && _chestGeo[k].dispose) _chestGeo[k].dispose();
+      }
+      _chestGeo = null;
+    } });
+    return _chestGeo;
+  }
+
+  function buildChestGroup(rec) {
+    var G = chestGeo();
+    var g = new THREE.Group();
+    var wood = _mat.chestWood, dark = _mat.chestDark,
+        iron = _mat.chestIron, brass = _mat.chestBrass;
+    function m(geo, mat, x, y, z, parent) {
+      var mm = shadow(new THREE.Mesh(geo, mat));
+      mm.position.set(x, y, z);
+      mm.userData.bid = rec.id;
+      (parent || g).add(mm);
+      return mm;
+    }
+    /* корпус: поднижник + доски + тёмные швы + угловые накладки */
+    m(G.plinth, dark, 0, 0.045, 0);
+    m(G.base, wood, 0, 0.29, 0);
+    m(G.gap, dark, -0.145, 0.29, 0.263);   // швы между досками (спереди)
+    m(G.gap, dark, 0.145, 0.29, 0.263);
+    m(G.gap, dark, -0.145, 0.29, -0.263);  // и сзади
+    m(G.gap, dark, 0.145, 0.29, -0.263);
+    m(G.trim, dark, -0.40, 0.29, 0);
+    m(G.trim, dark, 0.40, 0.29, 0);
+    /* железные полосы-обивки корпуса */
+    m(G.band, iron, 0, 0.16, 0);
+    m(G.band, iron, 0, 0.42, 0);
+    /* петли на задней кромке */
+    m(G.hinge, iron, -0.30, 0.50, -0.24);
+    m(G.hinge, iron, 0.30, 0.50, -0.24);
+    /* латунная щеколда на передней стенке */
+    m(G.latch, brass, 0, 0.44, 0.272);
+    /* крышка: группа с осью у задней верхней кромки корпуса */
+    var lidPivot = new THREE.Group();
+    lidPivot.position.set(0, 0.50, -0.26);
+    var lid = m(G.lid, wood, 0, 0.05, 0.26, lidPivot);
+    m(G.lidBand, iron, 0, 0.05, 0.09, lidPivot);
+    m(G.lidBand, iron, 0, 0.05, 0.43, lidPivot);
+    m(G.hasp, brass, 0, -0.03, 0.52, lidPivot);
+    g.add(lidPivot);
+    return { group: g, lidPivot: lidPivot, lid: lid };
+  }
+
   /* ---------- реестр: применение/удаление записи ---------- */
   var solidMeshes = [];       // ✅ v0.4.10: доп. меши окон/дверей — для пуль
   var doorEntries = new Map(); // ✅ v0.4.10: id двери -> entry (анимация/луч F)
@@ -527,6 +625,10 @@ window.BrixBuilding = (function () {
       }
     }
     if (entry.rec && entry.rec.ty === 'dr') doorEntries.delete(entry.rec.id);
+    /* ✅ v0.4.28: деталь уходит из реестра ломания */
+    var gi = hitGroups.indexOf(entry.group);
+    if (gi >= 0) hitGroups.splice(gi, 1);
+    if (entry.rec) { pieceById.delete(entry.rec.id); pieceHp.delete(entry.rec.id); }
   }
 
   function rebuildAux() {
@@ -619,6 +721,8 @@ window.BrixBuilding = (function () {
   function applyRecord(b, opts) {
     opts = opts || {};
     if (!b || !inited) return null;
+    /* ✅ v0.4.22 СУНДУК — свободная постройка, свой реестр (не на сетке) */
+    if (b.ty === 'ch') return applyChest(b, opts);
     var cellKey = key(b.gx, b.gz);
     var canon, ekey;
 
@@ -661,7 +765,19 @@ window.BrixBuilding = (function () {
       if (cell[slot]) {
         if (cell[slot].rec.id === b.id) return cell[slot].rec;   // эхо
         // ключ тот же, id новый (локальная → серверная): переставляем id
+        var oldId = cell[slot].rec.id;
         cell[slot].rec.id = b.id;
+        /* ✅ v0.4.28: реестр ломания должен знать новый (серверный) id —
+           иначе bhp/brem по серверному id не найдут деталь */
+        if (pieceById.get(oldId) === cell[slot]) {
+          pieceById.delete(oldId);
+          pieceHp.delete(oldId);
+          pieceById.set(b.id, cell[slot]);
+          pieceHp.set(b.id, b.hp !== undefined ? b.hp : buildMaxHp(b.ty));
+          cell[slot].group.traverse(function (o) {
+            if (o.isMesh && o.userData.bid === oldId) o.userData.bid = b.id;
+          });
+        }
         if (slot === 'f') fTop.set(cellKey, b.top);
         return cell[slot].rec;
       }
@@ -717,6 +833,16 @@ window.BrixBuilding = (function () {
     _scene.add(entry.group);
     rebuildAux();
 
+    /* ✅ v0.4.28: деталь в реестре ломания — луч удара, всплывающее ХП, чистка */
+    entry.group.traverse(function (o) {
+      if (o.isMesh && !o.userData.bid) o.userData.bid = b.id;
+    });
+    hitGroups.push(entry.group);
+    pieceById.set(b.id, entry);
+    if (pieceHp.get(b.id) === undefined) {
+      pieceHp.set(b.id, (b.hp !== undefined ? b.hp : buildMaxHp(b.ty)));
+    }
+
     // звук: свои — сразу; чужие — с затуханием по дистанции
     if (!opts.silent && !b._silentReid) {
       var vol = 0.8;
@@ -738,6 +864,17 @@ window.BrixBuilding = (function () {
 
   function removeRecord(rec) {
     if (!rec) return;
+    /* ✅ v0.4.22: сундук — свой реестр, в сеточные индексы не входит */
+    if (rec.ty === 'ch') {
+      var cen = chestRecs.get(rec.id);
+      if (cen && _scene) _scene.remove(cen.group);
+      chestRecs.delete(rec.id);
+      /* ✅ v0.4.28: сундук уходит из реестра ломания */
+      var cgi = hitGroups.indexOf(cen && cen.group);
+      if (cgi >= 0) hitGroups.splice(cgi, 1);
+      pieceById.delete(rec.id); pieceHp.delete(rec.id);
+      return;
+    }
     var cellKey = key(rec.gx, rec.gz);
     if (EDGE_TY[rec.ty]) {
       var canon = canonicalEdge(rec.gx, rec.gz, rec.e);
@@ -765,7 +902,72 @@ window.BrixBuilding = (function () {
       if (cell.c) out.push(cell.c.rec);
     });
     edgeRecs.forEach(function (en) { out.push(en.rec); });
+    /* ✅ v0.4.22: сундуки тоже едут в бэкап localStorage (с их содержимым) */
+    chestRecs.forEach(function (en) { out.push(en.rec); });
     return out;
+  }
+
+  /* ============================================================
+     ✅ v0.4.22 РЕЕСТР СУНДУКОВ: id -> { rec, group, lidPivot, open,
+     target }. rec.cont — содержимое ({ itemId: count }), живёт в
+     записи постройки: на сервере, в бэкапе localStorage, в снимках
+     ============================================================ */
+  var chestRecs = new Map();
+  var CHEST_OPEN_ANGLE = 1.85;   // ~106° — крышка откидывается назад
+
+  function placeChest(en) {
+    en.group.position.set(en.rec.x, en.rec.y, en.rec.z);
+    en.group.rotation.y = en.rec.rot || 0;
+    en.group.visible = true;
+  }
+
+  function applyChest(b, opts) {
+    opts = opts || {};
+    if (!_scene) return null;
+    /* серверное эхо своей оптимистичной установки: локальный «L…» сундук
+       в той же точке заменяем серверным (иначе он задвоится) */
+    var dup = null;
+    chestRecs.forEach(function (en) {
+      if (String(en.rec.id).charAt(0) !== 'L') return;
+      var dx = en.rec.x - b.x, dz = en.rec.z - b.z;
+      if (dx * dx + dz * dz < 0.02) dup = en;
+    });
+    if (dup) {
+      _scene.remove(dup.group);
+      chestRecs.delete(dup.rec.id);
+      b._silentReid = true;
+    }
+    var ex = chestRecs.get(b.id);
+    if (ex) {
+      /* эхо/снимок: обновляем живую запись (позицию и содержимое) */
+      ex.rec.x = b.x; ex.rec.z = b.z; ex.rec.y = b.y;
+      if (b.rot !== undefined) ex.rec.rot = b.rot;
+      if (b.cont !== undefined) ex.rec.cont = b.cont || {};
+      if (b.by !== undefined) ex.rec.by = b.by;
+      if (b.own !== undefined) ex.rec.own = b.own;
+      placeChest(ex);
+      return ex.rec;
+    }
+    var built = buildChestGroup(b);
+    var en = { rec: b, group: built.group, lidPivot: built.lidPivot,
+      open: 0, target: 0 };
+    chestRecs.set(b.id, en);
+    _scene.add(built.group);
+    placeChest(en);
+    /* ✅ v0.4.28: сундук в реестре ломания (хп 25, любой удар почти убивает) */
+    built.group.traverse(function (o) {
+      if (o.isMesh && !o.userData.bid) o.userData.bid = b.id;
+    });
+    hitGroups.push(built.group);
+    pieceById.set(b.id, en);
+    if (pieceHp.get(b.id) === undefined) {
+      pieceHp.set(b.id, (b.hp !== undefined ? b.hp : buildMaxHp('ch')));
+    }
+    if (!opts.silent && !b._silentReid && window.BrixSfx) {
+      BrixSfx.play('build' + (1 + Math.floor(Math.random() * 3)),
+        { volume: 0.55, jitter: 0.03 });
+    }
+    return b;
   }
 
   /* ============================================================
@@ -831,8 +1033,16 @@ window.BrixBuilding = (function () {
   }
 
   function applySnapshot(list, ep) {
-    /* ✅ v0.4.13: поколение мира из снимка сервера (objs.ep) */
-    serverEp = Math.round(Number(ep)) | 0;
+    /* ✅ v0.4.13: поколение мира из снимка сервера (objs.ep)
+       ✅ v0.4.18: снимок ПРОШЛОГО поколения (ep меньше текущего)
+       применять НЕЛЬЗЯ. Так бывает, когда welcome ещё летит по сети,
+       а админ в этот момент стёр постройки и нам уже пришёл bwipe.
+       Раньше такой снимок ПОНИЖАЛ serverEp и возвращал стёртые дома
+       (записи получали старое _ep — bwipe их больше не подчищал).
+       Правило: сервер главнее, поколение растёт только вверх */
+    var newEp = Math.round(Number(ep)) | 0;
+    if (newEp < serverEp) return;
+    serverEp = newEp;
     if (!inited) {
       // мир ещё строится — копим, применим в init() (см. ниже)
       pendingEp = serverEp;
@@ -886,8 +1096,12 @@ window.BrixBuilding = (function () {
     // подтверждение своей оптимистичной постройки
     for (var tid in pendingPlace) {
       var p = pendingPlace[tid];
-      if (p.rec.ty === msg.b.ty && p.rec.gx === msg.b.gx &&
-          p.rec.gz === msg.b.gz && (p.rec.ty !== 'w' || p.rec.e === msg.b.e)) {
+      /* ✅ v0.4.22: сундук сверяем по точке (x/z), сеточные — по клетке */
+      var sameSpot = (p.rec.ty === 'ch')
+        ? (p.rec.x === msg.b.x && p.rec.z === msg.b.z)
+        : (p.rec.gx === msg.b.gx && p.rec.gz === msg.b.gz &&
+           (p.rec.ty !== 'w' || p.rec.e === msg.b.e));
+      if (p.rec.ty === msg.b.ty && sameSpot) {
         clearTimeout(p.timer);
         delete pendingPlace[tid];
       }
@@ -918,6 +1132,28 @@ window.BrixBuilding = (function () {
       ' постр. старого поколения (epoch ' + wEp + ')');
   }
 
+  /* ✅ v0.4.18 СТРАХОВКА «ПУСТЬ ИГРОК ТОЖЕ НЕ ВИДИТ»: сервер ДВАЖДЫ
+     отказал в установке («нет фундамента») в клетке, где у игрока
+     фундамент ВИДЕН. Значит у игрока — призрак: постройка стёрта на
+     сервере (админ-панель / CLEAR-BUILDS.bat), а bwipe до него не
+     дошёл (дисконнект во время очистки). Сервер главнее — убираем
+     фундамент и потолок этой клетки и у игрока */
+  function removeGhostCell(gx, gz) {
+    var cell = cellRecs.get(key(gx, gz));
+    if (!cell) return;
+    var removed = 0;
+    if (cell.f) { removeRecord(cell.f.rec); removed++; }
+    if (cell.c) { removeRecord(cell.c.rec); removed++; }
+    if (!removed) return;
+    saveLocal();
+    if (window.BrixHud) {
+      BrixHud.toast(L('Этот фундамент стёрт на сервере — убрал и у вас',
+        'This foundation was wiped on the server — removed locally too'), 5);
+    }
+    console.log('[BrixBuilding] removeGhostCell: убрал призрак-постройки клетки ' +
+      gx + ',' + gz + ' (сервер дважды ответил «нет фундамента»)');
+  }
+
   function onBdeny(msg) {
     var p = pendingPlace[msg && msg.tid];
     if (!p) return;
@@ -933,17 +1169,26 @@ window.BrixBuilding = (function () {
        постройки серверу (badopt — сервер берёт свободные клетки) и ОДИН
        раз повторяет установку сам. Игрок жмёт ЛКМ как обычно — дом строится */
     if (msg.why === 'nofound' && window.BrixNet && BrixNet.mode === 'server' &&
-        !p.retried && p.plan) {
-      p.retried = true;
-      forceAdopt();
-      if (window.BrixHud) {
-        BrixHud.toast(L('Сервер не знал этот фундамент — добираю из бэкапа…',
-          'Server missed this foundation — restoring from backup…'), 4);
+        p.plan) {
+      if (!p.retried) {
+        /* ✅ v0.4.12: первый отказ — пробуем добор из бэкапа (так чинится
+           «сервер потерял world-objs.json») */
+        p.retried = true;
+        forceAdopt();
+        if (window.BrixHud) {
+          BrixHud.toast(L('Сервер не знал этот фундамент — добираю из бэкапа…',
+            'Server missed this foundation — restoring from backup…'), 4);
+        }
+        setTimeout(function () {
+          retryPlace(p.plan);
+        }, 380);
+        return;
       }
-      setTimeout(function () {
-        retryPlace(p.plan);
-      }, 380);
-      return;
+      /* ✅ v0.4.18: повтор ТОЖЕ отклонён → добор не помог, фундамент
+         серверу действительно не известен — это призрак. Убираем его
+         и у игрока (раньше модель висела вечно: сервер «не видит»,
+         а игрок видит) */
+      removeGhostCell(p.plan.gx, p.plan.gz);
     }
     if (window.BrixHud) {
       var why = { busy: L('Здесь уже стоит постройка', 'Occupied'),
@@ -992,6 +1237,24 @@ window.BrixBuilding = (function () {
       if (window.BrixHud) {
         BrixHud.toast(L('Старый server.js не знает строительства: дом виден только вам. ' +
           'Перезапусти сервер из новой папки', 'Old server.js: your build is local only. Restart the server'), 7);
+      }
+    }, 1600);
+  }
+
+  /* ✅ v0.4.22: сундук — своя страховка с текстом про сундук */
+  function chestPlaceFallbackTimer(tid) {
+    pendingPlace[tid].timer = setTimeout(function () {
+      if (!pendingPlace[tid]) return;
+      delete pendingPlace[tid];
+      if (window.BrixHud) {
+        /* ✅ v0.4.23: показываем РЕАЛЬНУЮ версию сервера — сразу видно,
+           что процесс сервера не перезапущен (или server.js заменён
+           не в той папке) */
+        var svOld = (window.BrixNet && BrixNet.serverSv) || 'старый';
+        BrixHud.toast(L('Сервер отвечает как v' + svOld + ' — он ещё не знает сундуков, ' +
+          'поставленный сундук виден только вам. server.js нужно не только заменить, но и ' +
+          'ПЕРЕЗАПУСТИТЬ сервер: закрой чёрное окно (Ctrl+C) и запусти заново (README-FIX-v0.4.23)',
+          'Old server.js (v' + svOld + '): chest is local only. Replace server.js AND restart the server'), 9);
       }
     }, 1600);
   }
@@ -1047,6 +1310,13 @@ window.BrixBuilding = (function () {
       } else {
         g.userData.m = g.children[0];
       }
+    } else if (kind === 'ch') {
+      // ✅ v0.4.22 призрак сундука: поднижник + корпус + крышка из ТЕХ ЖЕ геометрий
+      var cg = chestGeo();
+      var cpl = new THREE.Mesh(cg.plinth, null); cpl.position.y = 0.045; g.add(cpl);
+      var cb = new THREE.Mesh(cg.base, null); cb.position.y = 0.29; g.add(cb);
+      var cl = new THREE.Mesh(cg.lid, null); cl.position.set(0, 0.55, 0); g.add(cl);
+      g.userData.m = cb;
     } else {
       var c = new THREE.Mesh(_geo.ceil, null); c.position.y = CEIL_T / 2; g.add(c); g.userData.m = c;
     }
@@ -1219,6 +1489,35 @@ window.BrixBuilding = (function () {
       (window.BrixMiniMenu && BrixMiniMenu.isAnyOpen()));
   }
 
+  /* ============================================================
+     ✅ v0.4.22 СУНДУК: свободная установка — на землю и на палубу
+     фундамента. Высоту берём из точки луча (на фундаменте — ИЗ
+     ЗАПИСИ клетки, чтобы сундук не парил), поворот — лицом к игроку.
+     В воде, на склоне и рядом с другим сундуком ставиться нельзя
+     ============================================================ */
+  function planChest(P, hit) {
+    var wn = (hit && hit.face && hit.object)
+      ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+      : null;
+    if (!wn || wn.y < 0.55) return null;              // только горизонтальное
+    var x = P.x, z = P.z, y = P.y;
+    var onDeck = !!(hit.object.userData && hit.object.userData.bcell);
+    if (onDeck) {
+      var fcell = cellRecs.get(hit.object.userData.bcell);
+      if (fcell && fcell.f) y = fcell.f.rec.top;      // точно по палубе фундамента
+      else onDeck = false;
+    }
+    var valid = true;
+    if (y < WATER_LEVEL + 0.1) valid = false;         // не в воде
+    chestRecs.forEach(function (en) {
+      var dx = en.rec.x - x, dz = en.rec.z - z;
+      if (dx * dx + dz * dz < 1.44) valid = false;    // рядом другой сундук
+    });
+    var rot = 0;
+    if (_camera) rot = Math.atan2(_camera.position.x - x, _camera.position.z - z);
+    return { ty: 'ch', x: x, z: z, y: y, rot: rot, valid: valid };
+  }
+
   function updateGhost() {
     if (!ghost.group) return;
     var active = holdingPlan() && !menu.open && !isUiBlocked() &&
@@ -1246,6 +1545,7 @@ window.BrixBuilding = (function () {
     if (current === 'f') plan = planFoundation(P);
     else if (current === 'c') plan = planCeiling(P, hits[0]);
     else if (current === 'dr') plan = planDoor(P, hits[0]);
+    else if (current === 'ch') plan = planChest(P, hits[0]);   // ✅ v0.4.22
     else plan = planOnEdge(P, hits[0], current);   // 'w' | 'wi' | 'dw'
     if (!plan) { ghost.group.visible = false; ghost.shown = false; return; }
     /* ✅ v0.4.12: точку прицела едет НА СЕРВЕР (px/pz) — сервер сам
@@ -1254,7 +1554,11 @@ window.BrixBuilding = (function () {
     plan.px = P.x; plan.pz = P.z;
     ghost.plan = plan;
     ghost.valid = !!plan.valid;
-    if (EDGE_TY[current]) {
+    if (current === 'ch') {
+      // ✅ v0.4.22 сундук: свободные координаты + поворот к игроку
+      ghost.group.position.set(plan.x, plan.y, plan.z);
+      ghost.group.rotation.y = plan.rot || 0;
+    } else if (EDGE_TY[current]) {
       ghost.group.position.set(plan.gx * CELL + (plan.e === 1 ? CELL / 2 : plan.e === 3 ? -CELL / 2 : 0),
         plan.top || 0,
         plan.gz * CELL + (plan.e === 2 ? CELL / 2 : plan.e === 0 ? -CELL / 2 : 0));
@@ -1275,6 +1579,43 @@ window.BrixBuilding = (function () {
     var plan = ghost.plan;
     placeCd = PLACE_CD;
     var tid = 'T' + Math.random().toString(36).slice(2, 9);
+    /* ============================================================
+       ✅ v0.4.22 СУНДУК — свободная постройка: свои координаты и свой
+       канал сервера (chplace). Вкладки/соло — bnew + localStorage
+       ============================================================ */
+    if (plan.ty === 'ch') {
+      var chRec = { id: 'L' + (++localSeq), ty: 'ch', x: plan.x, z: plan.z,
+        y: plan.y, rot: plan.rot, by: myName, at: Date.now(),
+        _ep: serverEp, cont: {} };
+      applyRecord(chRec);                    // у себя — СРАЗУ (оптимистично)
+      pendingPlace[tid] = { rec: chRec, old: null, plan: plan };
+      if (window.BrixNet && BrixNet.mode === 'server') {
+        if (BrixNet.serverVer >= 50) {
+          BrixNet.sendChestPlace(plan.x, plan.z, plan.y, plan.rot, tid);
+          chestPlaceFallbackTimer(tid);
+          saveLocalTry();
+        } else {
+          /* старый server.js (до 0.4.22) сундуков не знает — не ставим */
+          pendingPlace[tid].timer = setTimeout(function () {
+            delete pendingPlace[tid];
+          }, 50);
+          removeRecord(chRec);
+          /* ✅ v0.4.23: точная причина — сервер v0.4.21 или старее работает
+             СЕЙЧАС (не перезапущен после замены server.js) */
+          var svCh = (window.BrixNet && BrixNet.serverSv) || 'старый';
+          if (window.BrixHud) BrixHud.toast(L(
+            'Сундук пока НЕ поставлен: сервер работает как v' + svCh +
+            ' — замени server.js и ОБЯЗАТЕЛЬНО перезапусти сервер (Ctrl+C, потом запусти заново; в шапке окна должно быть «BRIX server v0.4.23»)',
+            'Chest needs the updated server.js AND a server RESTART'), 9);
+        }
+      } else {
+        if (window.BrixNet) {
+          BrixNet.send({ t: 'bnew', pid: (BrixNet.id || 'tab') + ':p', b: chRec });
+        }
+        saveLocal();
+      }
+      return;
+    }
     var rec = { id: 'L' + (++localSeq), ty: plan.ty, gx: plan.gx, gz: plan.gz,
       top: plan.top, by: myName, at: Date.now(), _ep: serverEp };   // ✅ v0.4.13
     if (plan.e !== undefined) rec.e = plan.e;
@@ -1485,6 +1826,47 @@ window.BrixBuilding = (function () {
     if (rec.open) { toggleDoor(aim.en); return true; }   // открытую чужую можно закрыть
     openPad('enter', rec.id);                            // чужой закрытый — код
     return true;
+  }
+
+  /* ============================================================
+     ✅ v0.4.22 СУНДУК: наведение (F), содержимое, крышка.
+     chestAim() возвращает id сундука, если прицел в 3 м смотрит на
+     него — gameworld открывает меню и включает анимацию крышки
+     ============================================================ */
+  function chestAim() {
+    if (!inited || !_intRay || !_camera || !center2) return null;
+    if (pad.open || vault || menu.open || uiBlocked()) return null;
+    if (!window.BrixGame || BrixGame.state.phase !== 'playing') return null;
+    if (!chestRecs.size) return null;
+    _intRay.setFromCamera(center2, _camera);
+    _intRay.far = 3.0;
+    var targets = [];
+    chestRecs.forEach(function (en) { if (en.group) targets.push(en.group); });
+    var hits = _intRay.intersectObjects(targets, true);
+    if (!hits.length) return null;
+    var o = hits[0].object;
+    while (o && !(o.userData && o.userData.bid && chestRecs.has(o.userData.bid))) {
+      o = o.parent;
+    }
+    return o ? o.userData.bid : null;
+  }
+  /** содержимое сундука ({itemId: count}) или null — если это не сундук */
+  function chestCont(id) {
+    var en = chestRecs.get(id);
+    return en ? (en.rec.cont || {}) : null;
+  }
+  /** сервер/сеть прислал свежее содержимое — обновляем живую запись */
+  function setChestCont(id, cont) {
+    var en = chestRecs.get(id);
+    if (!en) return;
+    en.rec.cont = cont || {};
+    saveLocal();
+  }
+  /** анимация крышки: 1 — открыть, 0 — закрыть (плавно, в tick) */
+  function chestLid(id, open) {
+    var en = chestRecs.get(id);
+    if (!en) return;
+    en.target = open ? 1 : 0;
   }
 
   /* ---------- КЛАВИАТУРА КОДОВОГО ЗАМКА (как на референсе) ---------- */
@@ -1742,6 +2124,44 @@ window.BrixBuilding = (function () {
     if (!msg || !msg.id) return;
     removeRecord(findRec(msg.id));
   }
+
+  /* ============================================================
+     ✅ v0.4.28 ЛОМАНИЕ: API для gameworld
+       hitTargets()  — группы деталей для луча удара (ЛКМ)
+       findPiece(o)  — меш из луча -> { id, ty } (по userData.bid)
+       pieceInfo(id) — { id, ty, group } для всплывающего ХП
+       localHit(id, tool) — локальный урон (соло/вкладки без сервера)
+     ============================================================ */
+  function hitTargets() {
+    return hitGroups.slice();
+  }
+  function findPiece(o) {
+    while (o && !(o.userData && o.userData.bid)) o = o.parent;
+    if (!o) return null;
+    var id = o.userData.bid;
+    var en = pieceById.get(id);
+    return { id: id, ty: en && en.rec ? en.rec.ty : null };
+  }
+  function pieceInfo(id) {
+    var en = pieceById.get(String(id || ''));
+    if (!en) return null;
+    return { id: en.rec.id, ty: en.rec.ty, group: en.group };
+  }
+  function localHit(id, tool) {
+    var en = pieceById.get(String(id || ''));
+    if (!en) return null;
+    var max = buildMaxHp(en.rec.ty);
+    var dmg = BUILD_DMG[tool] || 0;
+    if (!dmg) return null;
+    var hp = (pieceHp.get(en.rec.id) === undefined ?
+      (en.rec.hp !== undefined ? en.rec.hp : max) : pieceHp.get(en.rec.id)) - dmg;
+    if (hp <= 0) {
+      removeRecord(en.rec);
+      return { dead: true, max: max };
+    }
+    pieceHp.set(en.rec.id, hp);
+    return { id: en.rec.id, hp: hp, max: max };
+  }
   function onBdoor(msg) {
     if (!msg || !msg.id) return;
     var en = findEntry(msg.id);
@@ -1820,6 +2240,13 @@ window.BrixBuilding = (function () {
       return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24">' +
         '<rect x="3.5" y="4.5" width="17" height="15" ' + stroke + '/>' +
         '<path d="M8.5 19.5v-9h7v9" ' + stroke + '/></svg>';
+    }
+    if (kind === 'ch') {
+      // ✅ v0.4.22 сундук: крышка + щеколда
+      return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24">' +
+        '<path d="M4 12h16v7.5H4z" ' + stroke + '/>' +
+        '<path d="M4 12v-2.2c0-1.2 1-2.2 2.2-2.2h11.6c1.2 0 2.2 1 2.2 2.2V12" ' + stroke + '/>' +
+        '<path d="M10.5 12v3.2h3V12" ' + stroke + '/></svg>';
     }
     if (kind === 'dr') {
       // ✅ v0.4.10 дверь: полотно с ручкой, приоткрытая
@@ -2098,6 +2525,14 @@ window.BrixBuilding = (function () {
         if (en.anim.t >= 0.5) { en.leafPivot.rotation.y = en.anim.to; en.anim = null; }
       }
     });
+    /* ✅ v0.4.22: плавное открытие/закрытие крышек сундуков */
+    chestRecs.forEach(function (en) {
+      if (Math.abs(en.open - en.target) > 0.001) {
+        en.open += (en.target - en.open) * Math.min(1, dt * 7);
+        if (Math.abs(en.open - en.target) < 0.002) en.open = en.target;
+        if (en.lidPivot) en.lidPivot.rotation.x = CHEST_OPEN_ANGLE * en.open;
+      }
+    });
     vaultTick(dt);          // перелаз через окно
     updateDoorHint();       // подсказка F у двери/замка
   }
@@ -2152,6 +2587,16 @@ window.BrixBuilding = (function () {
     CURRENT: function () { return current; },
     /* ✅ v0.4.10: дверь/замок/окно */
     interact: interact,                 // F — дверь/замок (gameworld вызывает первой)
+    /* ✅ v0.4.22: сундук-хранилище */
+    chestAim: chestAim,                 // F наведён на сундук — вернуть его id (или null)
+    chestCont: chestCont,               // содержимое сундука ({item: count}) или null
+    setChestCont: setChestCont,         // обновить содержимое (сервер главнее)
+    chestLid: chestLid,                 // крышка: 1 открыть, 0 закрыть (анимация в tick)
+    /* ✅ v0.4.28: ломание построек (хп + удары) */
+    hitTargets: hitTargets,             // группы деталей для луча ЛКМ
+    findPiece: findPiece,               // меш -> { id, ty }
+    pieceInfo: pieceInfo,               // id -> { id, ty, group } (ХП-плашка)
+    localHit: localHit,                 // локальный урон (соло/вкладки)
     bulletBlock: bulletBlock,           // где пуля встречает постройку
     isUiBlocked: isUiBlocked,           // клавиатура замка/перелаз — гасят движение
     applyUnl: applyUnl,                 // «какие замки я разгадал» из welcome
@@ -2174,6 +2619,15 @@ window.BrixBuilding = (function () {
         /* ✅ fix 0.4.12: клавиатура замка — тест потока клавиш F */
         openPad: openPad, closePad: closePad, padKeyDown: padKeyDown,
         interact: interact, onBdeny: onBdeny,
+        /* ✅ v0.4.18: тесты очистки построек (bwipe/nofound-страховка) */
+        onBwipe: onBwipe, removeGhostCell: removeGhostCell,
+        /* ✅ v0.4.22: тесты сундука */
+        chestRecs: chestRecs, applyChest: applyChest, planChest: planChest,
+        chestAim: chestAim, chestCont: chestCont, setChestCont: setChestCont,
+        chestLid: chestLid, removeRecord: removeRecord,
+        serverEp: function () { return serverEp; },
+        backupEp: function () { return backupEp; },
+        pendingSnapshot: function () { return pendingSnapshot; },
         setInited: function (v) { inited = !!v; }
       };
     }

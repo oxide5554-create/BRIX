@@ -11,16 +11,16 @@
    АНТИ-КЭШ (почему после замены файлов ничего не менялось):
    python -m http.server и npm-серверы НЕ шлют заголовки запрета
    кэша, и браузер продолжает показывать СТАРЫЕ js-файлы.
-   1) Ко всем скриптам/стилям ниже добавлен ?v=057 — браузер
+   1) Ко всем скриптам/стилям ниже добавлен ?v=069 — браузер
       считает их новыми адресами и качает заново.
    2) Если в адресе нет ?v= — страница один раз перезагружается
-      с ?v=057 (свежий index.html гарантированно).
+      с ?v=069 (свежий index.html гарантированно).
    3) В меню есть ссылка «обновить кэш» (js/main.js).
    ============================================================ */
 (function () {
-  var V = '057';
+  var V = '069';
   window.BRIX_V = V;
-  window.BRIX_VER = '0.4.17';   /* ✅ v0.4.17: человеческая версия — HUD/панель показывают её */
+  window.BRIX_VER = '0.4.29';   /* ✅ v0.4.29: МЕНЮ СМЕРТИ ТОЧНО КАК НА ФОТО (красный блок «ВЫ УМЕРЛИ» слева сверху с ПРОЖИЛ/УБИЛ/ОРУЖИЕ/ДИСТАНЦИЯ, КАРТА МИРА в центре с красным черепом на месте смерти и зелёными точками игроков, кнопки внизу); красный баннер «СЕРВЕР СТАРЫЙ» теперь ВИСИТ и показывает ПАПКУ реально работающего сервера; сервер печатает «ЗАПУЩЕН ФАЙЛ» и понятную инструкцию при занятом порте (главная причина «СЕРВЕР СТАРЫЙ» — живой старый процесс node.exe); убран warning three.js. Предыдущее 0.4.28: присед на C, маяк выкл, ломание построек (200/150/25), хп на сервере */
   window.BrixAsset = function (u) { return u + (u.indexOf('?') < 0 ? '?' : '&') + 'v=' + V; };
   try {
     var p = window.location.protocol;
@@ -39,17 +39,17 @@
 })();
 </script>
 <meta name="theme-color" content="#101312">
-<title>BRIX v0.4.17 — Панель разработчика: диагностика — Главное меню</title>
+<title>BRIX v0.4.29 — меню смерти и ломание построек — Главное меню</title>
 <link rel="icon" href="assets/icon.png">
 <!-- Стили (перенос старой версии 1:1) -->
-<link rel="stylesheet" href="css/fonts.css?v=057">
-<link rel="stylesheet" href="css/base.css?v=057">
-<link rel="stylesheet" href="css/menu.css?v=057">
-<link rel="stylesheet" href="css/screens.css?v=057">
-<link rel="stylesheet" href="css/modals.css?v=057">
-<link rel="stylesheet" href="css/game.css?v=057">
-<link rel="stylesheet" href="css/minimenu.css?v=057">
-<link rel="stylesheet" href="css/admin.css?v=057">
+<link rel="stylesheet" href="css/fonts.css?v=069">
+<link rel="stylesheet" href="css/base.css?v=069">
+<link rel="stylesheet" href="css/menu.css?v=069">
+<link rel="stylesheet" href="css/screens.css?v=069">
+<link rel="stylesheet" href="css/modals.css?v=069">
+<link rel="stylesheet" href="css/game.css?v=069">
+<link rel="stylesheet" href="css/minimenu.css?v=069">
+<link rel="stylesheet" href="css/admin.css?v=069">
 </head>
 <body>
 
@@ -141,41 +141,61 @@
 </div>
 
 <!-- Скрипты: порядок важен! -->
-<script src="js/lib/three.min.js?v=057"></script>
-<script src="js/core/i18n.js?v=057"></script>
-<script src="js/core/state.js?v=057"></script>
-<script src="js/core/audio.js?v=057"></script>
-<script src="js/core/icons.js?v=057"></script>
-<script src="js/data/servers.js?v=057"></script>
-<script src="js/data/friends.js?v=057"></script>
-<script src="js/data/skins.js?v=057"></script>
-<script src="js/data/news.js?v=057"></script>
-<script src="js/data/itemicons.js?v=057"></script>
-<script src="js/ui/toast.js?v=057"></script>
-<script src="js/ui/modals.js?v=057"></script>
-<script src="js/ui/topbar.js?v=057"></script>
-<script src="js/ui/sidebar.js?v=057"></script>
-<script src="js/ui/screens.js?v=057"></script>
-<script src="js/ui/loading.js?v=057"></script>
-<script src="js/game/noise.js?v=057"></script>
-<script src="js/game/embeddata.js?v=057"></script>
-<script src="js/game/glb.js?v=057"></script>
-<script src="js/game/sfx.js?v=057"></script>
-<script src="js/game/terrain.js?v=057"></script>
-<script src="js/game/world.js?v=057"></script>
-<script src="js/game/controls.js?v=057"></script>
-<script src="js/game/props.js?v=057"></script>
-<script src="js/game/firstperson.js?v=057"></script>
-<script src="js/game/inventory.js?v=057"></script>
-<script src="js/game/lootmenu.js?v=057"></script>
-<script src="js/game/background.js?v=057"></script>
-<script src="js/net/net.js?v=057"></script>
-<script src="js/social/social.js?v=057"></script>
-<script src="js/game/remoteplayer.js?v=057"></script>
-<script src="js/game/minimenu.js?v=057"></script>
-<script src="js/game/adminpanel.js?v=057"></script>
-<script src="js/game/building.js?v=057"></script>
-<script src="js/game/gameworld.js?v=057"></script>
-<script src="js/main.js?v=057"></script>
+<script src="js/lib/three.min.js?v=069"></script>
+<script src="js/core/i18n.js?v=069"></script>
+<script>
+/* ✅ v0.4.22 ЗАЩИТА ОТ ПАДЕНИЯ МЕНЮ: если js/core/i18n.js не скопирован
+   на сервер (404 — самый частый пропуск при установке обновлений),
+   раньше state.js падал с «BrixI18N is not defined» и меню не открывалось.
+   Теперь без словаря игра просто показывает ключи вместо переводов */
+if (!window.BrixI18N) {
+  window.BrixI18N = {
+    translate: function (lang, key) {
+      if (window.console) {
+        console.warn('[BRIX] js/core/i18n.js не найден на сервере — ' +
+          'скопируйте файл из архива в папку js/core/ и обновите страницу (Ctrl+Shift+R)');
+      }
+      return key;
+    }
+  };
+}
+</script>
+<script src="js/core/state.js?v=069"></script>
+<script src="js/core/audio.js?v=069"></script>
+<script src="js/core/icons.js?v=069"></script>
+<script src="js/data/servers.js?v=069"></script>
+<script src="js/data/friends.js?v=069"></script>
+<script src="js/data/skins.js?v=069"></script>
+<script src="js/data/news.js?v=069"></script>
+<script src="js/data/itemicons.js?v=069"></script>
+<script src="js/data/weaponskins.js?v=069"></script>
+<script src="js/ui/toast.js?v=069"></script>
+<script src="js/ui/modals.js?v=069"></script>
+<script src="js/ui/topbar.js?v=069"></script>
+<script src="js/ui/sidebar.js?v=069"></script>
+<script src="js/ui/screens.js?v=069"></script>
+<script src="js/ui/loading.js?v=069"></script>
+<script src="js/game/noise.js?v=069"></script>
+<script src="js/game/embeddata.js?v=069"></script>
+<script src="js/game/glb.js?v=069"></script>
+<script src="js/game/sfx.js?v=069"></script>
+<script src="js/game/terrain.js?v=069"></script>
+<script src="js/game/lighthouse.js?v=069"></script>
+<script src="js/game/world.js?v=069"></script>
+<script src="js/game/controls.js?v=069"></script>
+<script src="js/game/props.js?v=069"></script>
+<script src="js/game/firstperson.js?v=069"></script>
+<script src="js/game/inventory.js?v=069"></script>
+<script src="js/game/lootmenu.js?v=069"></script>
+<script src="js/game/background.js?v=069"></script>
+<script src="js/net/net.js?v=069"></script>
+<script src="js/social/social.js?v=069"></script>
+<script src="js/game/remoteplayer.js?v=069"></script>
+<script src="js/game/minimenu.js?v=069"></script>
+<script src="js/game/adminpanel.js?v=069"></script>
+<script src="js/game/craft.js?v=069"></script>
+<script src="js/game/building.js?v=069"></script>
+<script src="js/game/gameworld.js?v=069"></script>
+<script src="js/main.js?v=069"></script>
 </body>
 </html>

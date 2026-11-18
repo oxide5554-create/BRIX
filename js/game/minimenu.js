@@ -139,6 +139,8 @@ window.BrixMiniMenu = (function () {
     var inv = window.BrixInventory && BrixInventory.get();
     if (inv && inv.isOpen) return true;
     if (window.BrixLootMenu && BrixLootMenu.isOpen()) return true;
+    /* ✅ v0.4.25: крафт-панель (Q) открыта — M молчит */
+    if (window.BrixCraft && BrixCraft.isOpen()) return true;
     return false;
   }
 

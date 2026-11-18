@@ -321,3 +321,193 @@
 .crate-grid-hot { grid-template-columns: repeat(6, 50px); }
 .crate-slot-own { cursor: grab; }
 .crate-slot-own.own-hot { background: #423e36; }              /* хотбар чуть темнее — как в инвентаре */
+
+/* ============================================================
+   ✅ v0.4.25 КРАФТ-ПАНЕЛЬ (Q) — стиль крафта Rust legacy:
+   серые полупрозрачные панели, оранжевые строки ресурсов,
+   зелёная подсветка выбранного чертежа и кнопки СКАФТ
+   ============================================================ */
+.bx-craft {
+  position: fixed; inset: 0; z-index: 320;
+  background: rgba(8, 10, 9, .55);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.bx-craft.hidden { display: none; }
+.bxc-wrap {
+  display: flex; gap: 14px; align-items: stretch;
+  max-width: 1060px; width: min(96vw, 1060px);
+  max-height: 82vh;
+}
+.bxc-panel {
+  background: rgba(56, 62, 66, .93);
+  border: 1px solid rgba(255, 255, 255, .10);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .55), inset 0 1px 0 rgba(255, 255, 255, .06);
+  padding: 12px;
+  display: flex; flex-direction: column;
+  min-height: 0;
+}
+.bxc-left { flex: 0 0 460px; }
+.bxc-right { flex: 1 1 auto; min-width: 380px; }
+
+/* шапки панелей */
+.bxc-head {
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid rgba(255, 255, 255, .12);
+  padding-bottom: 8px; margin-bottom: 10px;
+}
+.bxc-cap { font-size: 15px; letter-spacing: .18em; color: #e8ebe6; }
+.bxc-unlocked { font-size: 10px; letter-spacing: .14em; color: #b9c0b6; }
+.bxc-x {
+  width: 26px; height: 26px; cursor: pointer;
+  background: rgba(255, 255, 255, .07); color: #cfd4cd;
+  border: 1px solid rgba(255, 255, 255, .14);
+  font: 700 13px Oswald, Arial Narrow, sans-serif;
+}
+.bxc-x:hover { background: rgba(255, 255, 255, .16); color: #fff; }
+
+/* превью чертежа */
+.bxc-preview {
+  display: flex; gap: 10px; align-items: stretch;
+  background: rgba(38, 43, 46, .85);
+  border: 1px solid rgba(255, 255, 255, .07);
+  padding: 10px; margin-bottom: 10px;
+}
+.bxc-name { flex: 1; font-size: 19px; letter-spacing: .06em; color: #fff; text-transform: uppercase; }
+.bxc-shot {
+  width: 92px; height: 74px; flex: 0 0 auto;
+  background: rgba(255, 255, 255, .05);
+  display: grid; place-items: center;
+}
+.bxc-shot img { max-width: 84px; max-height: 66px; object-fit: contain; }
+
+/* таблица ресурсов */
+.bxc-table { margin-bottom: 10px; }
+.bxc-tr {
+  display: grid; grid-template-columns: 64px 1fr 74px 64px;
+  gap: 6px; align-items: center;
+  padding: 5px 8px;
+  font: 13px/1.25 RobotoCondensed, Arial Narrow, sans-serif;
+  letter-spacing: .03em;
+}
+.bxc-tr + .bxc-tr { border-top: 1px solid rgba(255, 255, 255, .05); }
+.bxc-th {
+  font: 700 10px Oswald, Arial Narrow, sans-serif;
+  letter-spacing: .16em; color: #9aa096; text-transform: uppercase;
+  border-bottom: 1px solid rgba(255, 255, 255, .12);
+}
+.bxc-tr > span:nth-child(3) { color: #d9a15c; }         /* НУЖНО — как референс, оранжевый */
+.bxc-tr.ok > span:last-child { color: #9ec873; }        /* ЕСТЬ хватает — зелёный */
+.bxc-tr.miss > span:last-child { color: #d96b55; }      /* не хватает — красный */
+.bxc-res { display: flex; align-items: center; gap: 7px; color: #d6d9d4; }
+.bxc-res i {
+  width: 20px; height: 20px; flex: 0 0 auto;
+  background-size: contain; background-repeat: no-repeat; background-position: center;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .6));
+}
+
+/* количество + СКАФТ */
+.bxc-qty { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.bxc-x1 { font-size: 11px; color: #b9c0b6; letter-spacing: .1em; margin-right: 2px; }
+.bxc-qty-in {
+  width: 54px; height: 30px; text-align: center;
+  background: rgba(30, 34, 36, .9); color: #e8ebe6;
+  border: 1px solid rgba(255, 255, 255, .14);
+  font: 700 14px Oswald, Arial Narrow, sans-serif;
+  -moz-appearance: textfield; appearance: textfield;
+}
+.bxc-qty-in::-webkit-outer-spin-button,
+.bxc-qty-in::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.bxc-step {
+  width: 30px; height: 30px; cursor: pointer;
+  background: rgba(255, 255, 255, .10); color: #e8ebe6;
+  border: 1px solid rgba(255, 255, 255, .16);
+  font: 700 16px/1 Oswald, Arial Narrow, sans-serif;
+}
+.bxc-step:hover { background: rgba(255, 255, 255, .2); }
+.bxc-craft {
+  flex: 1; height: 32px; margin-left: 4px; cursor: pointer;
+  background: #4c5a41; color: #cfd8c3;
+  border: 1px solid #66794f;
+  font-size: 13px; letter-spacing: .22em;
+  transition: background .15s;
+}
+.bxc-craft.ready { background: #6d9c46; border-color: #8cc35d; color: #fff; }
+.bxc-craft.ready:hover { background: #7fb354; }
+.bxc-craft:not(.ready) { opacity: .55; }
+
+/* полка ИНВЕНТАРЬ */
+.bxc-invcap { font-size: 10px; letter-spacing: .2em; color: #9aa096; margin-bottom: 6px; }
+.bxc-inv {
+  display: grid; grid-template-columns: repeat(13, 1fr); gap: 4px;
+}
+.bxc-inv-slot {
+  position: relative; aspect-ratio: 1/1;
+  background: rgba(30, 34, 36, .8);
+  border: 1px solid rgba(255, 255, 255, .07);
+  display: grid; place-items: center;
+}
+.bxc-inv-slot.empty { opacity: .5; }
+.bxc-inv-slot img { max-width: 78%; max-height: 78%; object-fit: contain; pointer-events: none; }
+.bxc-inv-slot b {
+  position: absolute; right: 2px; bottom: 0;
+  color: #fff; font: 700 10px RobotoCondensed, Arial Narrow, sans-serif;
+  text-shadow: 1px 1px 0 #000;
+}
+
+/* список чертежей справа */
+.bxc-tabs { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.bxc-tab {
+  height: 26px; padding: 0 12px; cursor: pointer;
+  background: rgba(255, 255, 255, .07); color: #c3c9c0;
+  border: 1px solid rgba(255, 255, 255, .12);
+  font-size: 10px; letter-spacing: .16em;
+}
+.bxc-tab:hover { background: rgba(255, 255, 255, .14); color: #fff; }
+.bxc-tab.on { background: #6d9c46; border-color: #8cc35d; color: #fff; }
+.bxc-list {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 4px;
+  padding-right: 4px;
+}
+.bxc-list::-webkit-scrollbar { width: 8px; }
+.bxc-list::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .18); }
+.bxc-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px; cursor: pointer;
+  background: rgba(38, 43, 46, .7);
+  border: 1px solid rgba(255, 255, 255, .07);
+  border-left: 3px solid transparent;
+}
+.bxc-row:hover { background: rgba(52, 58, 62, .85); }
+.bxc-row.sel {
+  background: #5d7a44;                       /* зелёная подсветка выбора — как референс */
+  border-color: #7aa050;
+}
+.bxc-row.nores .bxc-row-name { color: #b3b9af; }
+.bxc-row-ico { width: 34px; height: 34px; object-fit: contain; flex: 0 0 auto; filter: drop-shadow(0 1px 2px rgba(0,0,0,.5)); }
+.bxc-row-mid { flex: 1; min-width: 0; }
+.bxc-row-name { font: 600 14px Oswald, Arial Narrow, sans-serif; color: #f0f2ee; letter-spacing: .04em; }
+.bxc-row-req { font: 12px RobotoCondensed, Arial Narrow, sans-serif; color: #d9a15c; margin-top: 1px; }
+.bxc-row-cc { font-size: 11px; letter-spacing: .1em; color: #9ec873; flex: 0 0 auto; }
+.bxc-row.nores .bxc-row-cc { color: #d96b55; }
+
+/* нижняя подсказка */
+.bxc-hint {
+  margin-top: 10px; font-size: 10px; letter-spacing: .18em;
+  color: rgba(255, 255, 255, .4); text-transform: uppercase;
+}
+
+/* ============================================================
+   ✅ v0.4.25 СКИН В ПАНЕЛИ РАЗРАБОТЧИКА (bap-стиль)
+   ============================================================ */
+.bap-skin {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px; margin-bottom: 6px;
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 255, 255, .09);
+}
+.bap-skin-ico { width: 40px; height: 40px; object-fit: contain; flex: 0 0 auto; }
+.bap-skin-mid { flex: 1; min-width: 0; }
+.bap-skin-name { font: 600 13px Oswald, Arial Narrow, sans-serif; color: #e8ebe6; }
+.bap-skin-item { font: 11px RobotoCondensed, Arial Narrow, sans-serif; color: #9aa096; margin-top: 1px; }
+.bap-skin.on { border-color: #8cc35d; background: rgba(109, 156, 70, .18); }

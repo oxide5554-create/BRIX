@@ -77,7 +77,7 @@ window.BrixGLB = (function () {
     });
   }
 
-  function buildMaterial(json, bin, matIndex) {
+  function buildMaterial(json, bin, matIndex, hasVertexColors) {
     var def = (json.materials || [])[matIndex] || {};
     var m = def;
     var pbr = m.pbrMetallicRoughness || {};
@@ -106,6 +106,13 @@ window.BrixGLB = (function () {
       }
       // имя материала из glTF — по нему visible рук/тела (firstperson.js)
       mat.name = m.name || '';
+      /* ✅ v0.4.24: у примитива есть COLOR_0 → включаем вершинные цвета
+         (MeshStandardMaterial без этого рисует модель белой) */
+      if (hasVertexColors) mat.vertexColors = true;
+      /* ✅ v0.4.24: emissive (лампа маяка светится) */
+      if (m.emissiveFactor) {
+        mat.emissive = new THREE.Color(m.emissiveFactor[0], m.emissiveFactor[1], m.emissiveFactor[2]);
+      }
       // ✅ прозрачность листвы: MASK/BLEND → кат-аут (без сортировочных артефактов)
       if (m.alphaMode === 'MASK') {
         mat.alphaTest = (m.alphaCutoff !== undefined) ? m.alphaCutoff : 0.5;
@@ -159,6 +166,11 @@ window.BrixGLB = (function () {
     if (at.TEXCOORD_0 !== undefined) {
       var uv = readAccessor(json, bin, at.TEXCOORD_0);
       geo.setAttribute('uv', new THREE.BufferAttribute(uv.array, uv.itemSize));
+    }
+    /* ✅ v0.4.24: вершинные цвета COLOR_0 (модель маяка окрашена ими) */
+    if (at.COLOR_0 !== undefined) {
+      var col = readAccessor(json, bin, at.COLOR_0);
+      geo.setAttribute('color', new THREE.BufferAttribute(col.array, col.itemSize));
     }
     if (skinned && at.JOINTS_0 !== undefined && at.WEIGHTS_0 !== undefined) {
       var j = readAccessor(json, bin, at.JOINTS_0);
@@ -259,16 +271,20 @@ window.BrixGLB = (function () {
             geo: buildPrimitiveGeometry(json, bin, prim, hasSkin),
             matIndex: prim.material || 0,
             skin: hasSkin ? n.skin : -1,
-            primIndex: pi
+            primIndex: pi,
+            hasColor: prim.attributes && prim.attributes.COLOR_0 !== undefined   // ✅ v0.4.24
           });
         });
       });
 
-      // материалы (с именами)
+      // материалы (с именами); ✅ v0.4.24: если хоть один примитв материала
+      // несёт вершинные цвета — включаем vertexColors на всём материале
+      var matHasColor = {};
       var matPromises = {};
       meshJobs.forEach(function (job) {
+        if (job.hasColor) matHasColor[job.matIndex] = true;
         if (matPromises[job.matIndex] === undefined) {
-          matPromises[job.matIndex] = buildMaterial(json, bin, job.matIndex);
+          matPromises[job.matIndex] = buildMaterial(json, bin, job.matIndex, matHasColor[job.matIndex]);
         }
       });
       var matIds = Object.keys(matPromises);

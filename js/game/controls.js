@@ -13,6 +13,11 @@ window.BrixControls = (function () {
   var GRAVITY = 24;
   var JUMP_SPEED = 8.6;
   var PLAYER_RADIUS = 0.35; // «толщина» игрока для коллайдеров (v0.2.9)
+  /* ✅ v0.4.28 ПРИСЕД НА C (как в Rust): C — переключатель. Глаза 1.7 → 1.05,
+     скорость 3 м/с (бег недоступен, прыжок заблокирован). Флаг едет в
+     состоянии (st.c) — чужие игроки видят присевшего (модель ниже и приземистей) */
+  var CROUCH_EYE = 1.05;    // высота глаз в приседе, м
+  var CROUCH_SPEED = 3;     // скорость в приседе, м/с
 
   function FpsController(dom, getHeight) {
     this.position = new THREE.Vector3();
@@ -28,6 +33,8 @@ window.BrixControls = (function () {
     this._vy = 0;
     this._grounded = false;
     this._bobPhase = 0;
+    this._crouched = false;   // ✅ v0.4.28 присед (C — переключатель)
+    this.eyeH = EYE_HEIGHT;   // плавно меняется 1.7 ↔ 1.05
     this._getHeight = getHeight;
 
     var self = this;
@@ -35,6 +42,8 @@ window.BrixControls = (function () {
       if (!self.enabled) return;
       self._keys.add(e.code);
       if (e.code === 'Space') e.preventDefault();
+      /* ✅ v0.4.28: C — присесть/встать (переключатель) */
+      if (e.code === 'KeyC') self._crouched = !self._crouched;
     };
     this._onKeyUp = function (e) { self._keys.delete(e.code); };
     this._onMouseMove = function (e) {
@@ -63,7 +72,12 @@ window.BrixControls = (function () {
     this.pitch = 0;
     this._vy = 0;
     this._grounded = true;
+    this._crouched = false;    // ✅ v0.4.28: респавн — всегда стоя
+    this.eyeH = EYE_HEIGHT;
   };
+
+  /* ✅ v0.4.28: присед (для состояния сети и анимации рук) */
+  FpsController.prototype.isCrouched = function () { return !!this._crouched; };
 
   FpsController.prototype.requestLock = function () {
     var p = this._dom.requestPointerLock();
@@ -73,6 +87,15 @@ window.BrixControls = (function () {
   /** ✅ v0.2.9: список коллайдеров мира [{x, z, r, active}] (из BrixWorld.buildDecor) */
   FpsController.prototype.setColliders = function (list) {
     this._colliders = list || [];
+  };
+
+  /* ✅ v0.4.24: ДОБАВИТЬ статические коллайдеры (маяк): старый список
+     не трогаем — decor мутирует свой массив на месте */
+  FpsController.prototype.addColliders = function (list) {
+    if (list && list.length) this._colliders = this._colliders.concat(list);
+  };
+  FpsController.prototype.addBoxColliders = function (list) {
+    if (list && list.length) this._boxes = this._boxes.concat(list);
   };
 
   /**
@@ -116,7 +139,7 @@ window.BrixControls = (function () {
   FpsController.prototype._resolveBoxes = function () {
     var bs = this._boxes;
     if (!bs || !bs.length) return;
-    var feet = this.position.y - EYE_HEIGHT;
+    var feet = this.position.y - this.eyeH;
     for (var i = 0; i < bs.length; i++) {
       var b = bs[i];
       if (b.active === false) continue;
@@ -169,20 +192,25 @@ window.BrixControls = (function () {
     }
   };
 
-  /** Состояние движения для анимации рук: { moving, sprint, onGround } */
+  /** Состояние движения для анимации рук: { moving, sprint, onGround, crouch } */
   FpsController.prototype.getMoveState = function () {
     return {
       moving: this.enabled && this._keys.size > 0 &&
         (this._keys.has('KeyW') || this._keys.has('KeyA') ||
          this._keys.has('KeyS') || this._keys.has('KeyD')),
       sprint: this._keys.has('ShiftLeft') || this._keys.has('ShiftRight'),
-      onGround: this._grounded
+      onGround: this._grounded,
+      crouch: this._crouched
     };
   };
 
   /** Обновление физики и камеры */
   FpsController.prototype.update = function (camera, dt) {
     if (dt > 0.1) dt = 0.1;
+
+    /* ✅ v0.4.28: плавный переход высоты глаз 1.7 ↔ 1.05 (присед) */
+    var eyeTarget = this._crouched ? CROUCH_EYE : EYE_HEIGHT;
+    this.eyeH += (eyeTarget - this.eyeH) * Math.min(1, dt * 10);
 
     // движение относительно взгляда
     var fx = 0, fz = 0;
@@ -198,10 +226,12 @@ window.BrixControls = (function () {
     // ✅ v0.4.15: BrixAdmin.speedOn — СКОРОСТЬ ×2 из панели разработчика
     var adminMul = (window.BrixAdmin && BrixAdmin.speedOn) ? 2 : 1;
     var speed = (sprint ? SPRINT_SPEED : WALK_SPEED) * (this.slowFactor || 1) * adminMul;
+    // ✅ v0.4.28: в приседе скорость капается (бег недоступен)
+    if (this._crouched) speed = Math.min(speed, CROUCH_SPEED);
 
     // по колено в воде — медленнее (✅ v0.4.6: feetY — по палубе фундамента
     // вода под домом не замедляет)
-    var floorH = this._getHeight(this.position.x, this.position.z, this.position.y - EYE_HEIGHT);
+    var floorH = this._getHeight(this.position.x, this.position.z, this.position.y - this.eyeH);
     if (floorH < 2.9) speed *= 0.55;
 
     if (moving) {
@@ -216,7 +246,7 @@ window.BrixControls = (function () {
       // ОТДЕЛЬНО. Стена на пути блокирует ТОЛЬКО свою ось — игрок
       // скользит вдоль неё, не дёргается на углах и легко переходит
       // между соседними фундаментами (даже когда рядом стоят стены)
-      var feetNow = this.position.y - EYE_HEIGHT;
+      var feetNow = this.position.y - this.eyeH;
       if (dx !== 0) {
         var oldX = this.position.x;
         this.position.x += dx * speed * dt;
@@ -243,8 +273,9 @@ window.BrixControls = (function () {
 
     // вертикальная физика (✅ v0.4.6: feetY — ходьба по фундаментам/потолкам)
     var ground = this._getHeight(this.position.x, this.position.z,
-      this.position.y - EYE_HEIGHT) + EYE_HEIGHT;
-    if (this.enabled && this._grounded && this._keys.has('Space')) {
+      this.position.y - this.eyeH) + this.eyeH;
+    // ✅ v0.4.28: из приседа не прыгаем (как в Rust)
+    if (this.enabled && this._grounded && !this._crouched && this._keys.has('Space')) {
       this._vy = JUMP_SPEED;
       this._grounded = false;
     }

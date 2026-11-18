@@ -97,6 +97,28 @@ window.BrixGameWorld = (function () {
   var SHOOT_RANGE = 200;     // дальность пули
   var SND_RADIUS = 130;      // радиус слышимости выстрела/перезарядки
 
+  /* ✅ v0.4.19 ДРОБОВИК — стрельба ДРОБЬЮ (по образцу репозитория -glm):
+     обойма 2 (SHOTGUN_MAG_SIZE оттуда), кулдаун 0.9 с, перезарядка 2.6 с;
+     8 дробин конусом, урон 12 за дробину: в упор до 96 за выстрел —
+     почти мгновенное убийство, на дистанции дробь рассеивается;
+     патроны — отдельный предмет shotgunShell (иконка от пользователя) */
+  var SG_MAG_SIZE = 2;       // обойма дробовика
+  var SG_SHOOT_CD = 0.9;     // задержка между выстрелами
+  var SG_RELOAD_DUR = 2.6;   // длительность перезарядки (= anim reloadSg)
+  var SG_PELLETS = 8;        // сколько дробин за выстрел
+  var SG_PELLET_DMG = 12;    // урон ОДНОЙ дробины
+  var SG_SPREAD = 0.062;     // конус дроби (рад, ≈3.5°) — полная ширина
+  var SG_SHOOT_ANIM = 0.5;   // длительность отдачи (рукам)
+
+  /* ✅ v0.4.21 КАЛАШ (АК) — автоогонь при зажатой ЛКМ (порт из репозитория
+     -glm: AK_FIRE_INTERVAL 0.10 с = 600 в/мин), обойма 30, перезарядка
+     3.4 с (звук перезарядки — файл от пользователя), урон 20 за пулю;
+     патроны — отдельный предмет rifleBullet (иконка от пользователя) */
+  var AK_MAG_SIZE = 30;      // обойма калаша
+  var AK_FIRE_CD = 0.10;     // задержка между выстрелами (автоогонь)
+  var AK_RELOAD_DUR = 3.4;   // длительность перезарядки (= звук ak_reload.wav)
+  var AK_DMG = 20;           // урон пули калаша
+
   function start(mount) {
     var cancelled = false;
 
@@ -146,6 +168,12 @@ window.BrixGameWorld = (function () {
         var bf = BrixBuilding.floorAt(x, z, feetY);
         if (bf !== null && bf > h) h = bf;
       }
+      // ✅ v0.4.24 МАЯК: камень острова, ступени, выступы, палуба и
+      // парапет (если модель загрузилась — иначе null)
+      if (window.BrixLighthouse && BrixLighthouse.isReady()) {
+        var lf = BrixLighthouse.floorAt(x, z, feetY);
+        if (lf !== null && lf > h) h = lf;
+      }
       return h;
     };
     var controls = new BrixControls.FpsController(renderer.domElement, groundAt);
@@ -184,10 +212,12 @@ window.BrixGameWorld = (function () {
 
     /* ✅ v0.4.3: МИНИ-МЕНЮ (M) или КАРТА открыты — управление стоит,
        но рендер и сеть живут: игрок остаётся на сервере и виден
-       ✅ v0.4.15: панель разработчика (9) — то же самое */
+       ✅ v0.4.15: панель разработчика (9) — то же самое
+       ✅ v0.4.25: крафт-панель (Q) — то же самое */
     function isMiniOpen() {
       return !!(window.BrixMiniMenu && BrixMiniMenu.isAnyOpen()) ||
-        !!(window.BrixAdmin && BrixAdmin.isOpen());
+        !!(window.BrixAdmin && BrixAdmin.isOpen()) ||
+        !!(window.BrixCraft && BrixCraft.isOpen());
     }
 
     /* ✅ fix 0.4.5a: захват мыши с АВТО-ПОВТОРОМ. После выхода из pointer
@@ -266,15 +296,37 @@ window.BrixGameWorld = (function () {
       var s = inventory.slots[inventory.activeSlot];
       return (s && s.item && s.item.tool === 'revolver') ? s : null;
     };
+    /* ✅ v0.4.19: слот ДРОБОВИКА + общий «слот огнестрела» */
+    var sgSlot = function () {
+      var s = inventory.slots[inventory.activeSlot];
+      return (s && s.item && s.item.tool === 'shotgun') ? s : null;
+    };
+    /* ✅ v0.4.21: слот КАЛАША */
+    var rifleSlot = function () {
+      var s = inventory.slots[inventory.activeSlot];
+      return (s && s.item && s.item.tool === 'rifle') ? s : null;
+    };
+    var gunSlot = function () { return revSlot() || sgSlot() || rifleSlot(); };
+    /** id предмета-патрона для текущего огнестрела */
+    var gunAmmoId = function () {
+      return sgSlot() ? 'shotgunShell' : (rifleSlot() ? 'rifleBullet' : 'ammo');
+    };
+    var gunMagSize = function () {
+      return sgSlot() ? SG_MAG_SIZE : (rifleSlot() ? AK_MAG_SIZE : MAG_SIZE);
+    };
 
     // выбор в хотбаре → показать/спрятать руки с нужным инструментом
     inventory.onSelect = function (item) {
       var tool = (item && item.tool) || null;
       // ✅ v0.4.6: 'plan' — план строителя (синий ватман в руках)
+      // ✅ v0.4.19: 'shotgun' — дробовик в руках
+      // ✅ v0.4.21: 'rifle' — калаш в руках
       hands.setWeapon(tool === 'axe' || tool === 'pickaxe' || tool === 'ironPickaxe' ||
-        tool === 'ironAxe' || tool === 'revolver' || tool === 'plan' ? tool : null);
-      // смена оружия сбрасывает прицеливание
-      if (tool !== 'revolver' && aiming) stopAim();
+        tool === 'ironAxe' || tool === 'revolver' || tool === 'shotgun' ||
+        tool === 'rifle' || tool === 'plan' ? tool : null);
+      // смена оружия сбрасывает прицеливание (у огнестрелов — оставляем выбор игроку:
+      // с револьвера на дробовик/калаш можно перескакивать с прицелом)
+      if (tool !== 'revolver' && tool !== 'shotgun' && tool !== 'rifle' && aiming) stopAim();
       updateCrosshair();
     };
 
@@ -297,6 +349,13 @@ window.BrixGameWorld = (function () {
     // ✅ v0.4.5: звуки револьвера (выстрел с хвостом + перезарядка)
     BrixSfx.load('revShot', sfxUrl('assets/sfx/revolver/shot.wav'));
     BrixSfx.load('revReload', sfxUrl('assets/sfx/revolver/reload.wav'));
+    // ✅ v0.4.19: звук дробовика (выстрел — сэмпл из репозитория -glm,
+    // sounds/shotgun/shotgun.wav); перезарядка дробовика — те же щелчки
+    BrixSfx.load('sgShot', sfxUrl('assets/sfx/shotgun/shotgun.wav'));
+    // ✅ v0.4.21: звук КАЛАША (выстрел — сэмпл из репозитория -glm,
+    // AssaultRifle_Shot_Tail_01.wav); перезарядка — файл от пользователя
+    BrixSfx.load('akShot', sfxUrl('assets/sfx/rifle/ak_shot.wav'));
+    BrixSfx.load('akReload', sfxUrl('assets/sfx/rifle/ak_reload.wav'));
 
     // стартовое состояние: слот 0 — каменный топор
     var startSel = inventory.slots[0];
@@ -534,6 +593,103 @@ window.BrixGameWorld = (function () {
       if (window.BrixHud) BrixHud.toast('Сервер не дал взять: подойди ближе / предмет уже взят');
     }
 
+    /* ============================================================
+       ✅ v0.4.22 СУНДУК-ХРАНИЛИЩЕ: F у сундука — меню «наоборот»:
+       КЛИК по своему предмету кладёт его В сундук (перетаскивание
+       тоже работает), клик по предмету сундука — забирает.
+       Содержимое живёт НА СЕРВЕРЕ (rec.cont постройки): переживает
+       перезаход, выход владельца и рестарт сервера (автосейв)
+       ============================================================ */
+    var pendingChestTake = {};
+    var chestAwait = null;   // ✅ v0.4.22: id сундука, открытого по F — ждём chestst
+    function isChestId(id) {
+      return !!(window.BrixBuilding && BrixBuilding.chestCont &&
+        BrixBuilding.chestCont(id) !== null);
+    }
+    function chestContLocal(id) {
+      return (window.BrixBuilding && BrixBuilding.chestCont(id)) || {};
+    }
+    /** F у сундука: открыть крышку (себе + другим) и меню с его содержимым */
+    function openChest(id) {
+      if (window.BrixBuilding) BrixBuilding.chestLid(id, 1);
+      if (window.BrixSfx) {
+        try { BrixSfx.play('doorMove', { volume: 0.42, jitter: 0.05 }); } catch (e) {}
+      }
+      if (BrixNet.sendChestAnim) BrixNet.sendChestAnim(id, 1);
+      if (BrixNet.mode === 'server' && BrixNet.serverVer >= 50) {
+        // сервер пришлёт chestst — меню откроется с ЕГО содержимым
+        chestAwait = id;
+        BrixNet.sendChestOpen(id);
+        (function (cid) {
+          setTimeout(function () {
+            if (cancelled || BrixGame.state.phase !== 'playing') return;
+            if (chestAwait === cid) chestAwait = null;
+            if (!BrixLootMenu.isOpen() && BrixLootMenu.openId() !== cid) {
+              BrixLootMenu.open(cid, chestContLocal(cid), 0, 'chest');
+            }
+          }, 1200);
+        })(id);
+      } else {
+        // вкладки/соло (или старый сервер): содержимое локальной записи
+        BrixLootMenu.open(id, chestContLocal(id), 0, 'chest');
+      }
+    }
+    /** взять предмет из сундука: оптимистично у себя, сервер — авторитет */
+    function takeChestOptimistic(id, item, amt) {
+      amt = Math.max(0, amt | 0);
+      var fits = inventory.freeSpaceFor(item);
+      if (fits <= 0) { if (window.BrixHud) BrixHud.toast('Инвентарь полон'); return; }
+      if (amt > fits) amt = fits;
+      if (amt <= 0) return;
+      var cont = chestContLocal(id);
+      var avail = cont[item] || 0;
+      if (avail <= 0) return;
+      if (amt > avail) amt = avail;
+      var tid = 'T' + Math.random().toString(36).slice(2, 9);
+      pendingChestTake[tid] = { id: id, item: item, amt: amt };
+      /* локально: сундук и инвентарь (ПОРЯДОК как в ящиках: сперва
+         инвентарь, потом перерисовка меню) */
+      var ncont = Object.assign({}, cont);
+      ncont[item] = avail - amt;
+      if (ncont[item] <= 0) delete ncont[item];
+      inventory.addItem(item, amt);
+      inventory.showPickup(item, amt);
+      if (window.BrixBuilding) BrixBuilding.setChestCont(id, ncont);
+      if (BrixLootMenu.openId() === id) BrixLootMenu.update(id, ncont);
+      if (BrixNet.mode === 'server' && BrixNet.serverVer >= 50) {
+        BrixNet.sendChestTake(id, item, amt, tid);
+      } else {
+        BrixNet.send({ t: 'chestst', id: id, cont: ncont, pid: BrixNet.id });
+      }
+    }
+    function denyChestTake(msg) {
+      var p = pendingChestTake[msg.tid];
+      if (!p) return;
+      delete pendingChestTake[msg.tid];
+      inventory.removeCountByItem(p.item, p.amt);
+      if (window.BrixHud) BrixHud.toast('Сервер не дал взять: подойди ближе / предмет уже взят');
+      // переспрашиваем содержимое — сервер вернёт актуальное
+      if (BrixNet.mode === 'server' && BrixNet.serverVer >= 50 && BrixNet.sendChestOpen) {
+        BrixNet.sendChestOpen(p.id);
+      }
+    }
+    /** положить свой предмет В сундук: вычет у себя сразу, сервер рассылает chestst */
+    function putChestLocal(id, item, amt, fromIndex) {
+      amt = Math.max(1, amt || 1);
+      var cont = chestContLocal(id);
+      var ncont = Object.assign({}, cont);
+      if (inventory.removeCount(fromIndex, amt) <= 0) return;   // слот уже пуст
+      ncont[item] = (ncont[item] || 0) + amt;
+      if (window.BrixBuilding) BrixBuilding.setChestCont(id, ncont);
+      if (window.BrixInventory) inventory.renderAll();
+      if (BrixLootMenu.openId() === id) BrixLootMenu.update(id, ncont);
+      if (BrixNet.mode === 'server' && BrixNet.serverVer >= 50) {
+        BrixNet.sendChestPut(id, item, amt);
+      } else {
+        BrixNet.send({ t: 'chestst', id: id, cont: ncont, pid: BrixNet.id });
+      }
+    }
+
     /* ✅ v0.4.1: положить свой предмет В ЯЩИК (drag&drop).
        Применяем у себя СРАЗУ (лут ящика + вычет из инвентаря),
        затем сообщаем: сервер рассылает cbloot всем, в режиме
@@ -650,7 +806,16 @@ window.BrixGameWorld = (function () {
           e.preventDefault();
           e.stopImmediatePropagation();
         } else {
-          tryPickup();
+          /* ✅ v0.4.22: F у СУНДУКА — открыть хранилище (меню «наоборот»);
+             иначе — обычный подбор лута */
+          var chId = (window.BrixBuilding && BrixBuilding.chestAim)
+            ? BrixBuilding.chestAim() : null;
+          if (chId) {
+            e.preventDefault();
+            openChest(chId);
+          } else {
+            tryPickup();
+          }
         }
       }
       // ✅ v0.4.5: R — перезарядка револьвера (собирает 6 патронов из запаса)
@@ -667,17 +832,26 @@ window.BrixGameWorld = (function () {
     if (window.BrixLootMenu) {
       BrixLootMenu.init({
         take: function (cbId, item, amt) {
+          /* ✅ v0.4.22: сундук — своя ветка (оптимистично + chesttake) */
+          if (isChestId(cbId)) { takeChestOptimistic(cbId, item, amt || 0); return; }
           // ✅ v0.4.2: сервер 42+ понимает tid — берём ОПТИМИСТИЧНО
           // (мгновенно); старый сервер — как раньше, по cbloot
           if (BrixNet.mode === 'server' && BrixNet.serverVer >= 42) takeCrateOptimistic(cbId, item, amt || 0);
           else if (BrixNet.mode === 'server') BrixNet.sendCbTake(cbId, item, amt);
           else takeCrateLocal(cbId, item, amt);
         },
-        /* ✅ v0.4.1: перетащил свой предмет В ЯЩИК — положить на хранение */
+        /* ✅ v0.4.1: перетащил свой предмет В ЯЩИК — положить на хранение.
+           ✅ v0.4.22: в сундук — то же, плюс КЛИК по своему предмету кладёт */
         put: function (cbId, item, amt, fromIndex) {
+          if (isChestId(cbId)) { putChestLocal(cbId, item, amt, fromIndex); return; }
           putCrateLocal(cbId, item, amt, fromIndex);
         },
-        close: function () {
+        close: function (closingId) {
+          /* ✅ v0.4.22: крышка сундука закрывается — и у других игроков тоже */
+          if (closingId && isChestId(closingId)) {
+            if (window.BrixBuilding) BrixBuilding.chestLid(closingId, 0);
+            if (BrixNet.sendChestAnim) BrixNet.sendChestAnim(closingId, 0);
+          }
           // ✅ v0.3.9: controls.enabled вернёт сам tick (самовосстановление).
           //    Мышь возвращаем в игру через lockPointerSoon (авто-повтор,
           //    см. fix 0.4.5a): после Esc браузер не даёт захват сразу
@@ -701,6 +875,27 @@ window.BrixGameWorld = (function () {
       /* ✅ v0.3.8: сервер ответил на открытие ящика текущим лутом */
       BrixNet.on('cbopen', function (msg) {
         BrixLootMenu.open(msg.id, msg.loot, msg.mil ? 1 : 0);
+      });
+      /* ✅ v0.4.22 СУНДУК: сервер/другая вкладка прислала содержимое —
+         обновляем запись сундука; если ЖДЁМ открытие (F) — открываем меню */
+      BrixNet.on('chestst', function (msg) {
+        if (window.BrixBuilding) BrixBuilding.setChestCont(msg.id, msg.cont);
+        if (chestAwait && msg.id === chestAwait) {
+          chestAwait = null;
+          if (!BrixLootMenu.isOpen() && BrixLootMenu.openId() !== msg.id) {
+            BrixLootMenu.open(msg.id, msg.cont || {}, 0, 'chest');
+          } else {
+            BrixLootMenu.update(msg.id, msg.cont || {});
+          }
+          return;
+        }
+        if (BrixLootMenu.openId() === msg.id) BrixLootMenu.update(msg.id, msg.cont || {});
+      });
+      /* ✅ v0.4.22: сервер отказал в взятии из сундука — откат */
+      BrixNet.on('chestdeny', function (msg) { denyChestTake(msg); });
+      /* ✅ v0.4.22: крышка сундука открылась/закрылась у ДРУГОГО игрока */
+      BrixNet.on('chestanim', function (msg) {
+        if (window.BrixBuilding) BrixBuilding.chestLid(msg.id, !!msg.open);
       });
       /* ✅ v0.3.8: пустой ящик вернулся с новым лутом — сразу у всех */
       BrixNet.on('cbrespawn', function (msg) {
@@ -734,10 +929,18 @@ window.BrixGameWorld = (function () {
         var vol = Math.max(0, 1 - d / SND_RADIUS);
         vol *= vol;                                  // квадрат затухания
         if (vol < 0.02) return;
-        BrixSfx.play(msg.k === 'reload' ? 'revReload' : 'revShot',
+        // ✅ v0.4.19: звуки дробовика идут своими kind'ами (sgshot/sgreload)
+        // ✅ v0.4.21: звуки калаша — akshot/akreload
+        var sndMap = {
+          reload: 'revReload', sgreload: 'revReload', sgshot: 'sgShot',
+          akshot: 'akShot', akreload: 'akReload'
+        };
+        BrixSfx.play(sndMap[msg.k] || 'revShot',
           { volume: 0.9 * vol, jitter: 0.04 });
       });
       BrixNet.on('phit', onPlayerHit);
+      /* ✅ v0.4.28: остаток хп детали дома (после удара) — звук/плашка «133 / 200» */
+      BrixNet.on('bhp', onBuildHp);
       BrixNet.on('pdeath', onPlayerDeath);
       BrixNet.on('prespawn', function (msg) {
         if (msg.tid === BrixNet.id) { doRespawn(); return; }
@@ -889,6 +1092,32 @@ window.BrixGameWorld = (function () {
             }
           }
         }
+        /* ✅ v0.4.28 ЛОМАНИЕ ПОСТРОЕК: ЛКМ по детали дома — топоры/кирки
+           снимают ХП (фундамент/стена/окно/проём/потолок 200, дверь 150,
+           сундук 25). ХП — АВТОРИТЕТ СЕРВЕРА (bhit → bhp/brem);
+           в соло/вкладках — локальный урон. Проверка ДО ПВП: стена
+           честно заслоняет игрока за ней от удара */
+        if (window.BrixBuildings && (tool === 'axe' || tool === 'ironAxe' ||
+            tool === 'pickaxe' || tool === 'ironPickaxe')) {
+          var bgs = BrixBuildings.hitTargets();
+          if (bgs.length) {
+            var bhits = raycaster.intersectObjects(bgs, true);
+            if (bhits.length && bhits[0].distance <= TOOL_RANGE) {
+              var piece = BrixBuildings.findPiece(bhits[0].object);
+              if (piece) {
+                BrixSfx.play('chop1', { volume: 0.6, jitter: 0.08 });
+                if (BrixNet.mode === 'server') {
+                  BrixNet.send({ t: 'bhit', id: piece.id, tool: tool });
+                } else {
+                  var lh = BrixBuildings.localHit(piece.id, tool);
+                  if (lh && lh.dead) BrixSfx.play('chop2', { volume: 0.9 });
+                  else if (lh) onBuildHp(lh);
+                }
+                return;
+              }
+            }
+          }
+        }
         // ✅ v0.4.5 ПВП ИНСТРУМЕНТАМИ: попал лучом в ЧУЖОГО ИГРОКА —
         // железные топор/кирка 10 хп, каменные 5 хп (100 хп у игрока:
         // 10 ударов железом, 20 камнем). Револьвер сюда не доходит —
@@ -903,9 +1132,10 @@ window.BrixGameWorld = (function () {
           if (uHits.length && uHits[0].distance <= TOOL_RANGE) {
             var victim = findPid(uHits[0].object);
             if (victim) {
+              // ✅ v0.4.28: + tool — в меню смерти жертвы (как в Rust)
               BrixNet.sendPhit(victim,
                 (tool === 'ironAxe' || tool === 'ironPickaxe') ? MELEE_IRON : MELEE_STONE,
-                'melee');
+                'melee', tool);
               BrixSfx.play('metalHit', { volume: 0.5, jitter: 0.1 });
               return;
             }
@@ -1010,30 +1240,61 @@ window.BrixGameWorld = (function () {
       ds.id = 'brixDeath';
       ds.className = 'hidden';
       ds.style.cssText = 'position:fixed;inset:0;z-index:220;display:grid;' +
-        'place-items:center;background:rgba(60,8,5,0.5);';
+        'place-items:center;background:rgba(13,10,8,0.93);';
+      /* ✅ v0.4.29 МЕНЮ СМЕРТИ ТОЧНО КАК НА ФОТО (H1Z1-стиль):
+         слева СВЕРХУ — красная панель с «ВЫ УМЕРЛИ» и статистикой
+         (ПРОЖИЛ / УБИЛ / ОРУЖИЕ / ДИСТАНЦИЯ), в центре — КАРТА МИРА
+         сверху (рельеф, красный череп — место смерти, зелёные точки —
+         живые игроки), внизу — ряд кнопок возрождения (оранжевая
+         «ВОЗРОДИТЬСЯ» как MAIN и тёмная «СЛУЧАЙНОЕ МЕСТО» как
+         RANDOM RESPAWN) */
       ds.innerHTML =
-        '<div class="brix-death-card">' +
-          '<div class="title font-h">' + BrixState.t('death.title') + '</div>' +
-          '<div class="killer" id="brixDeathKiller"></div>' +
+        '<div class="brix-death-top"><div class="brix-death-title font-h">' +
+          BrixState.t('death.title') + '</div>' +
+          '<div class="drow" id="brixDthAlive"></div>' +
+          '<div class="drow" id="brixDeathKiller"></div>' +
+          '<div class="drow" id="brixDthWep"></div>' +
+          '<div class="drow" id="brixDthDist"></div>' +
+        '</div>' +
+        '<canvas id="brixDthMap" width="760" height="440"></canvas>' +
+        '<div class="brix-death-btns">' +
           '<button class="respawn font-h" id="brixRespawnBtn">' + BrixState.t('death.btn') + '</button>' +
+          '<button class="rnd font-h" id="brixRespawnRnd">' + BrixState.t('death.random') + '</button>' +
         '</div>';
       document.body.appendChild(ds);
-      var dcard = ds.querySelector('.brix-death-card');
-      if (dcard) dcard.style.cssText = 'width:100%;max-width:420px;padding:34px 36px 30px;' +
-        'text-align:center;background:rgba(12,10,8,0.94);' +
-        'border:1px solid rgba(255,255,255,0.1);box-shadow:0 20px 60px rgba(0,0,0,.65);';
-      var dtitle = ds.querySelector('.title');
-      if (dtitle) dtitle.style.cssText = 'font-size:22px;font-weight:600;letter-spacing:.2em;' +
-        'text-transform:uppercase;color:#e0685c;';
-      var dkiller = ds.querySelector('.killer');
-      if (dkiller) dkiller.style.cssText = 'margin-top:10px;font:14px/1.5 Consolas,monospace;' +
-        'color:#9a938a;min-height:1.5em;';
+      var dtop = ds.querySelector('.brix-death-top');
+      if (dtop) dtop.style.cssText = 'position:absolute;top:36px;left:36px;padding:16px 28px 18px;' +
+        'background:rgba(158,22,10,0.93);border:1px solid rgba(255,130,90,0.4);' +
+        'box-shadow:0 14px 50px rgba(0,0,0,.6);';
+      var dtitle = ds.querySelector('.brix-death-title');
+      if (dtitle) dtitle.style.cssText = 'font-size:32px;font-weight:700;letter-spacing:.2em;' +
+        'text-transform:uppercase;color:#fff;padding-bottom:10px;margin-bottom:8px;' +
+        'border-bottom:1px solid rgba(255,160,130,0.35);text-shadow:0 2px 6px rgba(0,0,0,.55);';
+      var drowCss = 'font:15px/2.0 Consolas,monospace;letter-spacing:.05em;color:#ffd9c9;min-height:1.6em;';
+      var dkiller = ds.querySelector('#brixDeathKiller');
+      if (dkiller) dkiller.style.cssText = drowCss + 'color:#fff;font-weight:700;';
+      var dmap = ds.querySelector('#brixDthMap');
+      if (dmap) dmap.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-54%);' +
+        'width:min(760px,72vw);height:auto;background:#0d1812;border:2px solid #6b5a44;' +
+        'border-radius:4px;box-shadow:0 20px 70px rgba(0,0,0,.7), inset 0 0 90px rgba(0,0,0,.35);';
       var dbtn = ds.querySelector('.respawn');
-      if (dbtn) dbtn.style.cssText = 'margin-top:22px;width:100%;padding:12px 0;' +
-        'font-size:15px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;' +
-        'background:linear-gradient(to right,#8a2f22,#cd412b);border:none;color:#fff;cursor:pointer;';
+      if (dbtn) dbtn.style.cssText = 'min-width:250px;padding:14px 30px;' +
+        'font-size:15px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;' +
+        'background:linear-gradient(180deg,#d86a1e,#a8430e);border:1px solid #ffb066;' +
+        'color:#fff;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.5);';
+      var drnd = ds.querySelector('.rnd');
+      if (drnd) drnd.style.cssText = 'min-width:250px;padding:14px 30px;' +
+        'font-size:15px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;' +
+        'background:rgba(28,24,20,0.95);border:1px solid #6b5a44;color:#e8ddc4;cursor:pointer;' +
+        'box-shadow:0 8px 24px rgba(0,0,0,.5);';
+      var dbtns = ds.querySelector('.brix-death-btns');
+      if (dbtns) dbtns.style.cssText = 'position:absolute;left:50%;bottom:5.5%;' +
+        'transform:translateX(-50%);display:flex;gap:16px;';
       combatHud.death = ds;
       combatHud.killerEl = ds.querySelector('#brixDeathKiller');
+      combatHud.aliveEl = ds.querySelector('#brixDthAlive');
+      combatHud.wepEl = ds.querySelector('#brixDthWep');
+      combatHud.distEl = ds.querySelector('#brixDthDist');
       ds.querySelector('#brixRespawnBtn').onclick = function () {
         if (window.menuAudio) menuAudio.click();
         if (BrixNet.mode === 'server') {
@@ -1041,6 +1302,13 @@ window.BrixGameWorld = (function () {
           doRespawn();             // ✅ себя оживляем сразу: сервер не шлёт
         }                          // prespawn обратно отправителю
         else doRespawn();          // вкладки/соло — сами себя оживляем
+      };
+      /* ✅ v0.4.28: СЛУЧАЙНОЕ МЕСТО — как RANDOM RESPAWN на фото */
+      ds.querySelector('#brixRespawnRnd').onclick = function () {
+        if (window.menuAudio) menuAudio.click();
+        var pt = randomSpawnPt();
+        if (BrixNet.mode === 'server') BrixNet.sendRespawn();
+        doRespawn(pt || undefined);
       };
       return combatHud;
     }
@@ -1065,35 +1333,225 @@ window.BrixGameWorld = (function () {
       });
     }
 
-    function die(killerId) {
+    /* ✅ v0.4.28: время выживания — от первого входа в мир и от каждого респавна */
+    var aliveSince = Date.now();
+
+    /** «2д 3ч 15м» для строки «ВЫЖИЛ» меню смерти */
+    function fmtAlive(ms) {
+      var s = Math.max(0, Math.floor(ms / 1000));
+      var d = Math.floor(s / 86400); s -= d * 86400;
+      var h = Math.floor(s / 3600); s -= h * 3600;
+      var m = Math.floor(s / 60); s -= m * 60;
+      var en = (window.BrixState && BrixState.data && BrixState.data.lang === 'en');
+      if (d > 0) return en ? d + 'd ' + h + 'h' : d + 'д ' + h + 'ч';
+      if (h > 0) return en ? h + 'h ' + m + 'm' : h + 'ч ' + m + 'м';
+      return en ? m + 'm ' + s + 's' : m + 'м ' + s + 'с';
+    }
+
+    /** ✅ v0.4.28: случайная точка на суше (кнопка «СЛУЧАЙНОЕ МЕСТО»).
+        Не в воде (высота суши > 3 м) и не на краю карты */
+    function randomSpawnPt() {
+      for (var i = 0; i < 40; i++) {
+        var x = (Math.random() * 2 - 1) * 1300;
+        var z = (Math.random() * 2 - 1) * 1300;
+        var h = controls._getHeight(x, z, 0);
+        if (h > 3.0) return { x: x, z: z, yaw: Math.random() * Math.PI * 2 };
+      }
+      return null;
+    }
+
+    /* ============================================================
+       ✅ v0.4.29 КАРТА МИРА НА ЭКРАНЕ СМЕРТИ (как на фото):
+       один раз рисуем рельеф по высотам (_getHeight): вода, пляж,
+       трава, камень, снег. Потом поверх — красный череп (место
+       смерти) и зелёные точки (живые игроки). Кэш — рисование
+       рельефа дорогой (~20 тысяч сэмплов), делаем один раз */
+    var deathPos = null;        // {x, z} — где я умер (для черепа)
+    var dthMapCache = null;     // canvas с рельефом
+    var MAP_EXT = 1400;         // половина стороны карты мира в метрах
+
+    function hColor(h) {
+      if (h < 2.0) return '#2c5f9e';                       // глубина
+      if (h < 3.2) return '#3d78b8';                       // мелководье
+      if (h < 4.6) return '#d9c489';                       // пляж
+      if (h < 30) {                                        // трава (градиент)
+        var t1 = (h - 4.6) / (30 - 4.6);
+        var g1 = Math.round(148 - t1 * 22);
+        var g2 = Math.round(122 - t1 * 20);
+        return 'rgb(' + Math.round(106 - t1 * 16) + ',' + g1 + ',' + Math.round(79 - t1 * 12) + ')';
+      }
+      if (h < 50) return '#8d887c';                        // камень
+      return '#e8e8e4';                                    // снег
+    }
+
+    function drawDeathTerrain(w, h) {
+      var c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      var ctx = c.getContext('2d');
+      ctx.fillStyle = '#1a2430';
+      ctx.fillRect(0, 0, w, h);
+      var cols = 190, rows = 110;
+      var cw = w / cols, ch = h / rows;
+      for (var cy = 0; cy < rows; cy++) {
+        for (var cx = 0; cx < cols; cx++) {
+          var x = -MAP_EXT + (cx + 0.5) / cols * 2 * MAP_EXT;
+          var z = -MAP_EXT + (cy + 0.5) / rows * 2 * MAP_EXT;
+          var hh = 0;
+          try { hh = controls._getHeight(x, z, 0); } catch (e0) {}
+          ctx.fillStyle = hColor(hh);
+          ctx.fillRect(Math.floor(cx * cw), Math.floor(cy * ch),
+            Math.ceil(cw), Math.ceil(ch));
+        }
+      }
+      /* лёгкая сетка-виньетка по краю — как бумажная карта */
+      var grad = ctx.createRadialGradient(w / 2, h / 2, h * 0.45, w / 2, h / 2, h * 0.95);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.45)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, w, h);
+      return c;
+    }
+
+    function drawDeathMap() {
+      var c = document.getElementById('brixDthMap');
+      if (!c || !c.getContext) return;
+      var ctx = c.getContext('2d');
+      if (!dthMapCache) dthMapCache = drawDeathTerrain(c.width, c.height);
+      ctx.clearRect(0, 0, c.width, c.height);
+      ctx.drawImage(dthMapCache, 0, 0);
+      var w = c.width, h = c.height;
+      function mx(x) { return (x + MAP_EXT) / (2 * MAP_EXT) * w; }
+      function mz(z) { return (z + MAP_EXT) / (2 * MAP_EXT) * h; }
+      /* живые игроки — зелёные точки (как на фото) */
+      try {
+        for (var rk in remotes) {
+          var r = remotes[rk];
+          if (!r || r.dead || !r.group) continue;
+          ctx.fillStyle = '#63d16a';
+          ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          ctx.arc(mx(r.group.position.x), mz(r.group.position.z), 6, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+      } catch (e1) {}
+      /* место смерти — красная метка с черепом */
+      if (deathPos) {
+        var x = mx(deathPos.x), y = mz(deathPos.z);
+        ctx.fillStyle = '#c31f10';
+        ctx.strokeStyle = '#ffd9c9';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(x, y - 1.5, 6.5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillRect(x - 4, y + 2.5, 8, 4);
+        ctx.fillStyle = '#c31f10';
+        ctx.beginPath(); ctx.arc(x - 2.6, y - 1.5, 1.7, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x + 2.6, y - 1.5, 1.7, 0, Math.PI * 2); ctx.fill();
+        ctx.fillRect(x - 2.5, y + 3.2, 1.4, 2.6);
+        ctx.fillRect(x + 1.1, y + 3.2, 1.4, 2.6);
+      }
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth = 14;
+      ctx.strokeRect(0, 0, w, h);
+    }
+
+    function die(killerId, info) {
       if (dead) return;
       dead = true;
       stopAim();
       reloading = false;
+      /* ✅ v0.4.28: кнопки меню смерти должны быть кликабельны — снимаем
+         захват мыши и отключаем управление (мертвый не ходит) */
+      try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) {}
+      controls.enabled = false;
       deathKiller = killerId || '';
+      /* ✅ v0.4.29: запоминаем где умер — красный череп на карте */
+      deathPos = { x: camera.position.x, z: camera.position.z };
       if (combatHud) {
         var nm = '';
         var ros = BrixNet.getRoster();
         for (var i = 0; i < ros.length; i++) if (ros[i].id === deathKiller) nm = ros[i].n || '';
-        combatHud.killerEl.textContent = nm
+        /* ✅ v0.4.28: статистика как в Rust — выжил / убил / оружие / дистанция */
+        if (combatHud.aliveEl) combatHud.aliveEl.textContent =
+          BrixState.t('death.alive', { t: fmtAlive(Date.now() - aliveSince) });
+        if (combatHud.killerEl) combatHud.killerEl.textContent = nm
           ? BrixState.t('death.killer', { n: nm })
           : '';
+        var w = info && info.w ? String(info.w) : '';
+        if (w && nm) {
+          if (combatHud.wepEl) combatHud.wepEl.textContent =
+            BrixState.t('death.weapon', { w: BrixState.t('wep.' + w) });
+          if (combatHud.distEl) combatHud.distEl.textContent =
+            BrixState.t('death.dist', { d: (info && info.dist) || 0 });
+        } else {
+          if (combatHud.wepEl) combatHud.wepEl.textContent = '';
+          if (combatHud.distEl) combatHud.distEl.textContent = '';
+        }
         combatHud.death.classList.remove('hidden');
+        /* ✅ v0.4.29: рисуем карту (рельеф уже кэширован после 1-го раза) */
+        try { drawDeathMap(); } catch (eDm) {}
       }
       // другие видят мою смерть (вкладки/серо-режим: сообщаем сами)
       BrixNet.send({ t: 'pdeath', tid: BrixNet.id, by: deathKiller });
       setMyHp(0);
     }
 
-    function doRespawn() {
+    function doRespawn(custom) {
       dead = false;
       setMyHp(PLAYER_MAX_HP);
       if (combatHud) combatHud.death.classList.add('hidden');
-      if (spawnPoint) {
+      /* ✅ v0.4.28: кастомная точка (СЛУЧАЙНОЕ МЕСТО) или обычный спавн */
+      if (custom && custom.x !== undefined) {
+        controls.spawnAt(custom.x, custom.z, custom.yaw || 0);
+        controls.enabled = true;
+      } else if (spawnPoint) {
         controls.spawnAt(spawnPoint.x, spawnPoint.z, spawnPoint.yaw);
         controls.enabled = true;
       }
+      aliveSince = Date.now();   // время выживания — заново
       if (window.menuAudio) menuAudio.click();
+    }
+
+    /* ============================================================
+       ✅ v0.4.28 ЛОМАНИЕ ПОСТРОЕК — фидбек: сервер прислал 'bhp'
+       (остаток хп детали). Звук+удар и всплывающая цифра «133 / 200»
+       над деталью (как полоска хп в Rust). В соло/вкладках вызывается
+       локально из hitWithTool с тем же сообщением
+       ============================================================ */
+    function onBuildHp(msg) {
+      if (!msg || !msg.id) return;
+      var pc = (window.BrixBuildings && BrixBuildings.pieceInfo(msg.id)) || null;
+      if (!pc || !pc.group) return;
+      var g = pc.group;
+      g.scale.set(1.025, 0.975, 1.025);
+      setTimeout(function () { g.scale.set(1, 1, 1); }, 130);
+      showBuildHpText(g, msg.hp, msg.max);
+    }
+
+    /** всплывающее «133 / 200» над деталью — проекция точки мира на экран */
+    function showBuildHpText(g, hp, max) {
+      if (!hudEl) return;
+      var v = new THREE.Vector3();
+      g.getWorldPosition(v);
+      v.y += 1.3;
+      v.project(camera);
+      if (v.z > 1) return;                       // деталь за спиной
+      var el = document.createElement('div');
+      el.textContent = Math.max(0, Math.round(hp)) + ' / ' + max;
+      el.style.cssText = 'position:absolute;z-index:8;pointer-events:none;' +
+        'font:700 14px Oswald,sans-serif;letter-spacing:.08em;color:#ffd9a0;' +
+        'text-shadow:0 1px 3px rgba(0,0,0,.9);' +
+        'left:' + Math.round((v.x * 0.5 + 0.5) * window.innerWidth - 32) + 'px;' +
+        'top:' + Math.round((-v.y * 0.5 + 0.5) * window.innerHeight - 10) + 'px;' +
+        'transition:opacity .85s ease,margin-top .85s ease;';
+      hudEl.appendChild(el);
+      requestAnimationFrame(function () {
+        el.style.opacity = '0';
+        el.style.marginTop = '-26px';
+      });
+      setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 900);
     }
 
     /** текущий разброс пули (рад): стой/иди/беги/прыгай — крестик честный */
@@ -1167,12 +1625,20 @@ window.BrixGameWorld = (function () {
       return null;
     }
 
-    /* ---------- ЛКМ с револьвером: ВЫСТРЕЛ ---------- */
+    /* ---------- ЛКМ с огнестрелом: ВЫСТРЕЛ (револьвер — пуля,
+       дробовик — 8 дробин конусом, калаш — автоогонь, v0.4.21) ---------- */
     var _dirV = new THREE.Vector3();
+    var mouseDown = false;   // ✅ v0.4.21: ЛКМ зажата — автоогонь калаша
+    /* ✅ v0.4.22: последнее состояние движения — НА БЕГУ СТРЕЛЯТЬ НЕЛЬЗЯ
+       (пока оружие прижато к груди; прыжок в спринте тоже блокирует:
+       блокируем по moving+sprint, как hands.setRunning, но и в воздухе) */
+    var lastMove = { moving: false, sprint: false, onGround: true };
     function tryShoot() {
       if (dead || reloading || BrixGame.state.phase !== 'playing') return;
-      var s = revSlot();
-      if (!s) { hitWithTool(); return; }          // не револьвер — обычный удар
+      if (lastMove.moving && lastMove.sprint) return;
+      var rs = revSlot(), sgs = sgSlot(), rfs = rifleSlot();
+      var s = rs || sgs || rfs;
+      if (!s) { hitWithTool(); return; }          // не огнестрел — обычный удар
       if (shootCd > 0) return;
       if (!s.mag) {
         if (!tryShoot._hint || performance.now() - tryShoot._hint > 1500) {
@@ -1181,71 +1647,132 @@ window.BrixGameWorld = (function () {
         }
         return;
       }
-      shootCd = SHOOT_CD;
+      var isSg = !!sgs, isAk = !!rfs;
+      shootCd = isSg ? SG_SHOOT_CD : isAk ? AK_FIRE_CD : SHOOT_CD;
       s.mag--;
       inventory.renderAll();                      // бейдж обоймы на иконке
       hands.playShoot();
-      BrixSfx.play('revShot', { volume: 0.9, jitter: 0.04 });
+      if (isAk) {
+        BrixSfx.play('akShot', { volume: 1.0, jitter: 0.02 });
+        // подброс камеры + всплеск разброса (меньше дробовика, но серия)
+        recoilPitch += 0.016;
+        crossKick = Math.min(crossKick + 0.010, 0.06);
+      } else if (isSg) {
+        BrixSfx.play('sgShot', { volume: 1.0, jitter: 0.02 });
+        // дробовик бьёт заметно сильнее: подброс камеры + разброс
+        recoilPitch += 0.032;
+        crossKick = Math.min(crossKick + 0.045, 0.09);
+      } else {
+        BrixSfx.play('revShot', { volume: 0.9, jitter: 0.04 });
+        // подброс камеры + всплеск разброса
+        recoilPitch += 0.011;
+        crossKick = Math.min(crossKick + 0.012, 0.05);
+      }
       // звук выстрела слышат другие (по дистанции)
-      BrixNet.sendSnd('shot', controls.position);
-      // подброс камеры + всплеск разброса
-      recoilPitch += 0.011;
-      crossKick = Math.min(crossKick + 0.012, 0.05);
+      BrixNet.sendSnd(isSg ? 'sgshot' : isAk ? 'akshot' : 'shot', controls.position);
 
       // луч с разбросом: чужие игроки → земля/прочее
-      raycaster.set(camera.position, sampleSpreadDir(camera.getWorldDirection(_dirV), currentSpread()));
-      raycaster.far = SHOOT_RANGE;
-      // ✅ v0.4.5: у чужих игроков есть СПРАЙТЫ (ник, полоска хп) —
-      // без raycaster.camera three.js кидает исключение на спрайтах
       raycaster.camera = camera;
       var pids = [];
       for (var rk in remotes) {
         if (!remotes[rk].dead) pids.push(remotes[rk].group);
       }
-      var end = null, victimId = null, endD = Infinity;
-      if (pids.length) {
-        var ph = raycaster.intersectObjects(pids, true);
-        if (ph.length) {
-          victimId = findPid(ph[0].object);
-          end = ph[0].point;
-          endD = camera.position.distanceTo(end);
+      var fwd = camera.getWorldDirection(_dirV);
+
+      if (!isSg) {
+        /* — ПУЛЯ револьвера/калаша (одиночная, как в v0.4.5) — */
+        raycaster.set(camera.position, sampleSpreadDir(fwd, currentSpread()));
+        raycaster.far = SHOOT_RANGE;
+        var end = null, victimId = null, endD = Infinity;
+        if (pids.length) {
+          var ph = raycaster.intersectObjects(pids, true);
+          if (ph.length) {
+            victimId = findPid(ph[0].object);
+            end = ph[0].point;
+            endD = camera.position.distanceTo(end);
+          }
         }
-      }
-      /* ✅ v0.4.10: ПОСТРОЙКИ встречают пулю — через стену/потолок/дверь
-         она не летит, а через проём ОКНА и открытый проход двери летит
-         (в проёме просто нет меша). Если постройка ближе жертвы —
-         пуля втыкается в неё, трассер до неё же */
-      var blk = (window.BrixBuilding && BrixBuilding.bulletBlock)
-        ? BrixBuilding.bulletBlock(camera.position, raycaster.ray.direction, SHOOT_RANGE)
-        : null;
-      if (blk && blk.d < endD) {
-        victimId = null;
-        end = blk.p;
-        endD = blk.d;
-      }
-      if (!end && terrain) {
-        var th = raycaster.intersectObject(terrain, false);
-        if (th.length) {
-          var td = camera.position.distanceTo(th[0].point);
-          end = (blk && blk.d < td) ? blk.p : th[0].point;
+        /* ✅ v0.4.10: ПОСТРОЙКИ встречают пулю — через стену/потолок/дверь
+           она не летит, а через проём ОКНА и открытый проход двери летит
+           (в проёме просто нет меша). Если постройка ближе жертвы —
+           пуля втыкается в неё, трассер до неё же */
+        var blk = (window.BrixBuilding && BrixBuilding.bulletBlock)
+          ? BrixBuilding.bulletBlock(camera.position, raycaster.ray.direction, SHOOT_RANGE)
+          : null;
+        if (blk && blk.d < endD) {
+          victimId = null;
+          end = blk.p;
+          endD = blk.d;
         }
-      }
-      if (!end) {
-        end = blk ? blk.p
-          : camera.position.clone()
-              .addScaledVector(raycaster.ray.direction, SHOOT_RANGE);
-      }
-      var mz = muzzleWorldPos(new THREE.Vector3());
-      addTracer(mz, end);
-      if (victimId) {
-        BrixNet.sendPhit(victimId, REV_DMG, 'shot');   // сервер решает ХП
+        if (!end && terrain) {
+          var th = raycaster.intersectObject(terrain, false);
+          if (th.length) {
+            var td = camera.position.distanceTo(th[0].point);
+            end = (blk && blk.d < td) ? blk.p : th[0].point;
+          }
+        }
+        if (!end) {
+          end = blk ? blk.p
+            : camera.position.clone()
+                .addScaledVector(raycaster.ray.direction, SHOOT_RANGE);
+        }
+        var mz = muzzleWorldPos(new THREE.Vector3());
+        addTracer(mz, end);
+        if (victimId) {
+          // ✅ v0.4.21: у калаша свой урон АК_DMG (у револьвера REV_DMG)
+          // ✅ v0.4.28: + id оружия — в меню смерти жертвы (как в Rust)
+          BrixNet.sendPhit(victimId, isAk ? AK_DMG : REV_DMG, 'shot',
+            isAk ? 'ak' : 'revolver');   // сервер решает ХП
+        }
+      } else {
+        /* — ДРОБЬ дробовика (v0.4.19): 8 дробин конусом SG_SPREAD.
+           Дорогое (терраин/постройки) считаем ОДИН раз по центру —
+           он задаёт дальность дроби; каждая дробина дешево ищет
+           ЖЕРТВУ (меши чужих игроков). Урон копится по жертве и
+           уходит ОДНИМ сообщением — сервер не спамится */
+        var blkS = (window.BrixBuilding && BrixBuilding.bulletBlock)
+          ? BrixBuilding.bulletBlock(camera.position, fwd, SHOOT_RANGE)
+          : null;
+        var capD = blkS ? blkS.d : SHOOT_RANGE;
+        if (terrain) {
+          raycaster.set(camera.position, fwd);
+          raycaster.far = SHOOT_RANGE;
+          var thS = raycaster.intersectObject(terrain, false);
+          if (thS.length) {
+            var tdS = camera.position.distanceTo(thS[0].point);
+            if (tdS < capD) capD = tdS;
+          }
+        }
+        var hits = {};
+        var mzS = muzzleWorldPos(new THREE.Vector3());
+        var pelletSpread = SG_SPREAD + currentSpread() * 0.35;
+        for (var pi = 0; pi < SG_PELLETS; pi++) {
+          var pdir = sampleSpreadDir(fwd, pelletSpread);
+          raycaster.set(camera.position, pdir);
+          raycaster.far = capD;
+          var vp = null, vpid = null;
+          if (pids.length) {
+            var phS = raycaster.intersectObjects(pids, true);
+            if (phS.length) {
+              vpid = findPid(phS[0].object);
+              vp = phS[0].point;
+              if (vpid) hits[vpid] = (hits[vpid] || 0) + SG_PELLET_DMG;
+            }
+          }
+          var ep = vp || camera.position.clone().addScaledVector(pdir, capD);
+          if (pi < 4) addTracer(mzS, ep);   // трассеры только у половины дробин — читаемо и не дорого
+        }
+        for (var hv in hits) {
+          // ✅ v0.4.28: + 'shotgun' — в меню смерти жертвы (как в Rust)
+          BrixNet.sendPhit(hv, hits[hv], 'shot', 'shotgun');   // сервер решает ХП
+        }
       }
     }
 
     /* ---------- ПКМ: прицеливание ---------- */
     function startAim() {
       if (dead || reloading || BrixGame.state.phase !== 'playing') return;
-      if (!revSlot() || !lockedRef) return;
+      if (!gunSlot() || !lockedRef) return;
       aiming = true;
       hands.setAim(true);
     }
@@ -1254,13 +1781,22 @@ window.BrixGameWorld = (function () {
       hands.setAim(false);
     }
 
-    /* ---------- R: перезарядка ---------- */
+    /* ---------- R: перезарядка (револьвер — патроны, дробовик —
+       патроны дробовика, v0.4.19; калаш — винтовочные, v0.4.21) ---------- */
     function tryReload() {
       if (dead || reloading || BrixGame.state.phase !== 'playing') return;
       if (isInvOpen() || isLootOpen() || isMiniOpen()) return;
-      var s = revSlot();
-      if (!s || s.mag >= MAG_SIZE) return;
-      if (!inventory.countItem('ammo')) {
+      var s = gunSlot();
+      if (!s || s.mag >= gunMagSize()) return;
+      /* ✅ fix v0.4.20: дробовик, взятый из админ-панели/ящика до этого фикса,
+         приходил в слот БЕЗ поля mag (undefined) — перезарядка считала
+         «обойма − undefined = NaN» и патроны НЕ заряжались, хотя запас
+         был полный. Нормализуем mag на месте — старые дробовики чинятся
+         сразу, без перезайма предмета */
+      if (typeof s.mag !== 'number' || isNaN(s.mag)) s.mag = 0;
+      if (s.mag >= gunMagSize()) return;
+      var ammoId = gunAmmoId();
+      if (!inventory.countItem(ammoId)) {
         BrixHud.toast(BrixState.t('hint.noAmmo'));
         return;
       }
@@ -1268,16 +1804,23 @@ window.BrixGameWorld = (function () {
       reloadT = 0;
       stopAim();
       hands.playReload();                       // оружие опускается вниз
-      BrixSfx.play('revReload', { volume: 0.85, jitter: 0.02 });
-      BrixNet.sendSnd('reload', controls.position);  // звук слышат другие
+      // ✅ v0.4.21: у КАЛАША свой звук перезарядки (файл от пользователя)
+      var rlSnd = rifleSlot() ? 'akReload' : 'revReload';
+      BrixSfx.play(rlSnd, { volume: 0.85, jitter: 0.02 });
+      BrixNet.sendSnd(rifleSlot() ? 'akreload' : sgSlot() ? 'sgreload' : 'reload',
+        controls.position);                     // звук слышат другие
     }
 
     /* ---------- ПвП: ХП, попадания, смерть, возрождение ---------- */
     function onPlayerHit(msg) {
       if (msg.tid === BrixNet.id) {
-        /* ✅ v0.4.15: у админа БЕСКОНЕЧНОЕ ХП — урон не применяется
-           (сервер и так не снижает хп админу — это защита режима вкладок) */
-        if (window.BrixAdmin && BrixAdmin.god) {
+        /* ✅ v0.4.23: локальный god учитываем ТОЛЬКО во «вкладках» (без
+           сервера). В серверном режиме ХП — АВТОРИТЕТ СЕРВЕРА: сервер сам
+           не уронит игрока с включённым тумблером бессмертия (op:'god').
+           Раньше клиент с ОТКЛОНЁННЫМ сервером бессмертием (старый
+           server.js / нет админа) игнорировал урон — полоска ХП висела
+           полной, и казалось, что «игроков нельзя убить» */
+        if (BrixNet.mode !== 'server' && window.BrixAdmin && BrixAdmin.god) {
           setMyHp(PLAYER_MAX_HP);
           return;
         }
@@ -1286,7 +1829,8 @@ window.BrixGameWorld = (function () {
           ? msg.hp : Math.max(0, myHp - (msg.dmg || 0));
         setMyHp(hp);
         flashDamage();
-        if (hp <= 0) die(msg.by);
+        /* ✅ v0.4.28: в phit теперь и оружие, и дистанция — для меню смерти */
+        if (hp <= 0) die(msg.by, msg);
         return;
       }
       // попали в ЧУЖОГО — полоска хп над его головой
@@ -1294,7 +1838,7 @@ window.BrixGameWorld = (function () {
       if (rp) rp.setHp(msg.hp !== undefined && msg.hp !== null ? msg.hp : Math.max(0, rp.hp - (msg.dmg || 0)));
     }
     function onPlayerDeath(msg) {
-      if (msg.tid === BrixNet.id) { if (!dead) die(msg.by); return; }
+      if (msg.tid === BrixNet.id) { if (!dead) die(msg.by, msg); return; }
       var rp = remotes[msg.tid];
       if (rp) rp.die();
       // небольшой килфид
@@ -1310,7 +1854,7 @@ window.BrixGameWorld = (function () {
     /* ---------- крестик: обновление КАЖДЫЙ кадр ---------- */
     function updateCrosshair() {
       if (!combatHud) return;
-      var s = revSlot();
+      var s = gunSlot();
       var selItem = inventory.getSelectedItem();
       var holding = s || (selItem && selItem.tool);
       if (!holding || dead || BrixGame.state.phase !== 'playing' ||
@@ -1339,9 +1883,9 @@ window.BrixGameWorld = (function () {
         });
         combatHud.dot.style.opacity = aiming ? 0.45 : 0.95;
         combatHud.cross.style.opacity = aiming ? 0.6 : 1;
-        // счёт: обойма | запас
+        // счёт: обойма | запас (у дробовика — свои патроны, v0.4.19)
         combatHud.mag.style.display = 'block';
-        combatHud.mag.textContent = (s.mag || 0) + ' | ' + inventory.countItem('ammo');
+        combatHud.mag.textContent = (s.mag || 0) + ' | ' + inventory.countItem(gunAmmoId());
         combatHud.mag.classList.toggle('empty', !s.mag);
         combatHud.mag.style.color = s.mag ? '#f2ead6' : '#e0685c';  // fix 0.4.5a (стиль и без css)
       } else {
@@ -1359,6 +1903,9 @@ window.BrixGameWorld = (function () {
     }
 
     function tickCombat(dt) {
+      // ✅ v0.4.21 АВТООГОНЬ КАЛАША: ЛКМ зажата + калаш в руках → стреляем
+      // каждый тик, кулдаун AK_FIRE_CD (0.10 с) не даёт спамить
+      if (mouseDown && rifleSlot()) tryShoot();
       if (shootCd > 0) shootCd = Math.max(0, shootCd - dt);
       if (crossKick > 0) crossKick = Math.max(0, crossKick - dt * 0.05);
       // подброс камеры плавно возвращается
@@ -1370,14 +1917,19 @@ window.BrixGameWorld = (function () {
       // перезарядка: таймер → заправляем обойму из запаса
       if (reloading) {
         reloadT += dt;
-        if (reloadT >= RELOAD_DUR) {
+        // ✅ v0.4.19: у дробовика перезарядка дольше (SG_RELOAD_DUR)
+        // ✅ v0.4.21: у калаша ещё дольше (AK_RELOAD_DUR = звук 3.4 с)
+        var relDurLoc = sgSlot() ? SG_RELOAD_DUR : rifleSlot() ? AK_RELOAD_DUR : RELOAD_DUR;
+        if (reloadT >= relDurLoc) {
           reloading = false;
-          var s = revSlot();
-          if (s && s.mag < MAG_SIZE) {
-            var have = inventory.countItem('ammo');
-            var need = Math.min(MAG_SIZE - s.mag, have);
+          var s = gunSlot();
+          // ✅ fix v0.4.20: страховка от mag = undefined/NaN (старые слоты огнестрела)
+          if (s && (typeof s.mag !== 'number' || isNaN(s.mag))) s.mag = 0;
+          if (s && s.mag < gunMagSize()) {
+            var have = inventory.countItem(gunAmmoId());
+            var need = Math.min(gunMagSize() - s.mag, have);
             if (need > 0) {
-              inventory.removeCountByItem('ammo', need);
+              inventory.removeCountByItem(gunAmmoId(), need);
               s.mag += need;
               inventory.renderAll();
             }
@@ -1404,14 +1956,19 @@ window.BrixGameWorld = (function () {
           return;
         }
         // ✅ v0.4.5: револьвер в руках — стреляем, иначе машем инструментом
-        if (revSlot()) tryShoot();
+        // ✅ v0.4.19: дробовик тоже стреляет; ✅ v0.4.21: калаш — автоогонь:
+        // первый выстрел сразу, дальше стреляет тик при зажатой ЛКМ
+        mouseDown = true;
+        if (revSlot() || sgSlot() || rifleSlot()) tryShoot();
         else hitWithTool();
       } else if (e.button === 2) {
         startAim();      // ПКМ — прицеливание
       }
     };
-    // ПКМ отпустили (может быть и вне canvas) — прицел плавно опускаем
+    // ПКМ отпустили (может быть и вне canvas) — прицел плавно опускаем;
+    // ЛКМ отпустили — автоогонь калаша прекращается
     var onMouseUp = function (e) {
+      if (e.button === 0) mouseDown = false;
       if (e.button === 2) stopAim();
     };
     renderer.domElement.addEventListener('mousedown', onMouseDown);
@@ -1590,7 +2147,7 @@ window.BrixGameWorld = (function () {
           // РОСТЕР: создаём ВСЕХ игроков, которые уже были в мире
           (msg.players || []).forEach(function (p) {
             var rp = ensureRemote(p.id, p.n);
-            if (p.s) rp.update(0, { x: p.s.x, y: p.s.y, z: p.s.z, yaw: p.s.yaw, a: p.s.a, tool: p.s.tool, ph: p.s.ph || 0 });
+            if (p.s) rp.update(0, { x: p.s.x, y: p.s.y, z: p.s.z, yaw: p.s.yaw, a: p.s.a, tool: p.s.tool, ph: p.s.ph || 0, c: p.s.c || 0 });
             // ✅ v0.4.5: здоровье игрока (полоска над головой)
             if (p.hp !== undefined && p.hp !== null) rp.setHp(p.hp);
           });
@@ -1669,7 +2226,7 @@ window.BrixGameWorld = (function () {
           var rp = ensureRemote(msg.id, msg.n);
           // ✅ v0.4.5: возрождение — игрок снова шлёт состояние после смерти
           if (rp.dead) rp.respawn();
-          rp.update(0, { x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw, a: msg.a, tool: msg.tool, ph: msg.ph || 0 });
+          rp.update(0, { x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw, a: msg.a, tool: msg.tool, ph: msg.ph || 0, c: msg.c || 0 });
         });
         BrixNet.on('hit', applyRemoteHit);
         BrixNet.on('worldReq', function (toId) {
@@ -1773,14 +2330,22 @@ window.BrixGameWorld = (function () {
           }
           var fwdH = new THREE.Vector3();
           camera.getWorldDirection(fwdH);
-          var pick = BrixProps.nearestPickup(controls.position, 3, fwdH);
-          if (pick) {
+          /* ✅ v0.4.22: подсказка у сундука — приоритет над ящиками */
+          var chAim = (window.BrixBuilding && BrixBuilding.chestAim)
+            ? BrixBuilding.chestAim() : null;
+          if (chAim) {
             hintEl.style.display = 'block';
-            hintEl.textContent = pick.kind === 'cb'
-              ? '[F] — ' + BrixState.t('hint.openCrate')
-              : '[F] — ' + BrixState.t('hint.pickup', { item: BrixState.t('item.' + pick.item) });
+            hintEl.textContent = '[F] — ' + BrixState.t('hint.openChest');
           } else {
-            hintEl.style.display = 'none';
+            var pick = BrixProps.nearestPickup(controls.position, 3, fwdH);
+            if (pick) {
+              hintEl.style.display = 'block';
+              hintEl.textContent = pick.kind === 'cb'
+                ? '[F] — ' + BrixState.t('hint.openCrate')
+                : '[F] — ' + BrixState.t('hint.pickup', { item: BrixState.t('item.' + pick.item) });
+            } else {
+              hintEl.style.display = 'none';
+            }
           }
         }, 250);
 
@@ -1790,6 +2355,11 @@ window.BrixGameWorld = (function () {
         // ✅ v0.2.9: коллайдеры деревьев и рудных жил (стволы и камни
         // больше не проходимы насквозь)
         if (controls.setColliders && decor.colliders) controls.setColliders(decor.colliders);
+        /* ✅ v0.4.24 маяк: AABB (ступени/выступы/стены) — отдельным списком,
+           цилиндр башни уже в decor.colliders */
+        if (controls.addBoxColliders && decor.lighthouseBoxes) {
+          controls.addBoxColliders(decor.lighthouseBoxes);
+        }
 
         /* ✅ v0.4.6 СТРОИТЕЛЬСТВО: система дома (фундамент/стена/потолок).
            Инициализация ПОСЛЕ террейна и декора; коллайдеры стен и палуб
@@ -1899,6 +2469,18 @@ window.BrixGameWorld = (function () {
           });
         }
 
+        /* ✅ v0.4.25 СКИНЫ: смена скина — перерисовать иконки в инвентаре
+           и наложить/снять обёртку на модель в руках (если кирка выбрана) */
+        if (window.BrixWeaponSkins) {
+          BrixWeaponSkins.on(function () {
+            try { inventory.renderForSkin(); } catch (e) {}
+            if (hands && hands.applySkin) {
+              hands.applySkin(hands.currentWeapon === 'ironPickaxe'
+                ? BrixWeaponSkins.wrapFor('ironPickaxe') : null);
+            }
+          });
+        }
+
         /* цикл рендера */
         var clock = new THREE.Clock();
         var loop = function () {
@@ -1929,11 +2511,17 @@ window.BrixGameWorld = (function () {
 
           // рука от 1-го лица: ходьба/бег/дыхание/удар/выстрел/перезарядка
           var mv = controls.getMoveState();
+          lastMove = mv;   // ✅ v0.4.22: для запрета стрельбы на бегу
+          // ✅ v0.4.21: БЕГ — автомат прижимается к груди (setRunning)
+          hands.setRunning(!!(mv.moving && mv.sprint && mv.onGround));
           hands.update(dt, { speed: mv.moving ? (mv.sprint ? 10.5 : 6) : 0, onGround: mv.onGround, sprint: mv.sprint });
 
           // ✅ v0.4.5: прицеливание плавно приближает камеру (72° → 56°)
+          // ✅ v0.4.21: у калаша прицел слабее по миру (камера рук тоже сужает FOV)
           var aimP = hands.aimProgress ? hands.aimProgress() : 0;
-          var fovTarget = 72 - 16 * aimP;
+          var akAim = !!(rifleSlot() && hands.aimProgress);
+          if (akAim) aimP = Math.max(aimP, (hands._ads || 0));
+          var fovTarget = 72 - (rifleSlot() ? 13 : 16) * aimP;
           if (Math.abs(camera.fov - fovTarget) > 0.05) {
             camera.fov = fovTarget;
             camera.updateProjectionMatrix();
@@ -1959,8 +2547,16 @@ window.BrixGameWorld = (function () {
             // анимация для других: перезарядка/выстрел/удар/прыжок/бег/покой
             var anim2 = 'idle';
             var ph2 = 0;
-            if (reloading) { anim2 = 'reload'; ph2 = reloadT / RELOAD_DUR; }
-            else if (shootCd > 0) { anim2 = 'shoot'; ph2 = 1 - shootCd / SHOOT_CD; }
+            // ✅ v0.4.19: у дробовика свои кулдауны (фаза чужой анимации честная)
+            // ✅ v0.4.21: у калаша — свои (автоогонь 0.10 с, перезарядка 3.4 с)
+            var isSgSel = !!(sel2 && (sel2.tool === 'shotgun' ||
+              (sel2.item && sel2.item.tool === 'shotgun')));
+            var isAkSel = !!(sel2 && (sel2.tool === 'rifle' ||
+              (sel2.item && sel2.item.tool === 'rifle')));
+            var relDur = isSgSel ? SG_RELOAD_DUR : isAkSel ? AK_RELOAD_DUR : RELOAD_DUR;
+            var shotCd = isSgSel ? SG_SHOOT_CD : isAkSel ? AK_FIRE_CD : SHOOT_CD;
+            if (reloading) { anim2 = 'reload'; ph2 = reloadT / relDur; }
+            else if (shootCd > 0) { anim2 = 'shoot'; ph2 = 1 - shootCd / shotCd; }
             else if (toolCooldown > 0) { anim2 = lastSwingKind; ph2 = 1 - toolCooldown / TOOL_ANIM_DURATION; }
             else if (!mv2.onGround) anim2 = 'jump';
             else if (mv2.moving) anim2 = 'run';
@@ -1973,6 +2569,8 @@ window.BrixGameWorld = (function () {
               a: anim2,
               tool: tool2,
               ph: +ph2.toFixed(2),
+              /* ✅ v0.4.28: присед едет в состоянии — чужие видят присевшего */
+              c: controls.isCrouched ? (controls.isCrouched() ? 1 : 0) : 0,
               n: BrixNet.NAME
             });
           }
@@ -2040,6 +2638,8 @@ window.BrixGameWorld = (function () {
       // ✅ v0.4.15: панель разработчика закрывается вместе с миром
       // (сервер заново подтвердит админа при следующем входе)
       if (window.BrixAdmin) BrixAdmin.shutdown();
+      // ✅ v0.4.25: крафт-панель (Q) закрывается вместе с миром
+      if (window.BrixCraft) BrixCraft.shutdown();
       // ✅ v0.4.6: система строительства выключается вместе с миром
       if (window.BrixBuilding) BrixBuilding.shutdown();
       window.removeEventListener('resize', onResize);
