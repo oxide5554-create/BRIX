@@ -390,6 +390,11 @@ window.BrixMiniMenu = (function () {
       }
     }
 
+    /* ✅ v0.4.38 ДОРОГА: маска единственной грунтовой дороги (BrixRoad) —
+       на карте она видна КАК ПРОСТО ПРОРИСОВАННАЯ ЛИНИЯ, теми же
+       пикселями, что горы и земля (не отдельный слой поверх) */
+    var roadMask = window.BrixRoad ? BrixRoad.mapMask(MAP_PX, HALF) : null;
+
     // 2) цвета: суша — colorAt мира, вода — глубина, всё с hillshade
     var col = new THREE.Color();
     var L = new THREE.Vector3(-0.45, 0.62, -0.4).normalize();
@@ -425,6 +430,14 @@ window.BrixMiniMenu = (function () {
           r = col.r * 255 * light;
           g = col.g * 255 * light;
           b = col.b * 255 * light;
+          /* ✅ v0.4.38: линия дороги — та же земля (0x85734d), с тем же
+             hillshade, поверх цвета суши по маске BrixRoad */
+          if (roadMask && roadMask[idx] > 0) {
+            var rk = roadMask[idx] * 0.85;
+            r = r * (1 - rk) + 0x85 * light * rk;
+            g = g * (1 - rk) + 0x73 * light * rk;
+            b = b * (1 - rk) + 0x4d * light * rk;
+          }
         }
         var o = idx * 4;
         data[o] = Math.max(0, Math.min(255, r));

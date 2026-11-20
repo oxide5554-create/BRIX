@@ -35,16 +35,20 @@ window.BrixItems = {
     icon: BrixAx('assets/icons/iron_axe.png'), stackable: false, tool: 'ironAxe'
   },
   /* ✅ v0.4.5 РЕВОЛЬВЕР (модель пользователя colt_detective_gun.glb):
-     стреляет патронами, обойма 6, урон 20 (5 выстрелов = убийство);
-     в слоте показывает остаток обоймы (0–6) — slot.mag */
+     стреляет патронами, обойма 6; ✅ v0.4.40 урон: В ГОЛОВУ 18, в тело 9
+     (таблица игрока: тело = голова / 2); в слоте показывает остаток
+     обоймы (0–6) — slot.mag */
   revolver: {
     id: 'revolver', name: 'Револьвер', nameEn: 'Revolver',
     icon: BrixAx('assets/icons/revolver.png'), stackable: false, tool: 'revolver'
   },
   /* ✅ v0.4.19 ДРОБОВИК (модель shotgun.glb из репозитория
      oxide5554-create/-glm, сконвертирована в GLB с текстурами):
-     стреляет ДРОБЬЮ — 8 дробин за выстрел, обойма 2, урон 12 за дробину;
-     в слоте показывает остаток (0–2) — slot.mag, как у револьвера */
+     стреляет ДРОБЬЮ — 8 дробин за выстрел, обойма 2;
+     ✅ v0.4.40 урон ПО ДИСТАНЦИИ: в упор (≤10 м) 13 за дробину в обе зоны
+     — весь заряд 104, СРАЗУ УБИВАЕТ; средняя (10–28 м) — 4.5 в голову /
+     2.25 в тело за дробину; далеко (28–45 м) — по 1.25; дальше 45 м дробь
+     НЕ ДОСТАЁТ. В слоте показывает остаток (0–2) — slot.mag, как у револьвера */
   shotgun: {
     id: 'shotgun', name: 'Дробовик', nameEn: 'Shotgun',
     icon: BrixAx('assets/icons/shotgun.png'), stackable: false, tool: 'shotgun'
@@ -56,8 +60,8 @@ window.BrixItems = {
   },
   /* ✅ v0.4.21 КАЛАШ (модель ak47.glb из репозитория -glm, хват/руки/прицел
      как там): стреляет ОДИНОЧНЫМИ с автоогнем при зажатой ЛКМ (0.10 с между
-     выстрелами, 600 в/мин), обойма 30, урон 20; в слоте показывает остаток
-     (0–30) — slot.mag, как у револьвера/дробовика */
+     выстрелами, 600 в/мин), обойма 30; ✅ v0.4.40 урон: В ГОЛОВУ 33,
+     в тело 17; в слоте показывает остаток (0–30) — slot.mag, как у револьвера/дробовика */
   rifleAk: {
     id: 'rifleAk', name: 'Калаш', nameEn: 'AK Rifle',
     icon: BrixAx('assets/icons/rifle_ak.png'), stackable: false, tool: 'rifle'
@@ -66,6 +70,45 @@ window.BrixItems = {
   rifleBullet: {
     id: 'rifleBullet', name: 'Патрон калаша', nameEn: 'Rifle Bullet',
     icon: BrixAx('assets/icons/rifle_bullet.png'), stackable: true, stack: 128
+  },
+  /* ✅ v0.4.35 ТОМПСОН (пистолет-пулемёт, модель пользователя
+     thompson_submachine_gun-_luis_novoa.glb): держится КАК КАЛАШ, но
+     СКОРОСТРЕЛЬНОСТЬ БОЛЬШЕ (800 в/мин против 600) и УРОН МЕНЬШЕ
+     (12 против 20); обойма 30; патроны — те же винтовочные (rifleBullet);
+     в слоте показывает остаток (0–30) — slot.mag, как у калаша */
+  thompson: {
+    id: 'thompson', name: 'Томпсон', nameEn: 'Thompson',
+    icon: BrixAx('assets/icons/thompson.png'), stackable: false, tool: 'smg'
+  },
+  /* ✅ v0.4.36 РЕВОЛЬВЕР-КАРАБИН 3× (снайперский, модель пользователя
+     crafted_revolver_carabine.glb): револьвер со встроенной оптикой —
+     ПКМ открывает прицел 3× с хорошим приближением и суперточностью;
+     урон 45 (3 выстрела = убийство), барабан 6, кулдаун 0.9 с;
+     хват/звук как у револьвера (звук чуть тяжелее); в слоте показывает
+     остаток барабана (0–6) — slot.mag, как у револьвера */
+  rev3x: {
+    id: 'rev3x', name: 'Револьвер-карабин 3×', nameEn: 'Scoped Revolver 3×',
+    icon: BrixAx('assets/icons/revolver3x.png'), stackable: false, tool: 'rev3x'
+  },
+  /* ✅ v0.4.40 БУЛАВА (модель пользователя rusted_mace_-_fantasy_weapon.glb
+     → assets/models/mace.glb): тяжёлое оружие ближнего боя — ДОЛГИЙ замах
+     (~1.2 с до удара) но ОГРОМНЫЙ урон: в голову 97 (почти всегда насмерть),
+     в тело 49; по постройкам — 2 хп за удар; бочка ломается с одного удара;
+     держится как топор. Иконка — рендер самой модели (мэйкскрин) */
+  mace: {
+    id: 'mace', name: 'Булава', nameEn: 'Mace',
+    icon: BrixAx('assets/icons/mace.png'), stackable: false, tool: 'mace'
+  },
+  /* ✅ v0.4.41 С4 (модель пользователя C4.glb → assets/models/c4.glb):
+     взрывчатка. В руках — ПО ЦЕНТРУ, обе руки держат блок ЗА БОКА
+     (полностью заняты). ЛКМ — бросок с физикой: летит по дуге,
+     прилипает к земле/стенам/потолку, 15 «тыков» (пищит всё ТИШЕ,
+   «писклявее» и БЫСТРЕЕ с каждым тыком), после 15-го — ВЗРЫВ:
+     постройки в радиусе −400 хп за удар, игроки в радиусе — насмерть.
+     Крафт: металлолом 20 + метал 40 + сера 15. Иконка — рендер модели */
+  c4: {
+    id: 'c4', name: 'С4', nameEn: 'C4',
+    icon: BrixAx('assets/icons/c4.png'), stackable: false, tool: 'c4'
   },
   /* ✅ v0.4.7 ПЛАН СТРОИТЕЛЯ — живёт В ИНВЕНТАРЕ (не в хотбаре):
      открой инвентарь (E) и КЛИКНИ по плану — он в руках (синий ватман),
@@ -327,7 +370,11 @@ window.BrixInventory = (function () {
              БЕЗ mag — перезарядка считала «2 − undefined = NaN» и обойма
              не заполнялась, сколько патронов ни было в запасе */
           this.slots[j] = { item: item, count: put };
-          if (item.tool === 'revolver' || item.tool === 'shotgun' || item.tool === 'rifle') this.slots[j].mag = 0;
+          /* ✅ v0.4.35: томпсон (tool 'smg') тоже с обоймой */
+          /* ✅ v0.4.36: револьвер-карабин (tool 'rev3x') — тоже */
+          if (item.tool === 'revolver' || item.tool === 'shotgun' ||
+              item.tool === 'rifle' || item.tool === 'smg' ||
+              item.tool === 'rev3x') this.slots[j].mag = 0;
           count -= put; changed = true;
         }
       }
@@ -449,7 +496,11 @@ window.BrixInventory = (function () {
       // игрок всегда видит, сколько патронов заряжено
       // ✅ v0.4.19: то же у ДРОБОВИКА (0–2)
       // ✅ v0.4.21: то же у КАЛАША (0–30)
-      if (slot.item.tool === 'revolver' || slot.item.tool === 'shotgun' || slot.item.tool === 'rifle') {
+      // ✅ v0.4.35: то же у ТОМПСОНА (0–30)
+      // ✅ v0.4.36: то же у РЕВОЛЬВЕРА-КАРАБИНА 3× (0–6)
+      if (slot.item.tool === 'revolver' || slot.item.tool === 'shotgun' ||
+          slot.item.tool === 'rifle' || slot.item.tool === 'smg' ||
+          slot.item.tool === 'rev3x') {
         inner += '<span class="bx-mag' + (!slot.mag ? ' empty' : '') + '">' +
           (slot.mag || 0) + '</span>';
       }

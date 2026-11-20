@@ -36,12 +36,86 @@ const ROOT = __dirname;
    версии не присылает — и панель на 9 молчит). В консоли при старте
    печатается ПОЛНЫЙ ПУТЬ папки сервера — чтобы admins.json правился
    именно там, где сервер РЕАЛЬНО запущен */
-const SRV_VER = '0.4.29';   /* ✅ v0.4.29: welcome несёт folder — клиент в красном баннере
-   «СЕРВЕР СТАРЫЙ» показывает ИЗ КАКОЙ ПАПКИ реально работает сервер
-   (99% «сервер старый» = жив старый процесс node или server.js заменён
-   не в той папке). Плюс: при занятом порте (EADDRINUSE) сервер вместо
-   падения печатает понятную инструкцию. Предыдущее 0.4.28: хп построек
-   на СЕРВЕРЕ (bhit/bhp/brem), phit несёт w+dist, присед в состоянии */
+const SRV_VER = '0.4.42';   /* ✅ v0.4.42 ТЕКСТУРЫ БИОМОВ + СЛЕДЫ НОГ.
+   ЛОГИКА СЕРВЕРА НЕ МЕНЯЛАСЬ — только версия (матч с клиентом 0.4.42):
+   замени server.js и ПЕРЕЗАПУСТИ, иначе вылезет баннер «СЕРВЕР СТАРЫЙ».
+   В клиенте: 7 процедурных текстур биомов (трава×2/земля/камень/снег/
+   песок/дно) с рваными красивыми переходами + следы ног на песке и
+   снегу (своих максимум 50 — первые исчезают первыми, чужих — 24).
+   Прошлое (v0.4.41, всё работает как раньше) — там ЛОГИКА МЕНЯЛАСЬ:
+   1) С4 не работает: сервер не знает 'c4place'/'c4boom' — блок прилипнет,
+      но постройки (−400 хп) и игроки в радиусе НЕ пострадают;
+   2) сервер по-прежнему будет ВЫРУБАТЬСЯ после ~часа игры: любой брошенный
+      exception в обработчике сокета убивал ВЕСЬ процесс Node («Cannot read
+      properties of undefined (reading 'top')» при установке сундука, когда
+      чанк палубы приходил без поля rec — теперь это место защищено, а ВЕСЬ
+      сервер прикрыт guard'ами uncaughtException/unhandledRejection: ошибка
+      пишется в лог с пометкой [guard] и игра продолжается);
+   3) потолки phit: SHOT_CAP/MELEE_CAP дополнены c4: 250 (режим вкладок).
+   Прошлые версии (0.4.37–40) работают как раньше: защита видеокарты (WebGL
+   context lost), булава, хит-маркеры, новая таблица урона (голова/тело=голова/2,
+   дробовик по дистанции), дорога вокруг озера, хват томпсона/карабина.
+   ✅ v0.4.39 ХВАТ ПО ГЕОМЕТРИИ + КАРАБИН + ДОРОГА МНОГОТОННАЯ
+   (логика сервера НЕ менялась): только поднята версия. Клиент 0.4.39 —
+   1) хват томпсона по вершинам модели (точка рукояти = центр бокса рукояти,
+   левая рука на ВЕРТИКАЛЬНОЙ передней рукоятке M1928, ADS dist 0.64);
+   2) револьвер-карабин 3×: крупнее (0.62 м), отодвинут вправо от хотбара,
+   в прицеле очень точный (разброс ×0.02);
+   3) дорога-цепочка ВОКРУГ КАРТЫ (1325 м) и МНОГОТОННАЯ (вершинные цвета:
+   мокрая земля/пыль/глина/след колёс/края в траву, полосы по длине).
+   Замени server.js и ПЕРЕЗАПУСТИ сервер, иначе баннер «СЕРВЕР СТАРЫЙ»
+   (клиент 0.4.39 > сервер 0.4.38).
+   ✅ v0.4.38 ХВАТ ОРУЖИЯ + ДОРОГА (логика сервера НЕ менялась):
+   только поднята версия — клиент 0.4.38 чинит хват томпсона (знак сдвига
+   рукояти в нормализации модели — руки «не держали» оружие) и хват
+   револьвера-карабина 3× (ладонь была на проволочном прикладе — «сквозь
+   руки»; теперь RVX.gx: рукоять точно в ладони, как у обычного револьвера),
+   и добавляет ЕДИНСТВЕННУЮ грунтовую дорогу-цепочку (road.js: лента по
+   рельефу + линия на карте M). Замени server.js и ПЕРЕЗАПУСТИ сервер,
+   иначе игра покажет баннер «СЕРВЕР СТАРЫЙ» (клиент 0.4.38 > сервер 0.4.37).
+   ✅ v0.4.37 ФИКС ПАДЕНИЯ ВИДЕОДРАЙВЕРА (WebGL Context Lost):
+   только поднята версия — ЛОГИКА СЕРВЕРА НЕ МЕНЯЛАСЬ. Клиент 0.4.37
+   научился переживать сбой видеокарты (CONTEXT_LOST_WEBGL → пауза
+   рендера → автовосстановление без перезагрузки страницы) и перестал
+   рендерить фон меню во время игры (экономия видеопамяти).
+   ВАЖНО: замени server.js и ПЕРЕЗАПУСТИ сервер, чтобы игра не
+   показывала баннер «СЕРВЕР СТАРЫЙ» (клиент 0.4.37 > сервер 0.4.36).
+   ✅ v0.4.36 РЕВОЛЬВЕР-КАРАБИН 3× + ПОТОЛОК УРОНА ПО ОРУЖИЮ:
+   1) новый снайпер — пуля rev3x (45) НЕ проходит под старым потолком 'shot' (≤20),
+      теперь потолок урона считается по оружию из phit (msg.w):
+      shotgun 96 (8 дробин по 12), rev3x 45, ak/revolver 20, thompson 12, прочее 20;
+   2) ФИКС ПОПУТНО: раньше ЛЮБОЙ выстрел резался до 20 — дробовик в мультиплеере
+      НЕ МОГ убить с одного выстрела (в упор до 96 дробью). Теперь честно.
+   ✅ v0.4.35 ТОМПСОН: пуля томпсона (12) проходит под потолком 'thompson' (12).
+   Оружие и дистанция едут в phit как раньше.
+   ✅ v0.4.34 ЗИМНИЙ АПДЕЙТ ЭТАП 1 — УРОН ОТ ХОЛОДА:
+   1) сервер считает ШКАЛУ ХОЛОДА (0..100) для каждого игрока по ВЫСОТЕ
+      рельефа — та же детерминированная формула heightAt, что в
+      js/game/terrain.js (горы со снегом = зима);
+   2) в зиме шкала РАСТЁТ (чем выше/снежнее — тем быстрее), ХП тает тем
+      сильнее, чем больше шкала (с 30 холода); умер → pdeath (cold:1);
+   3) вышел из зимы — шкала ПО НЕМНОЖКУ тает, в тепле исчезает полностью;
+   4) раз в секунду каждому игроку пушится 'cold' {v,z,hp} — клиент
+      рисует баннер температуры (TOO COLD -11°) и ИНЕЙ по углам экрана,
+      который постепенно «размораживается»;
+   5) respawn сбрасывает холод; бессмертие (god) защищает от урона.
+   ✅ v0.4.32 (без изменений в 0.4.34):
+   1) сломанная постройка уходит из мира СЕРВЕРА ПОЛНОСТЬЮ: из worldObjs.builds
+      И из индексов buildCell/buildEdge (раньше сервер «помнил» клетку/край до
+      перезапуска — на сломанный фундамент можно было ставить стены), brem
+      доходит всем — никто не рендерит сломанное, новичкам оно не приедет;
+   2) НОВЫЕ ХП: фундамент 350, остальные постройки 300 (дверь была 150);
+   3) НОВЫЙ УРОН (дробный, «1 хп за N ударов»): каменный топор 0.2/удар,
+      каменная кирка 0.25, железная кирка 0.5, железный топор 1/3;
+   4) хп переживает и 0 игроков, и перезапуск сервера (миграция старой
+      шкалы 200/150 → 350/300 при загрузке world-objs.json v4);
+   5) сундук — как был (25 хп).
+   ✅ v0.4.31 (клиент building.js) FIX «ХП-БАР НЕ ВИДЕН»: бар и подсказка
+   двери крепятся в #gameHud, а не в <body> (были ПОД игровым экраном).
+   Предыдущее 0.4.30: ПОСТРОЙКИ СНОВА ЛОМАЮТСЯ — в switch был ВТОРОЙ
+   case 'bhit' (постройки), который JavaScript НИКОГДА не выполнял (первый
+   совпавший case 'bhit' — бочки — выигрывал). Клиент js/net/net.js:
+   BrixNet.on() больше не затирает предыдущий обработчик, а строит цепочку */
 const PLAYER_TIMEOUT = 90000;   // молчание дольше этого — игрок «выпал» (фоновые вкладки шлют pong)
 
 /* ✅ v0.3.8: РЕСПАВН ПО ТАЙМЕРУ СЕРВЕРА (не по перезагрузке клиента!) */
@@ -480,7 +554,9 @@ let worldDirty = false;          // ✅ v0.4.7: есть несохранённ�
 function writeWorldNow() {
   try {
     const data = {
-      v: 4,
+      /* ✅ v0.4.31: v5 — хп построек в НОВОЙ шкале (фундамент 350,
+         остальные 300). v4 читается и мигрирует (см. loadWorldObjs) */
+      v: 5,
       dropSeq: worldObjs.dropSeq,
       cb: worldObjs.cb.map((c) => ({
         id: c.id, x: c.x, z: c.z, rot: c.rot, item: c.item, seed: c.seed, mil: c.mil,
@@ -538,8 +614,9 @@ function loadWorldObjs() {
   try {
     if (!fs.existsSync(OBJS_FILE)) return null;
     const j = JSON.parse(fs.readFileSync(OBJS_FILE, 'utf8'));
-    // ✅ v0.4.6: v3 (старый файл без построек) читаем и апгрейдим до v4
-    if (!j || (j.v !== 3 && j.v !== 4) || !Array.isArray(j.cb)) return null;
+    // ✅ v0.4.6: v3 (старый файл без построек) читаем и апгрейдим
+    // ✅ v0.4.31: v5 — новая шкала хп; v4 читаем и МИГРИРУЕМ хп
+    if (!j || (j.v !== 3 && j.v !== 4 && j.v !== 5) || !Array.isArray(j.cb)) return null;
     const drops = new Map();
     (j.drops || []).forEach((d) => { if (d && d.id) drops.set(d.id, d); });
     const builds = Array.isArray(j.builds) ? j.builds.filter((b) =>
@@ -553,6 +630,24 @@ function loadWorldObjs() {
         (b.ty === 'ch' && Number.isFinite(b.x) && Number.isFinite(b.z) &&
          Number.isFinite(b.y))
       )) : [];
+    /* ✅ v0.4.31 МИГРАЦИЯ ХП: в файлах v4 хп хранилось в старой шкале
+       (фундамент/стены/потолки — максимум 200, дверь — 150). Пересчитываем
+       под новую (фундамент 350, остальные 300): полный запас становится
+       новым максимумом, повреждённое — пропорционально (133/200 → 199.5/300).
+       Миграция ОДНОКРАТНАЯ: сразу после неё файл сохраняется уже как v5 */
+    if ((j.v | 0) < 5) {
+      builds.forEach((b) => {
+        if (b.hp === undefined) return;
+        const oldMax = (b.ty === 'dr') ? 150 : (b.ty === 'ch' ? 25 : 200);
+        const newMax = maxBuildHp(b.ty);
+        b.hp = (b.hp >= oldMax - 0.001)
+          ? newMax
+          : Math.round(Math.min(newMax, b.hp / oldMax * newMax) * 100) / 100;
+      });
+      if (builds.length) {
+        console.log('[objs] миграция хп построек: шкала 200/150 → 350/300 (v4 → v5)');
+      }
+    }
     return { cb: j.cb, drops, dropSeq: j.dropSeq || 0, builds,
       /* ✅ v0.4.14: берём МАКСИМУМ из файла и сайдкара — откат файла
          в прошлое поколение невозможен */
@@ -623,8 +718,10 @@ const buildCell = new Map();   // 'gx,gz' -> {f: rec, c: rec}
 const buildEdge = new Map();   // 'gx,gz,e' -> rec краевой детали
 worldObjs.builds.forEach((b) => {
   /* ✅ v0.4.28: у старых построек (мир до обновления) hp нет — присваиваем
-     полный запас по типу, чтобы ломание работало сразу после апдейта */
+     полный запас по типу, чтобы ломание работало сразу после апдейта.
+     ✅ v0.4.31: и кламп — хп не может быть выше нового максимума */
   if (b.hp === undefined) b.hp = maxBuildHp(b.ty);
+  else if (b.hp > maxBuildHp(b.ty)) b.hp = maxBuildHp(b.ty);
   /* ✅ v0.4.22: сундук — свободная постройка, в сеточные индексы не входит */
   if (b.ty === 'ch') return;
   if (b.ty === 'w' || b.ty === 'wi' || b.ty === 'dw' || b.ty === 'dr') {
@@ -639,6 +736,25 @@ worldObjs.builds.forEach((b) => {
 });
 let buildSeq = worldObjs.builds.reduce((m, b) => Math.max(m, Number(String(b.id).slice(1)) || 0), 0);
 
+/* ✅ v0.4.31 СНОС ЧИСТИТ ИНДЕКСЫ: раньше сломанная постройка уходила только
+   из worldObjs.builds, а buildCell/buildEdge продолжали её «помнить» до
+   перезапуска сервера: на сломанный фундамент можно было поставить стену,
+   сломанный потолок занимал клетку. Теперь клетка/край освобождаются СРАЗУ */
+function removeBuildIndexes(b) {
+  if (!b || b.ty === 'ch') return;
+  if (b.ty === 'w' || b.ty === 'wi' || b.ty === 'dw' || b.ty === 'dr') {
+    const ce = canonicalEdge(b.gx, b.gz, b.e);
+    const k = ce.gx + ',' + ce.gz + ',' + ce.e;
+    if (buildEdge.get(k) === b) buildEdge.delete(k);
+  } else {
+    const cell = buildCell.get(b.gx + ',' + b.gz);
+    if (cell) {
+      if (b.ty === 'f' && cell.f === b) cell.f = null;
+      if (b.ty === 'c' && cell.c === b) cell.c = null;
+    }
+  }
+}
+
 function hasWallOnCell(gx, gz) {
   return !!(buildEdge.get(gx + ',' + gz + ',0') || buildEdge.get(gx + ',' + gz + ',3') ||
             buildEdge.get(gx + ',' + (gz + 1) + ',0') || buildEdge.get((gx + 1) + ',' + gz + ',3'));
@@ -648,20 +764,27 @@ function hasWallOnCell(gx, gz) {
    разгадавших: код НИКОГДА не покидает сервер (в bnew/welcome едет
    только «есть код» hc и владелец own) */
 /* ============================================================
-   ✅ v0.4.28 ЛОМАНИЕ ПОСТРОЕК: ХП авторитет СЕРВЕРА.
-     фундамент/стена/окно/проём/потолок — 200, дверь — 150, сундук — 25.
-     Урон ТОЛЬКО топорами/кирками (камень — 67: 200 хп = 3 удара;
-     железо — 100: 2 удара; сундук 25 — с одного любого).
-     Клиент шлёт 'bhit' {id, tool}; сервер проверяет дистанцию (≤ 6 м),
-     снимает хп, шлёт 'bhp' всем (остаток) или 'brem' (сломал).
-     ХП пишется на диск СРАЗУ — переживает перезапуск сервера.
+   ✅ v0.4.31 ЛОМАНИЕ ПОСТРОЕК: ХП авторитет СЕРВЕРА.
+     НОВЫЕ ХП (просьба игрока): фундамент — 350, ВСЕ остальные
+     постройки (стена/окно/проём/дверь/потолок) — 300, сундук — 25.
+   НОВЫЙ УРОН — «1 хп за N ударов», дробный:
+     каменный топор  — 0.2 хп за удар (1 хп за 5 ударов)
+     каменная кирка  — 0.25 хп за удар (1 хп за 4 удара)
+     железная кирка  — 0.5 хп за удар  (1 хп за 2 удара)
+     железный топор  — 1/3 хп за удар  (1 хп за 3 удара)
+     После каждого удара хп округляется до 0.001 — копится точно.
+   Клиент шлёт 'bhit' {id, tool}; сервер проверяет дистанцию (≤ 6 м),
+   снимает хп, шлёт 'bhp' всем (остаток) или 'brem' (сломал).
+   Сломанное уходит ИЗ ИНДЕКСОВ (removeBuildIndexes) — клетка/край
+   свободны сразу. Повреждение пишется на диск через 0.8 с (debounce),
+   СНОС — сразу. ХП переживает перезапуск сервера и 0 игроков.
    ============================================================ */
 function maxBuildHp(ty) {
   if (ty === 'ch') return 25;
-  if (ty === 'dr') return 150;
-  return 200;   // f / w / wi / dw / c
+  return (ty === 'f') ? 350 : 300;   // фундамент 350, остальные постройки 300
 }
-const BUILD_DMG = { axe: 67, pickaxe: 67, ironAxe: 100, ironPickaxe: 100 };
+const BUILD_DMG = { axe: 0.2, pickaxe: 0.25, ironPickaxe: 0.5, ironAxe: 1 / 3,
+  mace: 2 };   // ✅ v0.4.40 булава: 2 хп за удар по постройке (просьба игрока)
 
 function publicBuild(b) {
   const out = { id: b.id, ty: b.ty, gx: b.gx, gz: b.gz, top: b.top,
@@ -672,6 +795,7 @@ function publicBuild(b) {
      присваиваем полный запас по типу — он же уйдёт в persistence */
   if (b.hp === undefined) b.hp = maxBuildHp(b.ty);
   out.hp = b.hp;
+  out.max = maxBuildHp(b.ty);   /* ✅ v0.4.31: максимум едет рядом с хп */
   if (b.ty === 'dr') {
     out.open = b.open ? 1 : 0;
     out.hc = (b.code && String(b.code).length === 4) ? 1 : 0;
@@ -1153,6 +1277,7 @@ server.on('upgrade', (req, sock) => {
     sock: sock,
     state: null,          // последнее состояние движения
     hp: 100,              // ✅ v0.4.5: здоровье (ПвП) — авторитет сервера
+    cold: 0,              // ✅ v0.4.34: шкала холода 0..100 — авторитет сервера
     dead: false,
     last: Date.now(),
     send: null
@@ -1271,29 +1396,73 @@ server.on('upgrade', (req, sock) => {
           p.send({ t: 'pong' });
           break;
 
+        /* ✅ fix v0.4.30 «ПОСТРОЙКИ НЕ ЛОМАЮТСЯ»: в этом switch было ДВА
+           case 'bhit' — для бочек и для построек. JavaScript выполняет
+           только ПЕРВЫЙ совпавший case, поэтому ветка построек ниже была
+           мёртвым кодом: сервер молча проглатывал удар по фундаменту/стене
+           — хп не снималось, 'bhp'/'brem' не уходили, хп-панель не
+           появлялась. Теперь оба обработчика живут в ОДНОМ case: id нашли
+           в barrelIndex — бочка, иначе — постройка */
         case 'bhit': {
           const rec = barrelIndex.get(String(msg.id || ''));
-          if (!rec || rec.bar.brk) break;
-          if (!p.lastBHit) p.lastBHit = {};
-          // защита от спама: не чаще 4 ударов/с на бочку
-          const now = Date.now();
-          if (p.lastBHit[rec.bar.id] && now - p.lastBHit[rec.bar.id] < 250) break;
-          p.lastBHit[rec.bar.id] = now;
-          const dmg = (msg.tool === 'ironAxe' || msg.tool === 'ironPickaxe') ? 2 : 1;
-          rec.bar.hp -= dmg;
-          if (rec.bar.hp <= 0) {
-            rec.bar.hp = 0;
-            rec.bar.brk = true;
-            const drops = spawnDropsForBarrel(rec.cb, rec.bar);
-            // ✅ v0.3.8: бочка вернётся по ТАЙМЕРУ СЕРВЕРА — и у всех сразу
-            scheduleBarrelRespawn(rec.bar, BARREL_RESPAWN_MS);
-            broadcast({ t: 'brk', id: rec.bar.id, drops }, null);   // и бьющему тоже
-            markDirty();
-            console.log('[objs] бочка ' + rec.bar.id + ' (чекблок ' + rec.cb.id +
-              ') разбита (' + p.name + '), дропов: ' + drops.length +
-              ' — вернётся через ' + Math.round(BARREL_RESPAWN_MS / 60000) + ' мин');
+          if (rec && !rec.bar.brk) {
+            if (!p.lastBHit) p.lastBHit = {};
+            // защита от спама: не чаще 4 ударов/с на бочку
+            const now = Date.now();
+            if (p.lastBHit[rec.bar.id] && now - p.lastBHit[rec.bar.id] < 250) break;
+            p.lastBHit[rec.bar.id] = now;
+            const dmg = (msg.tool === 'ironAxe' || msg.tool === 'ironPickaxe' ||
+              msg.tool === 'mace') ? 2 : 1;   // ✅ v0.4.40 булава — как железо (бочка с 1 удара)
+            rec.bar.hp -= dmg;
+            if (rec.bar.hp <= 0) {
+              rec.bar.hp = 0;
+              rec.bar.brk = true;
+              const drops = spawnDropsForBarrel(rec.cb, rec.bar);
+              // ✅ v0.3.8: бочка вернётся по ТАЙМЕРУ СЕРВЕРА — и у всех сразу
+              scheduleBarrelRespawn(rec.bar, BARREL_RESPAWN_MS);
+              broadcast({ t: 'brk', id: rec.bar.id, drops }, null);   // и бьющему тоже
+              markDirty();
+              console.log('[objs] бочка ' + rec.bar.id + ' (чекблок ' + rec.cb.id +
+                ') разбита (' + p.name + '), дропов: ' + drops.length +
+                ' — вернётся через ' + Math.round(BARREL_RESPAWN_MS / 60000) + ' мин');
+            } else {
+              broadcast({ t: 'bhp', id: rec.bar.id, hp: rec.bar.hp }, null);
+              markDirty();
+            }
+            break;
+          }
+          /* ✅ v0.4.31 ЛОМАНИЕ ПОСТРОЕК: клиент бьёт ЛКМ по детали —
+             сервер решает всё (дробный хп/снос). Урон только топорами/
+             кирками (0.2/0.25/0.5/1/3 хп за удар), дистанция ≤ 6 м.
+             Сломанное уходит из мира и ИЗ ИНДЕКСОВ ('brem' + чистка
+             клетки/края), остаток хп виден всем ('bhp'), newcomers
+             не получат сломанное в welcome. ХП переживает перезапуск
+             сервера и работает при 0 игроков */
+          const b = worldObjs.builds.find((x) => x.id === String(msg.id || ''));
+          if (!b) break;
+          if (!p.state) break;
+          const wx = (b.ty === 'ch') ? b.x : b.gx * CELL;
+          const wz = (b.ty === 'ch') ? b.z : b.gz * CELL;
+          if (dist2(p.state.x, p.state.z, wx, wz) > 36) break;   // дальше 6 м
+          const bdmg = BUILD_DMG[String(msg.tool || '')] || 0;
+          if (!bdmg) break;                                      // не инструмент
+          /* ✅ v0.4.31: урон ДРОБНЫЙ (0.2/0.25/0.5/1/3 за удар) — «1 хп
+             за 5/4/2/3 удара». Округление до 0.001: копится точно */
+          b.hp = Math.round(((b.hp === undefined ? maxBuildHp(b.ty) : b.hp) - bdmg) * 1000) / 1000;
+          if (b.hp <= 0) {
+            worldObjs.builds.splice(worldObjs.builds.indexOf(b), 1);
+            /* ✅ v0.4.31: сломанное уходит И ИЗ ИНДЕКСОВ сервера — клетка/
+               край свободны СРАЗУ, на сломанный фундамент стену не поставить */
+            removeBuildIndexes(b);
+            broadcast({ t: 'brem', id: b.id, by: p.id }, null);
+            writeWorldNow();   // снос — на диск СРАЗУ (перезапуск ничего не вернёт)
+            console.log('[objs] ' + p.name + ' сломал постройку ' + b.id +
+              ' (' + b.ty + ') — brem ушёл ВСЕМ, клетка/край освобождены');
           } else {
-            broadcast({ t: 'bhp', id: rec.bar.id, hp: rec.bar.hp }, null);
+            broadcast({ t: 'bhp', id: b.id, hp: b.hp, max: maxBuildHp(b.ty) }, null);
+            /* ✅ v0.4.31: при «1 хп за 5 ударов» writeWorldNow на КАЖДЫЙ
+               удар давал бы тысячу записей файла подряд — теперь хп
+               пишется дебаунсом 0.8 с (markDirty) + страховка 20 с */
             markDirty();
           }
           break;
@@ -1404,10 +1573,17 @@ server.on('upgrade', (req, sock) => {
           if (clash) { p.send({ t: 'bdeny', tid: msg.tid, why: 'clash' }); break; }
           let chy2 = chy;
           /* на фундаменте — высоту берём ИЗ серверного фундамента,
-             на земле — верим клиенту (рельеф детерминированный, как у домов) */
+             на земле — верим клиенту (рельеф детерминированный, как у домов)
+             ✅ v0.4.41 КРАШ «Cannot read properties of undefined (reading
+             'top')»: чанк палубы мог прийти без поля rec (перезапись клетки
+             старым снимком мира, гонка welcome/сохранения) — раньше падал
+             ВЕСЬ ПРОЦЕСС после ~часа игры. Теперь проверяем rec И top; если
+             записи нет — высоту не трогаем (сундук встанет по высоте луча) */
           const chCell = buildCell.get(Math.floor(chx / CELL) + ',' + Math.floor(chz / CELL));
-          if (chCell && chCell.f && Math.abs(chy - chCell.f.rec.top) < 1.0) {
-            chy2 = chCell.f.rec.top;                               // стоит НА палубе
+          const chFTop = (chCell && chCell.f && chCell.f.rec &&
+            Number.isFinite(chCell.f.rec.top)) ? chCell.f.rec.top : null;
+          if (chFTop !== null && Math.abs(chy - chFTop) < 1.0) {
+            chy2 = chFTop;                                        // стоит НА палубе
           }
           const chRec = { id: 'b' + (++buildSeq), ty: 'ch',
             x: Math.round(chx * 100) / 100, z: Math.round(chz * 100) / 100,
@@ -1498,9 +1674,95 @@ server.on('upgrade', (req, sock) => {
             x: Number(msg.x) || 0, z: Number(msg.z) || 0 }, p.id);
           break;
         }
+        /* ============================================================
+           ✅ v0.4.41 С4 — ВЗРЫВЧАТКА (модель и звуки от игрока).
+           Схема: бросок и полёт — у бросавшего локально; прилип блок —
+           он шлёт 'c4place' {x,y,z,n}; сервер рассылает 'c4placed' ВСЕМ
+           ОСТАЛЬНЫМ (те видят блок и слышат 15 «тыков» у себя). После
+           15-го тыка (~10.8 с) блок у бросавшего взрывается: он шлёт
+           'c4boom' {x,y,z} — СЕРВЕР авторитетно снимает 400 хп с КАЖДОЙ
+           постройки в радиусе 7 м (brem/bhp всем) и убивает игроков в
+           радиусе 6.5 м (250 урона → phit/pdeath), а 'c4boom' уходит
+           остальным — визуал+звук взрыва у них. Таймеров на сервере
+           НЕТ: фьюз живёт на клиенте бросавшего (ушёл из игры — бомба
+           просто не взорвётся, у остальных она исчезнет по failsafe)
+           ============================================================ */
+        case 'c4place': {
+          const cx = Number(msg.x), cy = Number(msg.y), cz = Number(msg.z);
+          if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(cz)) break;
+          if (Math.abs(cx) > 5000 || Math.abs(cz) > 5000) break;
+          if (!p.state || dist2(p.state.x, p.state.z, cx, cz) > 100) break;  // >10 м
+          broadcast({ t: 'c4placed', by: p.id,
+            x: Math.round(cx * 100) / 100, y: Math.round(cy * 100) / 100,
+            z: Math.round(cz * 100) / 100, n: msg.n || [0, 1, 0] }, p.id);
+          break;
+        }
+        case 'c4boom': {
+          const bx = Number(msg.x), by = Number(msg.y), bz = Number(msg.z);
+          if (!Number.isFinite(bx) || !Number.isFinite(by) || !Number.isFinite(bz)) break;
+          if (Math.abs(bx) > 5000 || Math.abs(bz) > 5000) break;
+          if (!p.state || dist2(p.state.x, p.state.z, bx, bz) > 144) break;  // >12 м
+          /* 1) ПОСТРОЙКИ в радиусе 7 м (горизонталь) и ±4.5 м (высота):
+             −400 хп КАЖДОЙ — стены/потолки/сундуки (≤300) ломаются с
+             одного взрыва, фундамент (350) — с двух */
+          const hitList = [];
+          for (const b of worldObjs.builds) {
+            const wx = (b.ty === 'ch') ? b.x : b.gx * CELL;
+            const wz = (b.ty === 'ch') ? b.z : b.gz * CELL;
+            const wy = (b.ty === 'ch') ? (b.y || 0) : (b.top || 0);
+            const dh = dist2(wx, wz, bx, bz);
+            if (dh > 49) continue;                                  // дальше 7 м
+            const dy = Math.abs(wy - by);
+            if (dy > 4.5) continue;
+            hitList.push(b);
+          }
+          for (const b of hitList) {
+            b.hp = (b.hp === undefined ? maxBuildHp(b.ty) : b.hp) - 400;
+            if (b.hp <= 0) {
+              worldObjs.builds.splice(worldObjs.builds.indexOf(b), 1);
+              removeBuildIndexes(b);
+              broadcast({ t: 'brem', id: b.id, by: p.id }, null);
+              console.log('[c4] взрыв снёс постройку ' + b.id + ' (' + b.ty + ')');
+            } else {
+              broadcast({ t: 'bhp', id: b.id, hp: b.hp, max: maxBuildHp(b.ty) }, null);
+            }
+          }
+          if (hitList.length) {
+            writeWorldNow();   // снос — сразу на диск
+            console.log('[c4] ' + p.name + ' взорвал С4 (' + bx.toFixed(1) + ', ' +
+              bz.toFixed(1) + '): построек задето ' + hitList.length);
+          }
+          /* 2) ИГРОКИ в радиусе 6.5 м — 250 урона (насмерть). ХП —
+             авторитет сервера; god, как всегда, неуязвим */
+          players.forEach((t) => {
+            if (t.dead || t.god || !t.state) return;
+            const d2c4 = dist2(t.state.x, t.state.z, bx, bz);
+            if (d2c4 > 6.5 * 6.5) return;
+            const dy2 = Math.abs((t.state.y || 0) - by);
+            if (dy2 > 5) return;
+            t.hp = Math.max(0, (t.hp === undefined ? 100 : t.hp) - 250);
+            const w4 = 'c4';
+            broadcast({ t: 'phit', tid: t.id, hp: t.hp, by: p.id,
+              kind: 'shot', w: w4, hs: 0,
+              dist: Math.round(Math.sqrt(d2c4)) }, null);
+            if (t.hp <= 0) {
+              t.dead = true;
+              broadcast({ t: 'pdeath', tid: t.id, by: p.id, w: w4, hs: 0,
+                dist: Math.round(Math.sqrt(d2c4)) }, null);
+              console.log('[c4] ' + t.name + ' убит взрывом С4 (' + p.name + ')');
+            }
+          });
+          /* 3) визуал+звук взрыва — всем, КРОМЕ бросавшего (он сыграл
+             его сам в момент отправки 'c4boom') */
+          broadcast({ t: 'c4boom', x: bx, y: by, z: bz }, p.id);
+          break;
+        }
         /* ✅ v0.4.5 ПВП: заявка попадания. ХП — АВТОРИТЕТ СЕРВЕРА:
-           пуля 20 (шутер в 130 м), удар инструментом ≤10 (в 6 м).
-           Убил → pdeath всем; труп ждёт prespawn от жертвы */
+           пуля ≤20 по умолчанию (шутер в 130 м), удар инструментом ≤10 (в 6 м).
+           ✅ v0.4.36: потолок урона ПО ОРУЖИЮ (msg.w): дробовик до 96 (8 дробин),
+           револьвер-карабин 3× до 45 (снайпер), томпсон 12 — раньше всё резалось
+           до 20, и дробовик не мог убить с одного выстрела. Убил → pdeath всем;
+           труп ждёт prespawn от жертвы */
         case 'phit': {
           const target = players.get(String(msg.tid || ''));
           if (!target || !target.state || target.dead) break;
@@ -1515,18 +1777,41 @@ server.on('upgrade', (req, sock) => {
           const d2 = dist2(p.state.x, p.state.z, target.state.x, target.state.z);
           if (kind === 'shot' && d2 > 130 * 130) break;      // дальше 130 м
           if (kind !== 'shot' && d2 > 6 * 6) break;          // дальше 6 м
-          const dmg = Math.max(0, Math.min(kind === 'shot' ? 20 : 10,
+          /* ✅ v0.4.36: потолок урона ПО ОРУЖИЮ. Клиент честно шлёт оружие в
+             phit (msg.w, v0.4.28) — сверяем с таблицей. Неизвестное оружие —
+             консервативный потолок 20 (как было). 'shotgun' — суммарный урон
+             дроби (до 96): раньше резался до 20 — дробовик в мультиплеере
+             был втрое слабее.
+             ✅ v0.4.40 НОВАЯ ТАБЛИЦА УРОНА (голова/тело = голова/2):
+             потолки = ПОЛНЫЙ урон В ГОЛОВУ по таблице игрока — револьвер 18,
+             карбиновый револьвер (револьвер-карабин 3×) 20, калаш 33,
+             томпсон 23, дробовик 104 (8 дробин × 13 в упор).
+             ✅ v0.4.40 и БЛИЖНИЙ БОЙ поднят с 10: у каждого инструмента свой
+             потолок (каменный топор 13, каменная кирка 14, железные 24,
+             БУЛАВА 97) — раньше булава не пробивала бы и 97/10 */
+          const SHOT_CAP = { shotgun: 104, rev3x: 20, ak: 33, thompson: 23, revolver: 18,
+            c4: 250 };   /* ✅ v0.4.41: С4 в режиме вкладок — взрыв убивает; в
+            серверном режиме урон С4 считает сам сервер (case 'c4boom'),
+            phit 'c4' туда не доходит */
+          const MELEE_CAP = { axe: 13, pickaxe: 14, ironAxe: 24, ironPickaxe: 24, mace: 97,
+            c4: 250 };   /* ✅ v0.4.41: и в ближнем бою на всякий случай */
+          const cap = kind === 'shot'
+            ? (SHOT_CAP[String(msg.w || '')] || 20)
+            : (MELEE_CAP[String(msg.w || '')] || 10);
+          const dmg = Math.max(0, Math.min(cap,
             Math.floor(Number(msg.dmg) || 0)));
           if (!dmg) break;
           target.hp = Math.max(0, (target.hp === undefined ? 100 : target.hp) - dmg);
           /* ✅ v0.4.28: в phit тоже едет оружие и дистанция — жертва в
-             момент смерти сразу видит их в меню смерти */
+             момент смерти сразу видит их в меню смерти.
+             ✅ v0.4.40: + hs — «В ГОЛОВУ» в меню смерти жертвы */
           const w = String(msg.w || '');
+          const hs = msg.hs ? 1 : 0;
           broadcast({ t: 'phit', tid: target.id, hp: target.hp,
-            by: p.id, kind, w, dist: Math.round(Math.sqrt(d2)) }, null);
+            by: p.id, kind, w, hs, dist: Math.round(Math.sqrt(d2)) }, null);
           if (target.hp <= 0) {
             target.dead = true;
-            broadcast({ t: 'pdeath', tid: target.id, by: p.id, w,
+            broadcast({ t: 'pdeath', tid: target.id, by: p.id, w, hs,
               dist: Math.round(Math.sqrt(d2)) }, null);
             console.log('[mp] ' + p.name + ' убил ' + target.name +
               (kind === 'shot' ? ' (выстрел)' : ' (инструментом)'));
@@ -1544,39 +1829,19 @@ server.on('upgrade', (req, sock) => {
             by: String(msg.by || '') }, p.id);
           break;
         }
-        /* ✅ v0.4.5: возрождение — хп восстанавливает СЕРВЕР */
+        /* ✅ v0.4.5: возрождение — хп восстанавливает СЕРВЕР.
+           ✅ v0.4.34: холод тоже сбрасывается — нового игрока ничего не морозит */
         case 'prespawn': {
           p.dead = false;
           p.hp = 100;
+          p.cold = 0;
           broadcast({ t: 'prespawn', tid: p.id }, p.id);
           break;
         }
-        /* ✅ v0.4.28 ЛОМАНИЕ ПОСТРОЕК: клиент бьёт ЛКМ по детали —
-           сервер решает всё (хп/снос). Урон только топорами/кирками,
-           дистанция ≤ 6 м. Сломанное уходит из мира У ВСЕХ ('brem'),
-           остаток хп виден всем ('bhp'). Сундук при сносе теряет
-           содержимое. ХП пишется на диск сразу — переживает перезапуск */
-        case 'bhit': {
-          const b = worldObjs.builds.find((x) => x.id === String(msg.id || ''));
-          if (!b) break;
-          if (!p.state) break;
-          const wx = (b.ty === 'ch') ? b.x : b.gx * CELL;
-          const wz = (b.ty === 'ch') ? b.z : b.gz * CELL;
-          if (dist2(p.state.x, p.state.z, wx, wz) > 36) break;   // дальше 6 м
-          const bdmg = BUILD_DMG[String(msg.tool || '')] || 0;
-          if (!bdmg) break;                                      // не инструмент
-          b.hp = (b.hp === undefined ? maxBuildHp(b.ty) : b.hp) - bdmg;
-          if (b.hp <= 0) {
-            worldObjs.builds.splice(worldObjs.builds.indexOf(b), 1);
-            broadcast({ t: 'brem', id: b.id, by: p.id }, null);
-            console.log('[objs] ' + p.name + ' сломал постройку ' + b.id +
-              ' (' + b.ty + ')');
-          } else {
-            broadcast({ t: 'bhp', id: b.id, hp: b.hp, max: maxBuildHp(b.ty) }, null);
-          }
-          writeWorldNow();   // хп на диск сразу (как bplace)
-          break;
-        }
+        /* ✅ fix v0.4.30: ветка 'bhit' для ПОСТРОЕК перенесена в общий
+           case 'bhit' выше (рядом с бочками). Здесь был ВТОРОЙ case 'bhit'
+           — JavaScript его НИКОГДА не выполнял (первый совпавший case
+           выигрывает), поэтому постройки не ломались */
         /* ✅ v0.4.6 СТРОИТЕЛЬСТВО: заявка установки (фундамент/стена/потолок).
            Сервер проверяет правила (стена — только на край фундамента,
            потолок — только где есть стена) и рассылает результат ВСЕМ,
@@ -1789,6 +2054,150 @@ setInterval(() => {
   dead.forEach((p) => dropPlayer(p, 'таймаут'));
 }, 5000);
 
+/* ============================================================
+   ✅ v0.4.34 ХОЛОД (зимний апдейт, этап 1) — АВТОРИТЕТ СЕРВЕРА.
+   Зима = высокие горы со снегом. Высоту рельефа сервер считает
+   САМ по детерминированной формуле heightAt — она 1:1 скопирована
+   из js/game/terrain.js (как и формула чекблоков, «одна формула
+   у сервера и клиента»). Менять высоту можно ТОЛЬКО в обоих файлах
+   сразу, иначе зима у сервера и клиента разъедется.
+   Шкала холода 0..100:
+     • в зиме растёт — чем выше/снежнее (zoneK 0..1), тем быстрее;
+     • в тепле (ниже снеговой линии) тает по чуть-чуть сама;
+     • с 30 холода ХП тает тем быстрее, чем больше шкала;
+     • умер от холода → 'pdeath' с cold:1 (в меню смерти «Замёрз»);
+     • 'phit' с kind:'cold' уходит ОСТАЛЬНЫМ — у них честно падает
+       полоска хп жертвы (самой жертве хп едет в 'cold');
+     • respawn сбрасывает холод; god (бессмертие) защищает от урона.
+   ============================================================ */
+
+/* --- детерминированный шум (копия js/game/noise.js, 1:1) --- */
+function brixHash2(ix, iz, seed) {
+  let h = Math.imul(ix, 374761393) ^ Math.imul(iz, 668265263) ^ Math.imul(seed, 1274126177);
+  h = Math.imul(h ^ (h >>> 13), 1103515245);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function brixValueNoise(x, z, seed) {
+  const ix = Math.floor(x), iz = Math.floor(z);
+  const fx = x - ix, fz = z - iz;
+  const a = brixHash2(ix, iz, seed);
+  const b = brixHash2(ix + 1, iz, seed);
+  const c = brixHash2(ix, iz + 1, seed);
+  const d = brixHash2(ix + 1, iz + 1, seed);
+  const u = fx * fx * (3 - 2 * fx), v = fz * fz * (3 - 2 * fz);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+function brixFbm(x, z, seed, octaves) {
+  let amp = 0.5, freq = 1, sum = 0, norm = 0;
+  for (let i = 0; i < octaves; i++) {
+    sum += brixValueNoise(x * freq, z * freq, seed + i * 101) * amp;
+    norm += amp; amp *= 0.5; freq *= 2;
+  }
+  return sum / norm;
+}
+function brixRidged(x, z, seed, octaves) {
+  let amp = 0.5, freq = 1, sum = 0, norm = 0;
+  for (let i = 0; i < octaves; i++) {
+    let v = 1 - Math.abs(2 * brixValueNoise(x * freq, z * freq, seed + i * 131) - 1);
+    v *= v;
+    sum += v * amp;
+    norm += amp; amp *= 0.5; freq *= 2.03;
+  }
+  return sum / norm;
+}
+function brixGauss(x, z, cx, cz, sigma) {
+  const dx = x - cx, dz = z - cz;
+  return Math.exp(-(dx * dx + dz * dz) / (2 * sigma * sigma));
+}
+function brixSmoothstep(a, b, x) {
+  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+function brixLerp(a, b, t) { return a + (b - a) * t; }
+
+/* --- высота рельефа (копия heightAt из js/game/terrain.js, 1:1) --- */
+const COLD_WORLD_HALF = 450;         // WORLD_SIZE 900 / 2
+const S_HILLS = 1013, S_DETAIL = 2027, S_MOUNT_MASK = 3041,
+  S_MOUNT = 4051;                    // сиды слоёв шума — как в terrain.js
+function brixHeightAt(x, z) {
+  const r = Math.sqrt(x * x + z * z) / COLD_WORLD_HALF;
+
+  const spawnBlend = brixSmoothstep(0.14, 0.3, r);
+
+  const hills = (brixFbm(x * 0.012, z * 0.012, S_HILLS, 4) - 0.45) * 30;
+  const detail = (brixFbm(x * 0.05, z * 0.05, S_DETAIL, 3) - 0.5) * 3.5;
+
+  const mountMask = brixSmoothstep(0.55, 0.82,
+    r + (brixFbm(x * 0.005 + 7.3, z * 0.005 + 2.9, S_MOUNT_MASK, 3) - 0.5) * 0.55);
+  const ridge = Math.pow(brixRidged(x * 0.006, z * 0.006, S_MOUNT, 4), 1.3) * 72;
+
+  const peaks =
+    56 * brixGauss(x, z, -230, -150, 95) +
+    64 * brixGauss(x, z, 255, -230, 105) +
+    42 * brixGauss(x, z, -130, 255, 85);
+
+  const lakeG = brixGauss(x, z, 170, 150, 110);
+  const lakeMask = brixSmoothstep(0.15, 0.7, lakeG);
+
+  let h = 5 + spawnBlend * (hills + detail) * (1 - lakeMask * 0.85);
+  h += ridge * mountMask;
+  h += peaks * brixSmoothstep(0.25, 0.45, r);
+  h -= 18 * lakeG;
+
+  const edge = brixSmoothstep(0.88, 1.02, r);
+  h = brixLerp(h, -7, edge);
+
+  return h;
+}
+
+/* --- параметры холода --- */
+const COLD_TICK_MS = 1000;      // пуш 'cold' раз в секунду
+const COLD_RATE = 1.4;          // набег холода в секунду при полной зиме (0→100 ~ 71с)
+const WARM_RATE = 1.25;         // оттаивание в секунду в тепле (100→0 ~ 80с, «по чуть-чуть»)
+const COLD_DMG_FROM = 30;       // с этого холода начинается урон по ХП
+const COLD_DPS_MAX = 1.2;       // ХП/сек при шкале 100 (при 30 — всего 0.36)
+const COLD_ZONE_FROM = 44;      // снеговая линия — как snowK в terrain.js
+const COLD_ZONE_TO = 58;        // выше — полная зима
+const COLD_ZONE_MIN = 0.15;     // слабее — считается теплом (шкала тает)
+
+setInterval(() => {
+  players.forEach((p) => {
+    if (!p.state || p.dead) return;
+    const st = p.state;
+    const zoneK = brixSmoothstep(COLD_ZONE_FROM, COLD_ZONE_TO,
+      brixHeightAt(Number(st.x) || 0, Number(st.z) || 0));
+    if (zoneK > COLD_ZONE_MIN) {
+      /* в зиме: чем выше — тем быстрее замерзаешь */
+      p.cold = Math.min(100, (p.cold || 0) + COLD_RATE * zoneK);
+    } else {
+      /* в тепле: шкала по чуть-чуть тает — в тепле исчезает полностью */
+      p.cold = Math.max(0, (p.cold || 0) - WARM_RATE);
+    }
+    let hpMsg = null;
+    if (p.cold >= COLD_DMG_FROM && !p.god) {
+      /* урон растёт вместе со шкалой: 30 холода = 0.36 хп/с, 100 = 1.2 хп/с */
+      p.hp = Math.max(0, (p.hp === undefined ? 100 : p.hp) -
+        (p.cold / 100) * COLD_DPS_MAX);
+      hpMsg = Math.round(p.hp);
+      if (p.hp <= 0) {
+        p.dead = true;
+        /* ✅ холод убил — pdeath уходит ВСЕМ включая жертву (by пустой,
+           cold:1 — в меню смерти «Ты замёрз насмерть», без килфида) */
+        broadcast({ t: 'pdeath', tid: p.id, by: '', cold: 1 }, null);
+        console.log('[cold] ' + p.name + ' замёрз насмерть (холод ' +
+          Math.round(p.cold) + ')');
+      } else {
+        /* остальным — остаток хп жертвы (полоска над головой);
+           самой жертве не шлём: у неё хп в 'cold' (без красной вспышки) */
+        broadcast({ t: 'phit', tid: p.id, hp: hpMsg, kind: 'cold', by: '' }, p.id);
+      }
+    }
+    p.send({ t: 'cold', v: Math.round(p.cold * 10) / 10,
+      z: Math.round(zoneK * 100) / 100, hp: hpMsg });
+  });
+}, COLD_TICK_MS);
+
 /* ---------- 5. Старт ---------- */
 
 /* ✅ v0.4.29: ПОРТ ЗАНЯТ — понятная инструкция вместо молчаливого падения.
@@ -1846,3 +2255,40 @@ server.listen(PORT, () => {
     : 'НЕТ — впиши свой BRIX-ID в admins.json и перезапусти сервер'));
   console.log('');
 });
+
+/* ============================================================
+   ✅ v0.4.41 СЕРВЕР БОЛЬШЕ НЕ ПАДАЕТ ОТ ОДНОЙ ОШИБКИ.
+   Было: «играю больше 60 минут — сервер вырубается» — любой брошенный
+   exception в обработчике сокета (например, чанк мира без поля rec —
+   «Cannot read properties of undefined (reading 'top')») убивал ВЕСЬ
+   процесс Node, все игроки вылетали. Теперь ошибка пишется в лог с
+   пометкой [guard] и сервер ПРОДОЛЖАЕТ работать; раз в 5 минут —
+   сводка, сколько ошибок проглочено. Плюс защита от повторного краша
+   внутри самого обработчика (не дублируем логи чаще 1/с)
+   ============================================================ */
+let guardCount = 0;
+let guardLastLog = 0;
+process.on('uncaughtException', (e) => {
+  guardCount++;
+  const now = Date.now();
+  if (now - guardLastLog > 1000) {          // лог не чаще 1/с (шторм не зальёт консоль)
+    guardLastLog = now;
+    console.log('[guard] поймана ошибка (сервер работает дальше, #' + guardCount + '): ' +
+      ((e && e.stack) ? String(e.stack).split('\n').slice(0, 4).join(' | ') : (e && e.message) || e));
+  }
+});
+process.on('unhandledRejection', (e) => {
+  guardCount++;
+  const now = Date.now();
+  if (now - guardLastLog > 1000) {
+    guardLastLog = now;
+    console.log('[guard] пойман rejected promise (сервер работает дальше, #' + guardCount + '): ' +
+      ((e && (e.stack || e.message)) ? String(e.stack || e.message).split('\n').slice(0, 4).join(' | ') : e));
+  }
+});
+setInterval(() => {
+  if (guardCount > 0) {
+    console.log('[guard] сводка: проглочено ошибок за всё время: ' + guardCount +
+      ' · онлайн: ' + players.size);
+  }
+}, 5 * 60 * 1000);

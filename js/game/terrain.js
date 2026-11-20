@@ -23,6 +23,10 @@ window.BrixTerrain = (function () {
   var S_MOUNT = 4051;
   var S_MOIST = 5059;
   var S_DITHER = 6067;
+  // ✅ v0.4.42 переходы между биомами: отдельные сиды на возмущение
+  // границ (крупное «гуляние» линии) и пятна (рваные края биомов)
+  var S_TRANS = 7079;
+  var S_PATCH = 8081;
 
   /** Гауссова «шапка» отдельной горы */
   function peak(x, z, cx, cz, sigma, amp) {
@@ -104,40 +108,91 @@ window.BrixTerrain = (function () {
     return a + (b - a) * tz;
   }
 
-  var C_GRASS_A = new THREE.Color(0x66773d);
-  var C_GRASS_B = new THREE.Color(0x8a8749);
-  var C_DIRT = new THREE.Color(0x6e5a3a);
-  var C_ROCK = new THREE.Color(0x7c7870);
-  var C_SNOW = new THREE.Color(0xdfe5ea);
-  var C_SAND = new THREE.Color(0xb3a173);
-  var C_DEEP = new THREE.Color(0x2f4340);
+  /* ✅ v0.4.42 НОВАЯ ПАЛИТРА БИОМОВ — сочнее и контрастнее:
+     луг зелёный (не болотный), сухостой тёплый, песок пляжный,
+     снег чистый с голубиной тенью, камень холоднее, дно бирюзовое */
+  var C_GRASS_A = new THREE.Color(0x5c7c30);
+  var C_GRASS_B = new THREE.Color(0x9a9150);
+  var C_DIRT = new THREE.Color(0x7c6238);
+  var C_ROCK = new THREE.Color(0x8b857b);
+  var C_SNOW = new THREE.Color(0xecf1f6);
+  var C_SAND = new THREE.Color(0xcbb27c);
+  var C_DEEP = new THREE.Color(0x29423d);
 
-  /** Цвет вершины по высоте, крутизне (normal.y) и шумам влажности */
-  function colorAt(h, ny, x, z, out) {
-    var m = N.fbm(x * 0.02, z * 0.02, S_MOIST, 3);
+  /** Рваная граница слоя: максимальное возмущение — на самом краю
+      (k≈0.5), там где слой уже «полн» или «пуст» — не трогаем.
+      patch — шум 0..1, amt — сила рваности. Без аллокаций. */
+  function ragged(k, patch, amt) {
+    if (k <= 0 || k >= 1) return k;
+    var edge = 1 - Math.abs(2 * k - 1);
+    k += (patch - 0.5) * amt * edge;
+    return k < 0 ? 0 : (k > 1 ? 1 : k);
+  }
 
-    // трава: от сочной к сухой по влажности
-    out.copy(C_GRASS_A).lerp(C_GRASS_B, m);
+  /* ✅ v0.4.42 ВЕСА СЛОЁВ БИОМОВ + КРАСИВЫЕ ПЕРЕХОДЫ.
+     Отличия от старой раскраски:
+     1) граница каждого биома «гуляет» крупным шумом (±4.5 м) —
+        линии трава→земля→снег→песок живые, не ровные полосы;
+     2) края рваные пятнами (ragged) — островки снега на кромке,
+        лоскуты песка на пляже, проплешины земли на лугу;
+     3) те же веса едут в геометрию (brixSplat) и едят текстуры
+        в шейдере (terrainlook.js) — карта и мир выглядят ОДНО.
+     Результат пишется в общий пул _ks (без аллокаций в цикле). */
+  var _ks = { moist: 0, dirtK: 0, rockK: 0, snowK: 0, sandK: 0, deepK: 0 };
+  function biomeKsAt(h, ny, x, z) {
+    var moist = N.fbm(x * 0.02, z * 0.02, S_MOIST, 3);
+    // крупное возмущение границ: двигает высотные пороги биомов
+    var wobble = (N.fbm(x * 0.013, z * 0.013, S_TRANS, 3) - 0.5) * 9.0;
+    // мелкие пятна: рвут край на лоскуты
+    var patch = N.fbm(x * 0.09, z * 0.09, S_PATCH, 2);
 
-    // земля на средних высотах
-    var dirtK = N.smoothstep(16, 34, h) * 0.65;
-    out.lerp(C_DIRT, dirtK);
+    // трава: от сочной к сухой по влажности (с пятнистостью тона)
+    _ks.moist = Math.min(1, Math.max(0, moist + (patch - 0.5) * 0.35));
+
+    // земля на средних высотах — граница гуляет, край рваный
+    var dirtEdge = 16 + wobble;
+    _ks.dirtK = ragged(N.smoothstep(dirtEdge, dirtEdge + 16, h) * 0.68, patch, 0.5);
 
     // камень на крутых склонах
-    var rockK = N.smoothstep(0.22, 0.48, 1 - ny);
-    out.lerp(C_ROCK, rockK);
+    _ks.rockK = ragged(N.smoothstep(0.2, 0.52, 1 - ny), patch, 0.45);
 
-    // снег на вершинах (держится на пологих участках)
-    var snowK = N.smoothstep(44, 58, h) * N.smoothstep(0.3, 0.55, ny);
-    out.lerp(C_SNOW, snowK);
+    // снег на вершинах (держится на пологих участках), снеговая линия гуляет
+    var snowLine = 44 + wobble * 1.2;
+    _ks.snowK = ragged(N.smoothstep(snowLine, snowLine + 13, h) *
+      N.smoothstep(0.28, 0.56, ny), patch, 0.55);
 
-    // песчаные пляжи у воды
-    var sandK = 1 - N.smoothstep(2.4, 3.8, h);
-    out.lerp(C_SAND, sandK);
+    // песчаные пляжи у воды — полоса мягче и край рванее
+    var sandEdge = 2.5 + wobble * 0.4;
+    _ks.sandK = ragged(1 - N.smoothstep(sandEdge, sandEdge + 1.9, h), patch, 0.55);
 
     // тёмное дно
-    var deepK = 1 - N.smoothstep(-3, 1.2, h);
-    out.lerp(C_DEEP, deepK * 0.75);
+    _ks.deepK = 1 - N.smoothstep(-3, 1.2, h);
+    return _ks;
+  }
+
+  /** Цвет вершины по высоте, крутизне (normal.y) и шумам влажности.
+      ✅ v0.4.42: использует biomeKsAt — миникарта (minimenu.js)
+      раскрашивается ТЕМИ ЖЕ рваными границами, что и мир. */
+  function colorAt(h, ny, x, z, out) {
+    var ks = biomeKsAt(h, ny, x, z);
+
+    // трава: от сочной к сухой по влажности
+    out.copy(C_GRASS_A).lerp(C_GRASS_B, ks.moist);
+
+    // земля на средних высотах
+    out.lerp(C_DIRT, ks.dirtK);
+
+    // камень на крутых склонах
+    out.lerp(C_ROCK, ks.rockK);
+
+    // снег на вершинах
+    out.lerp(C_SNOW, ks.snowK);
+
+    // песчаные пляжи у воды
+    out.lerp(C_SAND, ks.sandK);
+
+    // тёмное дно
+    out.lerp(C_DEEP, ks.deepK * 0.75);
 
     // мелкая рябь цвета
     var d = N.fbm(x * 0.35, z * 0.35, S_DITHER, 2);
@@ -146,6 +201,22 @@ window.BrixTerrain = (function () {
     out.g = Math.min(1, out.g * k);
     out.b = Math.min(1, out.b * k);
     return out;
+  }
+
+  /** ✅ v0.4.42: тип поверхности под ногами — для следов (footprints.js).
+      0 — обычная (трава/земля/камень), 1 — песок, 2 — снег.
+      Берёт высоту РЕНДЕРИМОЙ сетки (meshHeightAt) — следы совпадают
+      с тем, что игрок видит. */
+  function surfaceAt(x, z) {
+    var h = meshHeightAt(x, z);
+    var e = 0.6;
+    var sx = (meshHeightAt(x + e, z) - meshHeightAt(x - e, z)) / (2 * e);
+    var sz = (meshHeightAt(x, z + e) - meshHeightAt(x, z - e)) / (2 * e);
+    var ny = 1 / Math.sqrt(1 + sx * sx + sz * sz);
+    var ks = biomeKsAt(h, ny, x, z);
+    if (ks.sandK > 0.5) return 1;
+    if (ks.snowK > 0.45) return 2;
+    return 0;
   }
 
   /**
@@ -172,21 +243,34 @@ window.BrixTerrain = (function () {
 
     geo.computeVertexNormals();
 
-    // 2) цвета вершин
+    // 2) цвета вершин + ✅ v0.4.42 splat-веса биомов для шейдера
+    //    (brixSplat: земля/камень/снег/песок, brixSplat2: дно/влажность —
+    //    terrainlook.js смешивает по ним ПРОЦЕДУРНЫЕ ТЕКСТУРЫ)
     var nor = geo.attributes.normal;
     var colors = new Float32Array(total * 3);
+    var splat = new Float32Array(total * 4);
+    var splat2 = new Float32Array(total * 2);
     var c = new THREE.Color();
     for (start = 0; start < total; start += CHUNK) {
       end = Math.min(total, start + CHUNK);
       for (i = start; i < end; i++) {
-        colorAt(pos.getY(i), nor.getY(i), pos.getX(i), pos.getZ(i), c);
+        var vx = pos.getX(i), vz = pos.getZ(i);
+        colorAt(pos.getY(i), nor.getY(i), vx, vz, c);
         colors[i * 3] = c.r;
         colors[i * 3 + 1] = c.g;
         colors[i * 3 + 2] = c.b;
+        splat[i * 4] = _ks.dirtK;
+        splat[i * 4 + 1] = _ks.rockK;
+        splat[i * 4 + 2] = _ks.snowK;
+        splat[i * 4 + 3] = _ks.sandK;
+        splat2[i * 2] = _ks.deepK;
+        splat2[i * 2 + 1] = _ks.moist;
       }
       await yieldProgress(0.5 + 0.5 * (end / total));
     }
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.setAttribute('brixSplat', new THREE.BufferAttribute(splat, 4));
+    geo.setAttribute('brixSplat2', new THREE.BufferAttribute(splat2, 2));
 
     return geo;
   }
@@ -199,6 +283,8 @@ window.BrixTerrain = (function () {
     heightAt: heightAt,
     meshHeightAt: meshHeightAt,
     colorAt: colorAt,
+    surfaceAt: surfaceAt,
+    biomeKsAt: biomeKsAt,
     buildTerrainGeometry: buildTerrainGeometry
   };
 })();

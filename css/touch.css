@@ -1,0 +1,214 @@
+/* ============================================================
+   brix • css/touch.css  ✅ v0.4.41
+   МОБИЛЬНОЕ УПРАВЛЕНИЕ: панель тач-кнопок поверх игры.
+   Размеры на clamp()/vmin — один файл покрывает ВСЕ экраны:
+   маленький телефон, большой телефон (портрет/ландшафт),
+   планшет, складной, вырезы/чёлки (safe-area-inset).
+   z-index 61: НИЖЕ hud (62 — хотбар/панели кликабельны),
+   ВЫШЕ canvas (.game-layer 60), под паузой (64) и модалками (70+).
+   ============================================================ */
+
+.bx-touch {
+  position: fixed; inset: 0;
+  z-index: 61;
+  display: none;
+  pointer-events: none;
+  font-family: 'Oswald', 'Segoe UI', sans-serif;
+  -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+.bx-touch.show { display: block; }
+
+/* ---- размеры кнопок/джойстика под каждый экран ---- */
+.bx-touch {
+  --tbtn:   clamp(46px, 8.5vmin, 70px);    /* обычная кнопка */
+  --tbig:   clamp(76px, 14vmin, 116px);    /* АТАКА */
+  --tstick: clamp(118px, 26vmin, 200px);   /* джойстик */
+  --tknob:  calc(var(--tstick) * 0.44);
+  --tgap:   clamp(8px, 1.8vmin, 16px);
+  --t-side: max(10px, env(safe-area-inset-right));
+  --t-bot:  max(12px, env(safe-area-inset-bottom));
+  --t-top:  max(10px, env(safe-area-inset-top));
+}
+/* маленькие телефоны — компактнее */
+@media (max-width: 360px) {
+  .bx-touch { --tbtn: 44px; --tbig: 72px; --tstick: 108px; }
+}
+/* планшеты и крупные экраны — крупнее */
+@media (min-width: 768px) and (min-height: 600px) {
+  .bx-touch { --tbtn: 72px; --tbig: 118px; --tstick: 200px; }
+}
+
+/* ---- слой обзора: весь экран, палец крутит камеру ---- */
+.bx-t-look {
+  position: absolute; inset: 0;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* ---- ДЖОЙСТИК ХОДЬБЫ (слева внизу) ---- */
+.bx-t-stick {
+  position: absolute;
+  left: calc(var(--t-side) + var(--tgap));
+  bottom: calc(var(--t-bot) + var(--tgap));
+  width: var(--tstick); height: var(--tstick);
+  border-radius: 50%;
+  background: rgba(14, 13, 11, 0.42);
+  border: 2px solid rgba(240, 234, 216, 0.30);
+  box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  touch-action: none;
+  transition: border-color .15s ease;
+}
+.bx-t-stick.live { border-color: rgba(222, 138, 70, 0.85); }
+.bx-t-knob {
+  position: absolute; left: 50%; top: 50%;
+  width: var(--tknob); height: var(--tknob);
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, rgba(247, 240, 226, 0.95), rgba(178, 168, 148, 0.85) 68%);
+  border: 2px solid rgba(28, 24, 20, 0.55);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* ---- общий вид кнопки ---- */
+.bx-t-btn {
+  position: absolute;
+  width: var(--tbtn); height: var(--tbtn);
+  border-radius: 16px;
+  background: rgba(18, 16, 13, 0.55);
+  border: 2px solid rgba(240, 234, 216, 0.45);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45), inset 0 0 12px rgba(0, 0, 0, 0.3);
+  color: #f0ead8;
+  pointer-events: auto;
+  touch-action: none;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 1px;
+  transition: background .12s ease, border-color .12s ease, transform .08s ease;
+}
+.bx-t-btn svg { width: 52%; height: 52%; }
+.bx-t-btn .bx-t-lbl {
+  font-size: 8px; font-weight: 700;
+  letter-spacing: .08em;
+  color: rgba(240, 234, 216, 0.85);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .9);
+  white-space: nowrap;
+}
+.bx-t-btn .bx-t-key {
+  position: absolute; top: 2px; right: 4px;
+  font-style: normal; font-size: 8px; font-weight: 700;
+  color: rgba(240, 234, 216, 0.5);
+  letter-spacing: 0;
+}
+/* нажата */
+.bx-t-btn.press {
+  background: rgba(206, 107, 53, 0.55);
+  border-color: rgba(255, 200, 150, 0.8);
+  transform: scale(0.93);
+}
+/* включённые переключатели (БЕГ/ПРИЦЕЛ/ПРИСЕД) */
+.bx-t-btn.on {
+  background: rgba(206, 107, 53, 0.5);
+  border-color: #de8a46;
+  box-shadow: 0 0 14px rgba(222, 138, 70, 0.55), inset 0 0 12px rgba(0, 0, 0, .3);
+}
+
+/* ---- БОЕВОЙ БЛОК справа внизу: АТАКА крупная, вокруг — ПРИЦЕЛ/
+       ПРЫЖОК/БЕГ/ПРИСЕД (алмаз, как в мобильных шутерах) ---- */
+.bx-t-attack {
+  width: var(--tbig); height: var(--tbig);
+  border-radius: 50%;
+  right: calc(var(--t-side) + var(--tgap));
+  bottom: calc(var(--t-bot) + var(--tgap) + 14px);
+}
+.bx-t-attack svg { width: 56%; height: 56%; }
+.bx-t-aim {
+  right: calc(var(--t-side) + var(--tgap) + var(--tbig) * 0.06);
+  bottom: calc(var(--t-bot) + var(--tgap) + 14px + var(--tbig) + var(--tgap));
+}
+.bx-t-jump {
+  right: calc(var(--t-side) + var(--tgap) + var(--tbig) + var(--tgap));
+  bottom: calc(var(--t-bot) + var(--tgap) + 14px);
+}
+.bx-t-sprint {
+  right: calc(var(--t-side) + var(--tgap) + var(--tbig) * 0.9 + var(--tgap));
+  bottom: calc(var(--t-bot) + var(--tgap) + 14px + var(--tbig) * 0.62 + var(--tgap));
+}
+.bx-t-crouch {
+  right: calc(var(--t-side) + var(--tgap) + var(--tbig) * 1.9 + var(--tgap) * 0.6);
+  bottom: calc(var(--t-bot) + var(--tgap) + 14px);
+}
+
+/* ---- столбик ФУНКЦИЙ: ВЗЯТЬ/ЗАРЯД/СУМКА/КРАФТ/КАРТА/СТРОЙКА —
+       вертикальная сетка 2×3 над боевым блоком ---- */
+.bx-t-side {
+  position: absolute;
+  right: calc(var(--t-side) + var(--tgap) * 0.4);
+  bottom: calc(var(--t-bot) + var(--tgap) * 2 + var(--tbig) + var(--tgap) + var(--tbtn) + var(--tgap));
+  width: calc(var(--tbtn) * 2 + var(--tgap));
+  height: calc(var(--tbtn) * 3 + var(--tgap) * 2);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-auto-flow: column;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: var(--tgap);
+  pointer-events: none;
+}
+.bx-t-side .bx-t-btn {
+  position: static;
+  width: 100%; height: 100%;
+  border-radius: 14px;
+}
+
+/* ============================================================
+   АДАПТАЦИЯ ПОД ОРИЕНТАЦИЮ И РАЗМЕР
+   ============================================================ */
+
+/* ПОРТРЕТ телефона: столбик функций — 3 колонки × 2 ряда,
+   уходит ВВЕРХ, чтобы не толкаться с боевым блоком */
+@media (orientation: portrait) {
+  .bx-t-side {
+    grid-template-columns: 1fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    width: calc(var(--tbtn) * 3 + var(--tgap) * 2);
+    height: calc(var(--tbtn) * 2 + var(--tgap));
+    right: calc(var(--t-side) + var(--tgap) * 0.4);
+    bottom: calc(var(--t-bot) + var(--tgap) * 2 + var(--tbig) + var(--tgap) + var(--tbtn) + var(--tgap));
+  }
+}
+
+/* ЛАНДШАФТ с маленькой высотой (телефон боком): джойстик и блок
+   прижаты к краям, подписи мельче, ничего не вылезает */
+@media (orientation: landscape) and (max-height: 460px) {
+  .bx-touch { --tbtn: 46px; --tbig: 80px; --tstick: 118px; --tgap: 7px; }
+  .bx-t-btn .bx-t-lbl { font-size: 7px; }
+  .bx-t-attack { bottom: calc(var(--t-bot) + var(--tgap)); }
+  .bx-t-aim    { bottom: calc(var(--t-bot) + var(--tgap) + var(--tbig) + var(--tgap)); }
+  .bx-t-jump   { bottom: calc(var(--t-bot) + var(--tgap)); }
+  .bx-t-sprint {
+    right: calc(var(--t-side) + var(--tgap) + var(--tbig) * 0.9 + var(--tgap));
+    bottom: calc(var(--t-bot) + var(--tgap) + var(--tbig) * 0.62 + var(--tgap));
+  }
+  .bx-t-crouch { bottom: calc(var(--t-bot) + var(--tgap)); }
+}
+
+/* Очень узкий портрет (небольшой телефон): кнопки в одну линию
+   не толкаются — столбик функций выше атакующей кнопки */
+@media (orientation: portrait) and (max-width: 360px) {
+  .bx-t-side { grid-template-columns: 1fr 1fr 1fr; grid-template-rows: 1fr 1fr; }
+}
+
+/* Очень низкий ландшафт (вырез/жест-полоска сверху) — столбик
+   функций не задевает hud-stats (FPS/координаты, правый верх) */
+@media (orientation: landscape) and (max-height: 460px) {
+  .bx-t-side { bottom: calc(var(--t-bot) + var(--tgap) + var(--tbig) + var(--tgap) * 2 + var(--tbtn)); }
+}
+
+/* Крупные планшеты в портрете: чуть больше отступ от краёв */
+@media (orientation: portrait) and (min-width: 768px) {
+  .bx-touch { --t-side: max(18px, env(safe-area-inset-right)); --t-bot: max(20px, env(safe-area-inset-bottom)); }
+}

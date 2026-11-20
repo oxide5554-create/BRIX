@@ -7,6 +7,246 @@ window.BrixData = window.BrixData || {};
 
 window.BrixData.NEWS = [
   {
+    id: 'n-biomes-footprints',
+    date: '20.11.2026',
+    tag: 'new',
+    title: {
+      ru: 'Патч 0.4.42 — текстуры биомов, красивые переходы и следы на песке/снегу',
+      en: 'Patch 0.4.42 — biome textures, smooth transitions and footprints on sand/snow'
+    },
+    excerpt: {
+      ru: 'Земля больше не однотонная: 7 процедурных текстур (сочный луг, сухостой, земля, камень, снег, песок, дно) и РВАНЫЕ живые переходы между биомами — границы «гуляют» и рвутся пятнами, снег блестит. СЛЕДЫ: ходишь по песку или снегу — остаются следы ботинок (лево/право, по наклону); своих следов максимум 50 — первые исчезают первыми, чтобы не лагало. Чужие игроки тоже оставляют следы.',
+      en: 'The ground is no longer flat-colored: 7 procedural textures (lush meadow, dry grass, dirt, rock, snow, sand, sea bottom) with RAGGED organic transitions — biome borders wander and break into patches, snow glitters. FOOTPRINTS: walk on sand or snow and bootprints stay behind (left/right, laid on slopes); your prints cap at 50 — the oldest vanish first so nothing lags. Other players leave prints too.'
+    },
+    body: {
+      ru: [
+        'ТЕКСТУРЫ БИОМОВ (новый файл js/game/terrainlook.js): раньше вся земля была ПЛОСКИМИ вершинными цветами — трава, песок и снег выглядели однотонной заливкой. Теперь terrain.js на вершинах считает ВЕСА слоёв (новые атрибуты brixSplat/brixSplat2), а в материал террейна внедряется шейдер, который смешивает 7 ПРОЦЕДУРНЫХ бесшовных текстур 256×256: сочный луг (с травинками), сухостой, земля с камешками, камень с трещинами, снег с позёмкой и блёстками, песок с рябью, тёмное дно. Ни одного внешнего файла — всё рисуется на canvas при загрузке мира.',
+        'КРАСИВЫЕ ПЕРЕХОДЫ: граница каждого биома «ГУЛЯЕТ» крупным шумом (±4.5 м) — линия трава→земля→снег→песок живая, не ровная полоса; края рвутся ПЯТНАМИ (островки снега на кромке, лоскуты песка на пляже, проплешины земли на лугу), а ВБЛИЗИ граница дополнительно рвётся ПОПИКСЕЛЬНЫМ шумом — даже рядом с ногами биом не выглядит «линейкой». Текстуры берутся в МИРОВЫХ координатах — тайл не «плывёт» под ногами. Бонус: крупные пятна света/тени по всей земле и блёстки на снегу/мокром песке. Миникарта (M) теперь раскрашена ТЕМИ ЖЕ рваными границами — карта и мир совпадают.',
+        'СЛЕДЫ НОГ (новый файл js/game/footprints.js): идёшь по ПЕСКУ или СНЕГУ — за тобой остаются следы ботинок: левый/правый по очереди, направлены ПО ХОДУ движения, лежат ПО НАКЛОНУ рельефа, мягко проявляются при рождении. На траве, земле, камне, в прыжке и на постройках следов НЕТ — только там, где реально песок или снег.',
+        'ЛИМИТ 50: как только пошёл 51-й твой след — САМЫЙ ПЕРВЫЙ начинает таять (FIFO): следов всегда около 50, «мусор» не копится и FPS не падает. ЧУЖИЕ игроки тоже оставляют следы — у них общий лимит 24, чтобы на полном сервере не плодить сотни мешей. Всё исчезает вместе с миром при выходе.',
+        'СЕРВЕР: логика не менялась, только версия (0.4.42) — замени server.js и ПЕРЕЗАПУСТИ сервер, чтобы не вылезал баннер «СЕРВЕР СТАРЫЙ». Кэш поднят до ?v=081 — страница обновится сама после Ctrl+Shift+R.'
+      ],
+      en: [
+        'BIOME TEXTURES (new file js/game/terrainlook.js): the whole ground used to be FLAT vertex colors — grass, sand and snow looked like single-tone fills. Now terrain.js computes LAYER WEIGHTS per vertex (new brixSplat/brixSplat2 attributes) and a shader injected into the terrain material blends 7 PROCEDURAL seamless 256×256 textures: lush meadow (with grass blades), dry grass, pebbly dirt, cracked rock, snow with wind streaks and glints, rippled sand, dark sea bottom. No external files — everything is drawn on canvas while the world loads.',
+        'BEAUTIFUL TRANSITIONS: each biome border WANDERS with large-scale noise (±4.5 m) — the grass→dirt→snow→sand line is alive, not a straight band; edges break into PATCHES (snow islands at the rim, sand laces on the beach, dirt freckles in the meadow), and UP CLOSE the border is additionally broken by PER-PIXEL noise — even near your feet a biome never looks ruler-straight. Textures sample in WORLD coordinates — the tile does not slide under your feet. Bonus: large light/shadow patches across the land and glints on snow/wet sand. The minimap (M) is now painted with THE SAME ragged borders — map and world match.',
+        'FOOTPRINTS (new file js/game/footprints.js): walking on SAND or SNOW leaves bootprints behind you: left/right alternating, oriented along your movement, laid onto the slope, softly fading in. No prints on grass, dirt, rock, in mid-air or on buildings — only where it is really sand or snow.',
+        'THE 50 CAP: once your 51st print appears, the VERY FIRST one starts to fade (FIFO): there are always about 50 prints, no clutter and no FPS drop. OTHER players leave prints too — with a shared cap of 24 so a full server does not grow hundreds of meshes. Everything disappears together with the world on exit.',
+        'SERVER: no logic changes, version bump only (0.4.42) — replace server.js and RESTART the server so the “SERVER IS OLD” banner stays away. Cache bumped to ?v=081 — the page will pick it up after Ctrl+Shift+R.'
+      ]
+    }
+  },
+  {
+    id: 'n-c4-mobile41',
+    date: '20.11.2026',
+    tag: 'new',
+    title: {
+      ru: 'Патч 0.4.41 — С4, мобильное управление, магнит потолка и чинёный сервер',
+      en: 'Patch 0.4.41 — C4, mobile controls, ceiling magnetism and a server fix'
+    },
+    excerpt: {
+      ru: 'С4: бросок с физикой, прилипает к стенам и потолку, 15 «тыков» (каждый тише и быстрее) — и взрыв: −400 хп постройкам в радиусе, игроки в радиусе погибают. МОБИЛЬНОЕ УПРАВЛЕНИЕ: джойстик, камера по пальцам и кнопка на каждую функцию под любой экран. СТРОИТЬ ПРОЩЕ: магнит потолка (в твою клетку, над головой, достройка в соседнюю). СЕРВЕР больше не вырубается после ~часа игры. Сундук не открывается сквозь стену. Прыжок через потолок починен.',
+      en: 'C4: physics throw, sticks to walls and ceilings, 15 ticks (quieter and faster each) — then a blast: −400 HP to every building in radius, players in radius die. MOBILE: joystick, finger camera and a button for every action, fits any screen. BUILDING IS EASIER: ceiling magnetism (your cell, above your head, extend to the next cell). The SERVER no longer shuts down after about an hour. Chests no longer open through walls. Ceiling jump-through is fixed.'
+    },
+    body: {
+      ru: [
+        'С4 (взрывчатка, модель и звуки от игрока — C4.glb, c4_beep.ogg, C4 Explosion 1.ogg): в руках блок стоит ПО ЦЕНТРУ экрана, обе руки держат его ЗА БОКИ. ЛКМ — обычный быстрый бросок: блок летит по дуге С ФИЗИКОЙ и ПРИЛИПАЕТ туда, куда упал — к земле, к стене или даже к ПОТОЛКУ (лицевой гранью от поверхности). Дальше блок «тыкает» 15 РАЗ: каждый тык чуть ТУСКЛЕЙ, «ПИСКЛЯВЕЕ» и БЫСТРЕЕ предыдущего (интервал 1.0 с → 0.44 с, тон растёт 1.0 → 1.9, громкость падает 0.9 → 0.4), красный «глаз» на блоке мигает. После 15-го тыка — ВЗРЫВ: КАЖДАЯ постройка в радиусе 7 м получает −400 хп (стены, потолки, окна, двери и сундуки — до 300 хп — ломаются С ОДНОГО взрыва, фундамент 350 — с двух), а все игроки в радиусе 6.5 м получают 250 урона — НАСМЕРТЬ. Крафт: металлолом 20 + метал 40 + сера 15 (категория ОРУЖИЕ).',
+        'МОБИЛЬНОЕ УПРАВЛЕНИЕ (новый файл js/game/touch.js) — включается САМО на тач-экранах (принудительно: напиши в консоли localStorage.brixTouch = \'1\' и обнови страницу): ДЖОЙСТИК ходьбы слева-снизу — аналоговый, чем сильнее ведёшь, тем быстрее; кнопка БЕГ — переключатель (горит, когда включён); КАМЕРА ЧУВСТВУЕТ ПАЛЬЦЫ — свайп по свободной части экрана крутит взгляд, второй палец одновременно может держать джойстик или кнопку. КНОПКА ПОД КАЖДУЮ ФУНКЦИЮ: УДАР/огонь (большая справа), ПРИЦЕЛ (удержание), ПРЫЖОК, БЕГ, F — взаимодействие (сундук/дверь/подбор), КРАФТ, СУМКА, СТРОЙКА, R — перезарядка, СИД — присед, II — меню. Размеры подгоняются под ЛЮБОЙ экран (от 44 до 78 px по vmin, вырезы «чёлки» учтены), работает и вертикально, и горизонтально. Pointer lock на телефоне не нужен: игра сама считается активной. Без лагов: слушатели постоянные, картинка двигается через transform.',
+        'СТРОИТЬ ПРОЩЕ — МАГНИТ ПОТОЛКА (просьба игрока): целишься в СТЕНУ — потолок встанет в клетку, где ТЫ стоишь (внутреннюю), а не в «якорную» клетку края; целишься в НЕБО или мимо (внутри комнаты лучу не во что упереться) — потолок ищется НАД ИГРОКОМ и на клетку ВПЕРЁД по взгляду; целишься в УЖЕ ПОСТАВЛЕННЫЙ потолок — достройка продолжается СОСЕДНЕЙ клеткой по направлению взгляда. Прежнее правило (точка прицела) осталось резервом.',
+        'ПРЫЖОК ЧЕРЕЗ ПОТОЛОК ПОЧИНЕН: раньше изнутри дома можно было выпрыгнуть сквозь потолок на крышу. Теперь макушка упирается в потолок — подъём гаснет, игрок падает обратно (проверка на пересечение низа бокса, работает даже при просадке FPS).',
+        'СУНДУК БОЛЬШЕ НЕ ОТКРЫВАЕТСЯ СКВОЗЬ СТЕНУ: раньше луч F шёл ТОЛЬКО по сундукам, и сундук за стеной открывался на расстоянии вытянутой руки. Теперь в луче участвуют все постройки и рельеф — сундук откроется, только если он ПЕРВОЕ, во что упёрся взгляд.',
+        'СЕРВЕР ВЫРУБАЛСЯ ПОСЛЕ ~60 МИНУТ ИГРЫ — ПОЧИНЕНО: падение было в установке сундука («Cannot read properties of undefined (reading \'top\')» — чанк палубы приходил без поля rec, и ВЕСЬ процесс Node умирал со всеми игроками). Это место защищено, и ВЕСЬ сервер теперь прикрыт страховками uncaughtException/unhandledRejection: ошибка пишется в лог с пометкой [guard], сервер ПРОДОЛЖАЕТ работать (в логе раз в 5 минут сводка). ОБЯЗАТЕЛЬНО замени server.js и перезапусти сервер — иначе С4 не будет наносить урон и сервер по-прежнему будет падать. Кэш поднят до ?v=080.'
+      ],
+      en: [
+        'C4 (explosive, user model and sounds — C4.glb, c4_beep.ogg, C4 Explosion 1.ogg): held CENTERED in front of you, both hands gripping the SIDES. LMB makes a quick throw: the block flies in an arc WITH PHYSICS and STICKS where it lands — ground, wall, even CEILING (face out). Then it ticks 15 TIMES: each tick a bit dimmer, squeakier and FASTER (interval 1.0 s → 0.44 s, pitch 1.0 → 1.9, volume 0.9 → 0.4), a red lamp blinks. After the 15th tick — BOOM: EVERY building within 7 m takes −400 HP (walls, ceilings, windows, doors and chests — up to 300 HP — break in ONE blast, foundation 350 takes two), and every player within 6.5 m takes 250 damage — DEAD. Craft: scrap 20 + metal 40 + sulfur 15 (WEAPONS tab).',
+        'MOBILE CONTROLS (new file js/game/touch.js) — turns ON automatically on touch screens (force it: type localStorage.brixTouch = \'1\' in the console and reload): a WALK JOYSTICK bottom-left — analog, the further you drag the faster you go; RUN is a toggle (lights up when active); the CAMERA FEELS YOUR FINGERS — swipe on any free area, a second finger can hold the joystick or a button at the same time. A BUTTON FOR EVERY ACTION: ATTACK/fire (big, right), AIM (hold), JUMP, RUN, F — interact (chest/door/pickup), CRAFT, BAG, BUILD, R — reload, CROUCH, II — menu. Sizes adapt to ANY screen (44–78 px from vmin, notch/safe-area respected), portrait and landscape. No pointer lock needed on phones. Lag-free: permanent listeners, transform-based movement.',
+        'BUILDING IS EASIER — CEILING MAGNETISM (player request): aim at a WALL — the ceiling snaps into the cell where YOU stand (the inner one), not the edge anchor cell; aim at the SKY or past the house (inside a room the ray has nothing to hit) — the ceiling is looked for ABOVE THE PLAYER and one cell ahead along the view; aim at an EXISTING ceiling — building continues into the NEIGHBOR cell along the view. The old rule (aim point) remains as a fallback.',
+        'CEILING JUMP-THROUGH FIXED: you used to be able to jump through your own ceiling from inside. Now your head hits it — upward movement stops and you fall back (crossing check against the box bottom, works even at low FPS).',
+        'CHESTS NO LONGER OPEN THROUGH WALLS: the F ray used to test ONLY chests, so a chest behind a wall opened from arm\'s length. Now walls, doors, all buildings and terrain block the ray — a chest opens only if it is the FIRST thing you look at.',
+        'THE SERVER SHUTTING DOWN AFTER ~60 MINUTES OF PLAY — FIXED: the crash was in chest placement («Cannot read properties of undefined (reading \'top\')» — a deck chunk arrived without its rec field and the whole Node process died, dropping every player). That spot is guarded now, and the WHOLE server is protected by uncaughtException/unhandledRejection guards: errors are logged with a [guard] tag and the server KEEPS RUNNING (a summary prints every 5 minutes). Be sure to replace server.js and restart — otherwise C4 will deal no damage and the server will still crash. Cache bumped to ?v=080.'
+      ]
+    }
+  },
+  {
+    id: 'n-mace-hits-dmg-road40',
+    date: '19.11.2026',
+    tag: 'new',
+    title: {
+      ru: 'Патч 0.4.40 — булава, хит-маркеры, новый урон и дорога вокруг озера',
+      en: 'Patch 0.4.40 — the mace, hit markers, new damage table and a lake road'
+    },
+    excerpt: {
+      ru: 'БУЛАВА: долгий замах — огромный урон (в голову 97, в тело 49), постройки по 2 хп за удар. ХИТ-МАРКЕРЫ: белый крест — тело, красный — голова. НОВЫЙ УРОН: у всех оружий урон в голову, в тело — половина; дробовик в упор сразу убивает, на средней 35 в голову, далеко — не достаёт. ДОРОГА: другая — теперь ВОКРУГ БОЛЬШОГО ОЗЕРА через центр карты, шире и ярче.',
+      en: 'MACE: long wind-up — huge damage (97 to the head, 49 to the body), 2 HP per hit on buildings. HIT MARKERS: white cross — body, red — head. NEW DAMAGE: headshot damage per weapon, body takes half; the shotgun kills instantly up close, ~35 to the head at medium range and falls short far away. ROAD: a different one — now it circles the BIG LAKE through the middle of the map, wider and brighter.'
+    },
+    body: {
+      ru: [
+        'БУЛАВА (новое оружие, модель пользователя rusted_mace_-_fantasy_weapon.glb): держится как топор (одна правая рука, размер 0.95 м), но БЬЁТ ПО-ДРУГОМУ — ДОЛГИЙ ЗАМАХ: рука уходит вверх-назад ~1.1 секунды, секунда «висит» в вершине, потом ЖЁСТКИЙ рубящий удар вниз; урон приходит ровно на контакт (1.2 с после замаха), полный цикл 1.85 с. Зато урон ОГРОМНЫЙ: в голову 97 — почти всегда насмерть с одного удара, в тело 49 (два удара). Чужие игроки видят ту же длинную анимацию замаха. По ПОСТРОЙКАМ булава бьёт по 2 хп за удар (фундамент 350 — за 175 ударов), БОЧКА ломается с одного удара. Крафт: дерево 30 + метал 25 + металлолом 10 (категория ОРУЖИЕ).',
+        'ХИТ-МАРКЕРЫ (новый файл js/game/hitmarker.js): при попадании по чужому игроку в центре экрана появляется СТИЛИЗОВАННЫЙ КРЕСТ «Х» из четырёх засечек со свечением (не просто точка): БЕЛЫЙ — попал В ТЕЛО, КРАСНЫЙ — В ГОЛОВУ (крупнее + расходящееся красное кольцо). Маркер показывается при выстреле, при дроби дробовика (один на выстрел: красный, если ≥2 дробины в голову) и при ударе инструментом/булавой.',
+        'ЛОГИКА ПОПАДАНИЯ В ГОЛОВУ/ТЕЛО (hitZone): зона считается ПО ВЫСОТЕ точки попадания на модели чужого игрока — голова это всё, что выше 1.48 м от его ног (в приседе порог опускается вместе с моделью). Урон: В ГОЛОВУ — полный, В ТЕЛО — половина (округление). Жертва, убитая выстрелом в голову, видит в меню смерти «ОРУЖИЕ: … · В ГОЛОВУ».',
+        'НОВАЯ ТАБЛИЦА УРОНА (по просьбе игрока): каменный топор 13 (тело 7), каменная кирка 14 (7), железный топор 24 (12), железная кирка 24 (12), булава 97 (49), револьвер 18 (9), карбоновый револьвер — это револьвер-карабин 3× — 20 (10), калаш 33 (17), томпсон 23 (12). Раньше все инструменты резались сервером до 10 — теперь у каждого оружия СВОЙ потолок (MELEE_CAP/SHOT_CAP в server.js).',
+        'ДРОБОВИК ПО ДИСТАНЦИИ: в упор (до 10 м) дробина бьёт по 13 и в голову, и в тело — весь заряд 104, СРАЗУ УБИВАЕТ; на средней дистанции (10–28 м) — 4.5 в голову / 2.25 в тело за дробину (весь заряд ≈ 35 в голову, как просили); далеко (28–45 м) — по 1.25 за дробину (всего ≈ 10); ДАЛЬШЕ 45 М ДРОБЬ НЕ ДОСТАЁТ — урона игрокам нет.',
+        'ДОРОГА ДРУГАЯ (road.js): маршрут больше не жмётся к краям карты — теперь цепочка ~1500 м идёт ВОКРУГ БОЛЬШОГО ОЗЕРА через ЦЕНТР карты: от юго-западной низины вдоль южного берега озера, вверх по восточному берегу, через северный берег и вниз по северо-западу к западному побережью. ШИРЕ — 3.8 м (было 3.2), ТОНА ЯРЧЕ И КОНТРАСТНЕЕ (светлая пыль, тёмная мокрая земля, рыжая глина, серая крошка). Маршрут снова проверен скриптом по реальному рельефу (поверхность meshHeightAt): все 1500 точек — ни воды, ни снега; максимальный уклон 0.65 (горная грунтовка на восточном подъёме). На карте (M) — прежняя прорисованная линия, чуть жирнее.',
+        'СЕРВЕР: ЛОГИКА МЕНЯЛАСЬ — обновлены потолки урона (SHOT_CAP/MELEE_CAP), булава ломает бочки/постройки, в phit добавлен флаг «в голову». ОБЯЗАТЕЛЬНО замени server.js и ПЕРЕЗАПУСТИ сервер, иначе булава будет резаться до 10 урона. Кэш поднят до ?v=079.'
+      ],
+      en: [
+        'THE MACE (new weapon, user model rusted_mace_-_fantasy_weapon.glb): held like an axe (right hand only, 0.95 m) but STRIKES DIFFERENTLY — a LONG WIND-UP: the arm sweeps up and back for ~1.1 s, hangs at the top for a beat, then a HARD chopping blow lands; damage applies exactly on contact (1.2 s after the swing), full cycle 1.85 s. The damage is HUGE: 97 to the head — almost always a one-shot kill, 49 to the body (two hits). Other players see the same long swing animation. Against BUILDINGS it deals 2 HP per hit (a 350-HP foundation takes 175 hits), a BARREL breaks in one hit. Craft: wood 30 + metal 25 + scrap 10 (WEAPONS category).',
+        'HIT MARKERS (new file js/game/hitmarker.js): when you hit another player a STYLIZED “X” cross of four glowing ticks appears at screen center (not a plain dot): WHITE — body hit, RED — head hit (bigger + an expanding red ring). Shown for bullets, for shotgun pellets (one per shot: red if ≥2 pellets hit the head) and for melee/tool strikes.',
+        'HEAD/BODY HIT LOGIC (hitZone): the zone is decided BY HEIGHT of the impact point on the enemy model — the head is everything above 1.48 m from their feet (the threshold drops with crouch). Damage: head — full, body — half (rounded). A player killed by a headshot sees “WEAPON: … · HEADSHOT” on the death screen.',
+        'NEW DAMAGE TABLE (as requested): stone axe 13 (body 7), stone pickaxe 14 (7), iron axe 24 (12), iron pickaxe 24 (12), mace 97 (49), revolver 18 (9), carbon revolver — the Scoped Revolver 3× — 20 (10), AK 33 (17), Thompson 23 (12). The server used to clamp every melee hit to 10 — now each weapon has its OWN cap (MELEE_CAP/SHOT_CAP in server.js).',
+        'SHOTGUN BY DISTANCE: point blank (≤10 m) — 13 per pellet to BOTH zones, a full blast is 104 and KILLS INSTANTLY; medium range (10–28 m) — 4.5 to the head / 2.25 to the body per pellet (≈35 to the head per full blast, as requested); far (28–45 m) — 1.25 per pellet (≈10 total); BEYOND 45 m THE PELLETS DO NOT REACH — no damage to players.',
+        'A DIFFERENT ROAD (road.js): the route no longer hugs the map edges — now a ~1500 m chain circles the BIG LAKE through the MIDDLE of the map: from the south-west lowlands along the lake’s southern shore, up the eastern shore, across the northern shore and down the north-west to the western coast. WIDER — 3.8 m (was 3.2), tones BRIGHTER and higher-contrast (light dust, dark wet dirt, red clay, grey grit). The route was re-checked against the real terrain (meshHeightAt surface): all 1500 points — no water, no snow; max grade 0.65 (a mountain dirt track on the eastern climb). On the map (M) — the same drawn line, slightly bolder.',
+        'SERVER: LOGIC CHANGED — damage caps updated (SHOT_CAP/MELEE_CAP), the mace breaks barrels/buildings, phit carries a headshot flag. You MUST replace server.js and RESTART the server, otherwise the mace gets clamped to 10 damage. Cache bumped to ?v=079.'
+      ]
+    }
+  },
+  {
+    id: 'n-grip39-road39',
+    date: '19.11.2026',
+    tag: 'fix',
+    title: {
+      ru: 'Патч 0.4.39 — хват по геометрии, карабин крупнее и точнее, дорога вокруг карты',
+      en: 'Patch 0.4.39 — geometry-true grip, bigger and sharper carbine, road around the map'
+    },
+    excerpt: {
+      ru: 'ТОМПСОН: точка рукояти взята по вершинам модели, левая рука встала на вертикальную переднюю рукоятку M1928 — обе руки держат оружие. КАРАБИН 3×: крупнее, отодвинут вправо от хотбара и ОЧЕНЬ точный в прицеле (разброс ×0.02). ДОРОГА: идёт ВОКРУГ КАРТЫ (1325 м) и стала МНОГОТОННОЙ — тёмная мокрая земля, светлая пыль, рыжая глина, след колёс, края в траву.',
+      en: 'THOMPSON: the grip point is taken from the model vertices and the left hand now holds the M1928 vertical foregrip — both hands on the weapon. CARBINE 3×: bigger, moved right away from the hotbar and VERY accurate when scoped (spread ×0.02). ROAD: now goes AROUND the map (1325 m) and is MULTI-TONED — dark wet dirt, light dust, red clay, wheel tread, grassy edges.'
+    },
+    body: {
+      ru: [
+        'ХВАТ ТОМПСОНА — ПО ВЕРШИНАМ МОДЕЛИ: точка рукояти больше не «прикидка» — она взята из геометрии thompson.glb (пистолетная рукоять = бокс x −99..−45, y 77..110, центр ≈ (−72, 92, 106)); раньше ладонь висела на 18 единиц НИЖЕ рукояти. ЛЕВАЯ РУКА теперь на ВЕРТИКАЛЬНОЙ передней рукоятке M1928 (стойка raw x 40..55): хват «как палку» — ладонь сбоку, пальцы обхватывают стойку. Раньше рука тянулась под деревянное цевьё как у АК и НЕ ДОСТАВАЛА (shortfall) — висела раскрытой ладонью в воздухе.',
+        'ПРИЦЕЛ ТОМПСОНА (ПКМ): целик/мушка пересчитаны под новую точку хвата, а дистанция приближена до 0.64 м (у калаша 0.85). Причина: у M1928 целик стоит ПОЗАДИ рукояти, и при прежних 0.85 кисть не дотягивалась — целик уходил на 8.8° ниже оси камеры (у калаша всего 1.6°). Теперь прицел встаёт по оси, как у калаша.',
+        'РЕВОЛЬВЕР-КАРАБИН 3×: КРУПНЕЕ (0.62 м в руках, было 0.50), ОТОДВИНУТ ВПРАВО от хотбара (весь карабин с рукой сдвинут по оси торса; при прицеливании сдвиг плавно гаснет — оптика ровно по центру). ТОЧНОСТЬ: разброс в прицеле ×0.02 (было ×0.08) — стоя в оптике конус всего ≈2 см на 100 м, подброс от выстрела в прицеле ослаблен.',
+        'ДОРОГА ВОКРУГ КАРТЫ: маршрут перестроен — открытая цепочка ~1325 м идёт ВОКРУГ карты: с северо-запада по западному краю, через южные луга и вдоль восточного берега к северу (разрыв в северо-восточном квадранте, у озера). НЕ круг (цепь открыта) и НЕ прямая (радиус волной 96..318 м, уклоны до 31°). Маршрут снова проверен скриптом по реальному рельефу: все 1500 точек — без воды и снега.',
+        'ДОРОГА МНОГОТОННАЯ: раньше лента была одним тусклым цветом. Теперь цвет считается для КАЖДОЙ вершины: тёмная мокрая земля, светлая выбитая пыль, рыжеватая глина, выбеленный след колёс по центру, края темнее и уходят в траву, плюс полосы по длине пути. Дорога шире — 3.2 м (было 2.6). На карте (M) дорога по-прежнему ПРОСТАЯ ПРОРИСОВАННАЯ ЛИНИЯ теми же пикселями, что горы и земля.',
+        'СЕРВЕР: логика не менялась, только версия (0.4.39) — замени server.js и ПЕРЕЗАПУСТИ сервер, чтобы не вылезал баннер «СЕРВЕР СТАРЫЙ». Кэш поднят до ?v=078 — после Ctrl+Shift+R страница обновится сама.'
+      ],
+      en: [
+        'THOMPSON GRIP — FROM THE VERTICES: the grip point is no longer an estimate — it comes from the thompson.glb geometry (pistol grip box x −99..−45, y 77..110, center ≈ (−72, 92, 106)); the palm used to hang 18 model units BELOW the grip. The LEFT HAND now holds the M1928 VERTICAL FOREGRIP (post at raw x 40..55) like a stick — palm from the side, fingers wrapped. It used to reach under the wooden handguard AK-style and fell short (shortfall), floating with an open palm.',
+        'THOMPSON AIM (RMB): sights recomputed for the new grip point and the eye distance tightened to 0.64 m (AK uses 0.85). Reason: on the M1928 the rear sight sits BEHIND the grip, so at 0.85 the wrist could not reach — the sights sat 8.8° below the camera axis (AK: 1.6°). Now the sights line up like the AK.',
+        'SCOPED REVOLVER 3×: BIGGER (0.62 m in hand, was 0.50), MOVED RIGHT away from the hotbar (the whole gun+hand shifts along the torso axis; the shift fades out when aiming so the scope stays centered). ACCURACY: scoped spread ×0.02 (was ×0.08) — standing scoped the cone is ≈2 cm at 100 m; recoil bloom while scoped is reduced.',
+        'ROAD AROUND THE MAP: the route is rebuilt — an open ~1325 m chain sweeps AROUND the map: from the north-west along the western edge, through the southern meadows and up the eastern shore (the gap is in the north-east quadrant by the lake). NOT a circle (the chain stays open) and NOT straight (radius wobbles 96..318 m, grades up to 31°). The route was re-checked against the real terrain: all 1500 path points — no water, no snow.',
+        'MULTI-TONED ROAD: the ribbon used to be one dull color. Now the color is computed PER VERTEX: dark wet dirt, light worn dust, reddish clay, a bleached wheel tread down the middle, darker edges melting into the grass, plus tonal bands along the path. The road is wider — 3.2 m (was 2.6). On the map (M) it is still a SIMPLY DRAWN LINE in the same pixels as hills and land.',
+        'SERVER: no logic changes, version bump only (0.4.39) — replace server.js and RESTART the server so the “SERVER IS OLD” banner stays away. Cache bumped to ?v=078 — the page picks it up after Ctrl+Shift+R.'
+      ]
+    }
+  },
+  {
+    id: 'n-grip-road',
+    date: '19.11.2026',
+    tag: 'fix',
+    title: {
+      ru: 'Патч 0.4.38 — руки держат оружие + грунтовая дорога на карте',
+      en: 'Patch 0.4.38 — weapons finally sit in the hands + a dirt road on the map'
+    },
+    excerpt: {
+      ru: 'ХВАТ: в томпсоне был перепутан знак сдвига рукояти — модель уезжала на 21 см от ладони (руки «не держали»); в карабине ладонь стояла на проволочном прикладе, и он пронизывал кисть. Теперь томпсон держится как калаш, а карабин — как обычный револьвер: рукоять точно в ладони, обе руки на оружии. ДОРОГА: единственная грунтовая дорога-цепочка с севера мимо озера на юг — лента по рельефу в мире и прорисованная линия на карте (M), как горы и земля.',
+      en: 'GRIP: the Thompson had a flipped grip-offset sign — the model drifted 21 cm off the palm (hands “not holding” it); the scoped carbine put the palm on the thin wire stock that pierced the hand. Now the Thompson holds like the AK and the carbine like the plain revolver: grip right in the palm, both hands on the weapon. ROAD: one winding dirt road chain from the north past the lake down to the south — a terrain-hugging ribbon in the world and a drawn line on the map (M), styled like the hills and land.'
+    },
+    body: {
+      ru: [
+        'ФИКС ХВАТА ТОМПСОНА: причина найдена точная — в нормализации модели знак сдвига рукояти по одной оси был перепутан (ставился +x вместо −x). Из-за этого весь томпсон уезжал на 120 единиц модели (≈21 см) назад по пальцам: правая рука держала воздух у магазина, а левая тянулась ПЕРЕД дулом — цели цевья считаются в том же пространстве и уезжали вместе с оружием. Теперь рукоять точно в ладони: держится КАК КАЛАШ, левая рука легла на цевьё — её координаты проверены ПО ВЕРШИНАМ модели (дерево цевья: x 82..118, высота 118..138).',
+        'ФИКС ХВАТА КАРАБИНА 3×: авто-поиск fitGun ставил ладонь на ТОНКИЙ ПРОВОЛОЧНЫЙ ПРИКЛАД — он тянется назад по всей задней трети модели, и настоящая рукоять оказывалась на 30% длины ВПЕРЕДИ ладони; тонкий приклад пронизывал кисть («карабин сквозь руки»). Теперь два новых поля: RVX.gx сдвигает модель назад так, что рукоять точно в ладони, длина в руках 0.5 м (было 0.78), а левая рука подхватывает рукоять снизу — ЧИСЛА 1-в-1 КАК У ОБЫЧНОГО РЕВОЛЬВЕРА. Обе руки на оружии, приклад больше не колет кисть. Настройка вживую (F12): BrixFirstPerson.RVX.len / RVX.gx / RVX.pitch.',
+        'ГРУНТОВАЯ ДОРОГА: по карте идёт ЕДИНСТВЕННАЯ дорога — открытая цепочка (не кольцо), извилистая (не прямая): от северной равнины, вдоль западного берега Большого озера, через юго-западные луга к южному берегу — около 870 м. Маршрут подобран ПО РЕАЛЬНОМУ РЕЛЬЕФУ: скрипт прошёл все 600 точек пути — нигде ни воды, ни снега.',
+        'КАК СДЕЛАНА: в мире — лента утоптанной земли, повторяющая рельеф (поднята на 7 см над землёй, polygonOffset против мерцания), ширина 2.6 м. Трава и деревья дорогу НЕ перечеркивают — при расстановке world.js спрашивает BrixRoad.near(). НА КАРТЕ (M) дорога видна как ПРОСТО ПРОРИСОВАННАЯ ЛИНИЯ — теми же пикселями, что горы и земля, с тем же затенением рельефа.',
+        'СЕРВЕР: логика не менялась, только версия (0.4.38) — замени server.js и ПЕРЕЗАПУСТИ сервер, чтобы не вылезал баннер «СЕРВЕР СТАРЫЙ». Кэш поднят до ?v=077 — страница обновится сама после Ctrl+Shift+R.'
+      ],
+      en: [
+        'THOMPSON GRIP FIX: the root cause was exact — a flipped sign on the grip-offset axis in the model normalization (+x instead of −x). The whole Thompson drifted 120 model units (≈21 cm) backward along the palm: the right hand held air near the magazine, and the left hand reached PAST the muzzle (the forend targets are computed in the same space, so they drifted too). Now the grip sits exactly in the palm — held LIKE THE AK, and the left hand landed on the forend with coordinates verified against the model vertices (wood forend: x 82..118, height 118..138).',
+        'CARBINE 3× GRIP FIX: the fitGun auto-search placed the palm on the THIN WIRE STOCK — it runs across the entire rear third of the model, so the real grip ended up 30% of the length AHEAD of the palm and the thin stock pierced the hand (“the carbine goes through the hands”). Two new fields fix it: RVX.gx shifts the model back so the grip sits right in the palm, hand length is 0.5 m (was 0.78), and the left hand cups the grip from below with numbers copied 1-to-1 FROM THE PLAIN REVOLVER. Both hands on the weapon, no more stock stabs. Live tuning (F12): BrixFirstPerson.RVX.len / RVX.gx / RVX.pitch.',
+        'DIRT ROAD: one single road runs across the map — an open chain (not a loop), winding (not straight): from the northern plains, along the west shore of the Big Lake, through the south-western meadows down to the southern shore — about 870 m. The route was fitted TO THE REAL TERRAIN: a script walked all 600 path points — no water, no snow anywhere.',
+        'HOW IT IS BUILT: in the world — a ribbon of packed dirt that follows the relief (raised 7 cm above ground, polygonOffset against shimmer), 2.6 m wide. Grass and trees do NOT cross the road — world.js asks BrixRoad.near() while scattering. ON THE MAP (M) the road shows as a SIMPLY DRAWN LINE — the same pixels that draw hills and land, with the same relief shading.',
+        'SERVER: no logic changes, version bump only (0.4.38) — replace server.js and RESTART the server so the “SERVER IS OLD” banner stays away. Cache bumped to ?v=077 — the page will pick it up after Ctrl+Shift+R.'
+      ]
+    }
+  },
+  {
+    id: 'n-glfix',
+    date: '19.11.2026',
+    tag: 'fix',
+    title: {
+      ru: 'Патч 0.4.37 — игра переживает сбой видеокарты (WebGL)',
+      en: 'Patch 0.4.37 — the game now survives a GPU crash (WebGL)'
+    },
+    excerpt: {
+      ru: 'Ошибка «CONTEXT_LOST_WEBGL / 0x887A0005 / Cannot read null (trim)» — это перезагрузка драйвера видеокарты на машине, а не баг игры. Раньше экран замирал намертво, теперь игра сама восстанавливается: рендер на паузе, плашка игроку, после восстановления — продолжаем без перезагрузки. После второго сбоя качество снижается автоматически. Фон меню больше не рендерится во время игры — видеокарте теперь легче.',
+      en: 'The “CONTEXT_LOST_WEBGL / 0x887A0005 / Cannot read null (trim)” error is a GPU driver reset on your machine, not a game bug. The screen used to freeze for good; now the game recovers on its own: rendering pauses with a heads-up message, and after the driver comes back you keep playing — no page reload. After the second crash quality drops automatically. The menu background no longer renders during gameplay, taking load off the GPU.'
+    },
+    body: {
+      ru: [
+        'ЧТО ЭТО БЫЛО: строки «CONTEXT_LOST_WEBGL», «GL_INVALID_OPERATION … 0x887A0005 (removal reason 0x887A0020)», «Error allocating Texture2D» — Windows перезагрузил драйвер видеокарты: ей не хватило видеопамяти или драйвер «завис». Это сбой на МАШИНЕ, а не в коде игры. Ошибка «Cannot read properties of null (reading \u2018trim\u2019)» — уже следствие: игра продолжала рисовать в мёртвый контекст, рендер-цикл падал и экран замирал до перезагрузки страницы.',
+        'КАК ТЕПЕРЬ: при потере WebGL рендер ставится на паузу (и обязательно preventDefault — без него браузер вообще не умеет восстанавливать контекст), в углу появляется плашка «Видеокарта сбоит — игра восстанавливается…». Как только драйвер вернулся — шейдеры всех материалов пересобираются и игра продолжается БЕЗ перезагрузки страницы: постройки, лут, мультиплеер — всё на месте.',
+        'АВТОПОНИЖЕНИЕ: если за одну сессию драйвер упал второй раз — игра сама снижает нагрузку (рендер 1× вместо 1.5–2× и без теней), чтобы видеокарта не упала снова. Это на текущую сессию; в настройках качество остаётся твоим.',
+        'ЛЕГЧЕ ВИДЕОКАРТЕ: фон главного меню раньше рендерился ВТОРЫМ WebGL-контекстом постоянно, даже во время игры, когда его всё равно не видно. Теперь во время игры он не рисуется совсем — минус лишний контекст и минус нагрузка. Заодно чуть вырастет FPS.',
+        'ЧТО СДЕЛАТЬ НА ТВОЕЙ МАШИНЕ (если сбои повторяются): обнови драйвер видеокарты (NVIDIA/AMD/Intel — с официального сайта); закрой другие вкладки и программы с 3D-графикой; в настройках игры поставь качество «Низкое»; на ноутбуке включи питание от розетки и в Параметры Windows → Экран → Графика назначь браузеру дискретную видеокарту; проверь, не перегрета ли видеокарта (пыль/кулер).'
+      ],
+      en: [
+        'WHAT IT WAS: the lines “CONTEXT_LOST_WEBGL”, “GL_INVALID_OPERATION … 0x887A0005 (removal reason 0x887A0020)”, “Error allocating Texture2D” mean Windows reset the GPU driver — the card ran out of video memory or the driver hung. It is a MACHINE-side failure, not a game bug. The “Cannot read properties of null (reading \u2018trim\u2019)” error was a consequence: the game kept drawing into a dead context, the render loop crashed, and the screen froze until a page reload.',
+        'HOW IT WORKS NOW: on WebGL loss rendering pauses (with the mandatory preventDefault — without it the browser never restores the context) and a “GPU hiccup — recovering…” toast appears. Once the driver is back, all material shaders are rebuilt and the game continues WITHOUT a page reload: builds, loot, multiplayer — everything stays in place.',
+        'AUTO-DEGRADE: if the driver falls twice in one session, the game reduces load by itself (1× render scale instead of 1.5–2×, shadows off) so the GPU does not trip again. Session-only; your quality setting stays untouched.',
+        'EASIER ON THE GPU: the main-menu background used to render in a SECOND WebGL context all the time, even during gameplay when it is invisible. Now it is skipped while you play — one less context and less load. A small FPS bonus too.',
+        'WHAT TO DO ON YOUR MACHINE (if crashes repeat): update your GPU driver (NVIDIA/AMD/Intel — from the official site); close other tabs and 3D apps; set quality to “Low” in game settings; on a laptop plug in the charger and assign the discrete GPU to the browser in Windows Settings → Display → Graphics; check the card for overheating (dust/cooler).'
+      ]
+    }
+  },
+  {
+    id: 'n-rev3x',
+    date: '19.11.2026',
+    tag: 'update',
+    title: {
+      ru: 'Патч 0.4.36 — РЕВОЛЬВЕР-КАРАБИН 3×: снайпер с оптикой',
+      en: 'Patch 0.4.36 — SCOPED REVOLVER 3×: the sniper sidearm'
+    },
+    excerpt: {
+      ru: 'Новая модель от игрока — револьвер-карабин со встроенным оптическим прицелом: ПКМ открывает прицел 3× (честное трёхкратное приближение) с суперточностью. Урон 45 (3 выстрела = убийство), барабан 6, хват и звук — как у револьвера. Крафт на Q из револьвера.',
+      en: 'A new player-made model — a revolver carbine with a built-in scope: RMB opens a true 3× zoom with pinpoint accuracy. 45 damage (3 shots to kill), 6-round cylinder, grip and sounds just like the revolver. Craft on Q from a revolver.'
+    },
+    body: {
+      ru: [
+        'СНАЙПЕРСКИЙ РЕВОЛЬВЕР: модель crafted_revolver_carabine.glb (от игрока) перенесена в игру целиком — самодельный карабин из револьвера: удлинённый ствол, оптика сверху, деревянное цевьё и складной проволочный приклад. Держится КАК РЕВОЛЬВЕР (та же машина хвата), левая рука подхватывает цевьё, при беге оружие прижимается к груди.',
+        'ПРИЦЕЛ 3× (ПКМ): держи ПКМ — оружие плавно поднимается к глазам, камера наезжает на честные ТРИ крата (72° → 26°), а экран превращается в оптику: чёрная виньетка, круглое поле зрения, тонкое перекрестие с метками и подпись «3×». В оптике карабин СУПЕРТОЧНЫЙ (разброс в 8 раз меньше стоячего), наводка мыши замедляется — легко ловить головы на дистанции. Отпустил ПКМ — прицел плавно ушёл.',
+        'ХАРАКТЕРИСТИКИ: урон 45 за пулю — три выстрела убивают (револьвер 20, калаш 20). Барабан 6 патронов, кулдаун 0.9 с — медленный, но бьёт больно. Патроны те же (ammo). Перезарядка по R — 2.2 с, как у револьвера. Не на бегу: на спринте стрелять нельзя, как у всего огнестрела.',
+        'ХВАТ И ЗВУК КАК У РЕВОЛЬВЕРА: выстрел — тот же сэмпл revolver/shot.wav, но чуть тяжелее (удлинённый ствол «басит» — rate 0.9); перезарядка — revolver/reload.wav. Выстрел и перезарядку слышат другие игроки. Иконка — рисованная, от игрока (карабин с прицелом).',
+        'ГДЕ ВЗЯТЬ: крафт на Q — 1 револьвер (база!) + 2 трубы + 1 пружина + 20 метал фрагментов; или в админ-панели (9 → ПРЕДМЕТЫ). Чужие игроки видят карабин в твоих руках — стволом вперёд.',
+        'ФИКС ПОПУТНО: сервер резал ЛЮБОЙ выстрел до 20 урона — дробовик в мультиплеере не мог убить с одного выстрела (в упор до 96). Теперь потолок урона у СЕРВЕРА честный ПО ОРУЖИЮ: дробовик 96, револьвер-карабин 45, калаш/револьвер 20, томпсон 12.'
+      ],
+      en: [
+        'SNIPER REVOLVER: the crafted_revolver_carabine.glb model (from a player) is ported in full — a handmade revolver carbine: elongated barrel, scope on top, wooden forend and a folding wire stock. Held LIKE THE REVOLVER (same grip machine), the left hand supports the forend, sprinting presses the gun to your chest.',
+        '3× SCOPE (RMB): hold RMB — the weapon rises to your eye, the camera zooms to a TRUE 3× (72° → 26°), and the screen turns into optics: black vignette, round field of view, thin crosshair with mil marks and a “3×” label. While scoped the carbine is PINPOINT-ACCURATE (spread 8× smaller than standing) and mouse look slows down — easy headshots at range. Release RMB to lower it.',
+        'STATS: 45 damage per bullet — three shots kill (revolver 20, AK 20). 6-round cylinder, 0.9 s cooldown — slow but heavy-hitting. Uses the same pistol ammo. R reload — 2.2 s, like the revolver. No shooting while sprinting, like all guns.',
+        'GRIP AND SOUND LIKE THE REVOLVER: the shot uses the same revolver/shot.wav sample, pitched slightly heavier (rate 0.9 — the long barrel “booms”); reload — revolver/reload.wav. Other players hear both. The drawn icon is player-made (the carbine with a scope).',
+        'HOW TO GET: craft on Q — 1 revolver (the base!) + 2 pipes + 1 spring + 20 metal fragments; or from the admin panel (9 → ITEMS). Other players see the carbine in your hands, barrel forward.',
+        'BONUS FIX: the server capped EVERY shot at 20 damage — the shotgun could not one-shot in multiplayer (up to 96 point-blank). The server damage cap is now per-weapon: shotgun 96, scoped revolver 45, AK/revolver 20, Thompson 12.'
+      ]
+    }
+  },
+  {
+    id: 'n-thompson',
+    date: '18.11.2026',
+    tag: 'update',
+    title: {
+      ru: 'Патч 0.4.35 — ТОМПСОН: скорострельный пистолет-пулемёт',
+      en: 'Patch 0.4.35 — THOMPSON: the fast-firing submachine gun'
+    },
+    excerpt: {
+      ru: 'Новая модель от игрока — Томпсон: держится как калаш (хват двух рук, прицел ПКМ, при беге к груди), но стреляет быстрее (800 в/мин) и слабее (12 за пулю). Три звука выстрела играют рандомно, отдельный звук перезарядки. Крафт на Q.',
+      en: 'A new player-made model — the Thompson: held like the AK (two-hand grip, RMB sights, chest-press run), but fires faster (800 rpm) and weaker (12 per bullet). Three random shot sounds, a dedicated reload sound. Craft on Q.'
+    },
+    body: {
+      ru: [
+        'ТОМПСОН В РУКАХ КАК КАЛАШ: модель thompson_submachine_gun-_luis_novoa.glb (от игрока) перенесена в игру целиком. Хват тот же, что у калаша: правая рука на пистолетной рукояти, левая на цевье и не съезжает при беге и отдаче, ПКМ — прицел по линии целик→мушка (у томпсона свои целики — высоко над стволом, как у M1928), при беге оружие прижимается к груди, отдача — пружиной с зигзагом, перезарядка — ствол уходит вниз-влево.',
+        'ХАРАКТЕРИСТИКИ: скорострельность БОЛЬШЕ, чем у калаша — 800 выстрелов в минуту (0.075 с между пулями), но урон МЕНЬШЕ — 12 за пулю (калаш 20). Обойма 30, патроны — те же винтовочные (rifleBullet), перезарядка по R — 3.7 секунды. Итого: томпсон молотит по площади, калаш бьёт точнее и сильнее — выбирай под свой стиль.',
+        'ЗВУКИ: три звука выстрела от игрока (Thompson_Shot_LongTail 01/03/04) играют РАНДОМНО — очередь не звучит как метроном, каждый выстрел чуть другой. Перезарядка — отдельный сэмпл Thompson_Reload_01 (3.7 с). Выстрелы слышат другие игроки по дистанции.',
+        'ГДЕ ВЗЯТЬ: крафт на Q — 1 труба, 30 металлолома, 25 метал фрагментов, 1 пружина (чуть дешевле калаша); или в админ-панели. Иконка — рисованная, от игрока. Чужие игроки видят томпсон в твоих руках. ФИКС ПОПУТНО: у чужого КАЛАША автомат больше не торчал стволом вверх — теперь и калаш, и томпсон у других игроков смотрят стволом вперёд.'
+      ],
+      en: [
+        'THOMPSON HELD LIKE THE AK: the thompson_submachine_gun-_luis_novoa.glb model (from a player) is ported in full. The grip is the same as the AK: right hand on the pistol grip, left hand on the foregrip that never slides off while running or recoiling, RMB aims down the rear-sight→front-sight line (the Thompson has its own tall M1928 sights), sprinting presses the gun to your chest, recoil is a spring with a zig-zag pattern, and the reload dips the muzzle down-left.',
+        'STATS: fire rate HIGHER than the AK — 800 rounds per minute (0.075 s between bullets) — but damage LOWER — 12 per bullet (AK 20). 30-round magazine, uses the same rifle bullets, R reload takes 3.7 seconds. Bottom line: the Thompson shreds up close, the AK hits harder — pick your style.',
+        'SOUNDS: three player-provided shot sounds (Thompson_Shot_LongTail 01/03/04) play RANDOMLY — the burst does not sound like a metronome, every shot is a bit different. Reload uses the dedicated Thompson_Reload_01 sample (3.7 s). Other players hear your shots by distance.',
+        'HOW TO GET: craft on Q — 1 pipe, 30 scrap, 25 metal fragments, 1 spring (a bit cheaper than the AK); or take it from the admin panel. The drawn icon is player-made too. Other players see the Thompson in your hands. BONUS FIX: a remote AK no longer points straight up — both the AK and the Thompson now look forward in other players\u2019 hands.'
+      ]
+    }
+  },
+  {
     id: 'n-craft',
     date: '18.11.2026',
     tag: 'update',

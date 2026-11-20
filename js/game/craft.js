@@ -45,8 +45,21 @@ window.BrixCraft = (function () {
     { id: 'ironPickaxe',  cat: 'tool',   out: 'ironPickaxe',  req: [['wood', 20], ['metal', 5]] },
     { id: 'buildingPlan', cat: 'tool',   out: 'buildingPlan', req: [['wood', 5]] },
     { id: 'rifleAk',      cat: 'weapon', out: 'rifleAk',      req: [['pipe', 1], ['rifleBody', 1], ['scrap', 40], ['spring', 2]] },
+    /* ✅ v0.4.35 томпсон — чуть дешевле калаша (скорострельный, но слабый) */
+    { id: 'thompson',     cat: 'weapon', out: 'thompson',     req: [['pipe', 1], ['scrap', 30], ['metal', 25], ['spring', 1]] },
     { id: 'shotgun',      cat: 'weapon', out: 'shotgun',      req: [['pipe', 2], ['metal', 40], ['spring', 1]] },
     { id: 'revolver',     cat: 'weapon', out: 'revolver',     req: [['scrap', 15], ['metal', 30]] },
+    /* ✅ v0.4.36 револьвер-карабин 3× — снайпер: переделка револьвера
+       (удлинённый ствол + оптика + приклад). Дорого: нужна сама база
+       (револьвер), труба на удлинение и пружина на УСМ оптики */
+    { id: 'rev3x',        cat: 'weapon', out: 'rev3x',        req: [['revolver', 1], ['pipe', 2], ['spring', 1], ['metal', 20]] },
+    /* ✅ v0.4.40 булава — тяжёлое оружие: дерево на рукоять, металл на
+       голову и обручи. Дорого — она ОДНОУДАРНАЯ (в голову 97) */
+    { id: 'mace',         cat: 'weapon', out: 'mace',         req: [['wood', 30], ['metal', 25], ['scrap', 10]] },
+    /* ✅ v0.4.41 С4 — взрывчатка: 400 хп постройкам за взрыв (ломает
+       фундамент с двух взрывов, стены/потолки с одного), игрокам в
+       радиусе — насмерть. Сера на взрывчатку, метал на корпус и плату */
+    { id: 'c4',           cat: 'weapon', out: 'c4',           req: [['scrap', 20], ['metal', 40], ['sulfur', 15]] },
     { id: 'pipe',         cat: 'comp',   out: 'pipe',         req: [['metal', 12], ['scrap', 24]] },
     { id: 'spring',       cat: 'comp',   out: 'spring',       req: [['metal', 13], ['scrap', 26]] }
   ];

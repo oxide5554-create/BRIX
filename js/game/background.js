@@ -237,6 +237,17 @@ window.BrixBackground = (function () {
 
     function tick() {
       raf = requestAnimationFrame(tick);
+
+      /* ✅ v0.4.37: ВО ВРЕМЯ ИГРЫ фон меню не рисуется — экономим
+         видеокарту. Раньше меню-сцена рендерилась ВТОРЫМ
+         WebGL-контекстом постоянно, даже когда её не видно под
+         игрой: лишняя нагрузка на GPU и видеопамять (на слабых
+         машинах — один из причин падения драйвера 0x887A0005 /
+         «Error allocating Texture2D»). Вернулся в меню — фон
+         оживает сам, ничего перезапускать не нужно. */
+      if (window.BrixGame && BrixGame.state &&
+          BrixGame.state.phase === 'playing') return;
+
       var t = clock.getElapsedTime();
       var s = BrixState.data.settings;
 

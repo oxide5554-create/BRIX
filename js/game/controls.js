@@ -36,6 +36,7 @@ window.BrixControls = (function () {
     this._crouched = false;   // ✅ v0.4.28 присед (C — переключатель)
     this.eyeH = EYE_HEIGHT;   // плавно меняется 1.7 ↔ 1.05
     this._getHeight = getHeight;
+    this._touchVec = { x: 0, y: 0 };   // ✅ v0.4.41: аналоговый джойстик (моб.)
 
     var self = this;
     this._onKeyDown = function (e) {
@@ -78,6 +79,27 @@ window.BrixControls = (function () {
 
   /* ✅ v0.4.28: присед (для состояния сети и анимации рук) */
   FpsController.prototype.isCrouched = function () { return !!this._crouched; };
+
+  /* ============================================================
+     ✅ v0.4.41 МОБИЛЬНОЕ УПРАВЛЕНИЕ (touch.js):
+     setTouchVector — аналоговый вектор джойстика (x вбок, y вперёд);
+     touchLook — свайп камеры (dx/dy в пикселях); setTouchKey —
+     программное нажатие клавиш (Shift для бега с кнопки)
+     ============================================================ */
+  FpsController.prototype.setTouchVector = function (x, y) {
+    this._touchVec.x = x;
+    this._touchVec.y = y;
+  };
+  FpsController.prototype.touchLook = function (dx, dy) {
+    if (!this.enabled) return;
+    var mul = this.aimMul || 1;
+    this.yaw -= dx * 0.0042 * mul;
+    this.pitch = BrixNoise.clamp(this.pitch - dy * 0.0042 * mul, -1.5, 1.5);
+  };
+  FpsController.prototype.setTouchKey = function (code, down) {
+    if (down) this._keys.add(code);
+    else this._keys.delete(code);
+  };
 
   FpsController.prototype.requestLock = function () {
     var p = this._dom.requestPointerLock();
@@ -194,10 +216,11 @@ window.BrixControls = (function () {
 
   /** Состояние движения для анимации рук: { moving, sprint, onGround, crouch } */
   FpsController.prototype.getMoveState = function () {
+    var tMoving = this.enabled && (this._touchVec.x !== 0 || this._touchVec.y !== 0);
     return {
-      moving: this.enabled && this._keys.size > 0 &&
+      moving: (this.enabled && this._keys.size > 0 &&
         (this._keys.has('KeyW') || this._keys.has('KeyA') ||
-         this._keys.has('KeyS') || this._keys.has('KeyD')),
+         this._keys.has('KeyS') || this._keys.has('KeyD'))) || tMoving,
       sprint: this._keys.has('ShiftLeft') || this._keys.has('ShiftRight'),
       onGround: this._grounded,
       crouch: this._crouched
@@ -219,6 +242,12 @@ window.BrixControls = (function () {
       if (this._keys.has('KeyS')) fz += 1;
       if (this._keys.has('KeyA')) fx -= 1;
       if (this._keys.has('KeyD')) fx += 1;
+      /* ✅ v0.4.41: аналоговый джойстик (мобильные) — складывается с
+         клавишами; АНАЛОГОВОСТЬ: скорость пропорциональна отклонению */
+      if (this._touchVec.x || this._touchVec.y) {
+        fx += this._touchVec.x;
+        fz += this._touchVec.y;
+      }
     }
     var moving = fx !== 0 || fz !== 0;
     var sprint = this._keys.has('ShiftLeft') || this._keys.has('ShiftRight');
@@ -228,6 +257,9 @@ window.BrixControls = (function () {
     var speed = (sprint ? SPRINT_SPEED : WALK_SPEED) * (this.slowFactor || 1) * adminMul;
     // ✅ v0.4.28: в приседе скорость капается (бег недоступен)
     if (this._crouched) speed = Math.min(speed, CROUCH_SPEED);
+    // ✅ v0.4.41: аналоговое отклонение джойстика — доля полной скорости
+    var mag = Math.hypot(fx, fz);
+    if (mag > 1) { fx /= mag; fz /= mag; speed *= Math.min(1, mag); }
 
     // по колено в воде — медленнее (✅ v0.4.6: feetY — по палубе фундамента
     // вода под домом не замедляет)
@@ -280,8 +312,33 @@ window.BrixControls = (function () {
       this._grounded = false;
     }
     if (!this._grounded) {
+      var prevY = this.position.y;         // высота глаз до шага кадра
       this._vy -= GRAVITY * dt;
       this.position.y += this._vy * dt;
+      /* ✅ v0.4.41 ГОЛОВА ОБ ПОТОЛОК: раньше при прыжке под потолком
+         игрок ПРОЛЕТАЛ сквозь него наверх (оказывался на крыше, не
+         строя её). Теперь пока летим ВВЕРХ (_vy > 0) проверяем боксы
+         построек НА ПЕРЕСЕЧЕНИЕ: если макушка (глаза + 0.12 м) за этот
+         кадр пересекла низ бокса (была ниже — стала выше) — упёрся:
+         ставим глаза чуть ниже потолка, подъём гаснет, игрок падает
+         обратно. Пересечение (а не «голова внутри бокса») — чтобы при
+         просадке FPS крупный шаг кадра не перепрыгивал потолок целиком */
+      if (this._vy > 0 && this._boxes && this._boxes.length) {
+        var prevHead = prevY + 0.12;
+        var newHead = this.position.y + 0.12;
+        for (var bi = 0; bi < this._boxes.length; bi++) {
+          var bb = this._boxes[bi];
+          if (bb.active === false) continue;
+          if (prevHead > bb.minY || newHead < bb.minY) continue;  // не пересёк низ
+          var hx = this.position.x;
+          var hz = this.position.z;
+          if (hx < bb.minX - PLAYER_RADIUS || hx > bb.maxX + PLAYER_RADIUS ||
+              hz < bb.minZ - PLAYER_RADIUS || hz > bb.maxZ + PLAYER_RADIUS) continue;
+          this.position.y = bb.minY - 0.12;
+          this._vy = 0;
+          break;
+        }
+      }
       if (this.position.y <= ground) {
         this.position.y = ground;
         this._vy = 0;

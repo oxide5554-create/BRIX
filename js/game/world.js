@@ -314,6 +314,8 @@ window.BrixWorld = (function () {
       var forest = N.fbm(x * 0.008 + 50, z * 0.008 + 80, 909, 3);
       if (forest < 0.5) continue;
       if (h < 3.5 || h > 42 || slopeAt(x, z) > 0.45) continue;
+      // ✅ v0.4.38: деревья не растут НА грунтовой дороге (коридор 3.4 м)
+      if (window.BrixRoad && BrixRoad.near(x, z, 3.4)) continue;
       trees.push({
         x: x, z: z, y: h,
         scale: 0.8 + rng() * 0.8,
@@ -546,6 +548,8 @@ window.BrixWorld = (function () {
         var gh = T.heightAt(gx, gz);
         if (gh < T.WATER_LEVEL + 1.0 || gh > 30) continue;   // без пляжа и гор
         if (slopeAt(gx, gz) > 0.38) continue;
+        // ✅ v0.4.38: кустики травы не лезут на грунтовую дорогу (2.8 м)
+        if (window.BrixRoad && BrixRoad.near(gx, gz, 2.8)) continue;
         var patch = N.fbm(gx * 0.02 + 31, gz * 0.02 + 117, 6199, 3);
         if (patch < 0.42) continue;                          // куртины, а не равномерный ковёр
         grassList.push({

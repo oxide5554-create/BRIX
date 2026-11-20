@@ -348,6 +348,11 @@ window.BrixNet = (function () {
       case 'prespawn':
         if (handlers.prespawn) handlers.prespawn(msg);
         break;
+      /* --- ✅ v0.4.34 ХОЛОД: сервер пушит шкалу холода раз в секунду
+             {v: 0..100, z: «зимность» места 0..1, hp: остаток хп при уроне} --- */
+      case 'cold':
+        if (handlers.cold) handlers.cold(msg);
+        break;
       /* --- режим вкладок (без сервера) --- */
       case 'hi':
         seen[msg.id] = performance.now();
@@ -579,11 +584,16 @@ window.BrixNet = (function () {
     if (typeof pz === 'number' && isFinite(pz)) m.pz = Math.round(pz * 100) / 100;
     send(m);
   }
-  /* ✅ v0.4.28: + w — id оружия (для меню смерти жертвы: «УБИТ: Garry — Дробовик») */
-  function sendPhit(tid, dmg, kind, w) {
+  /* ✅ v0.4.28: + w — id оружия (для меню смерти жертвы: «УБИТ: Garry — Дробовик»)
+     ✅ v0.4.40: + hs — флаг «В ГОЛОВУ» (проверяет ЗОНА в gameworld.js:
+     hitZone по высоте точки удара); сервер ретранслирует, жертва видит
+     «ОРУЖИЕ: … · В ГОЛОВУ» в меню смерти */
+  function sendPhit(tid, dmg, kind, w, hs) {
     if (mode === 'off') return;
-    send({ t: 'phit', tid: tid, dmg: Math.max(1, Math.floor(dmg || 1)),
-      kind: kind || 'shot', w: String(w || '') });
+    var m = { t: 'phit', tid: tid, dmg: Math.max(1, Math.floor(dmg || 1)),
+      kind: kind || 'shot', w: String(w || '') };
+    if (hs) m.hs = 1;
+    send(m);
   }
   /* ✅ v0.4.22 СУНДУК: установка, открытие, кладка, взятие, анимация крышки */
   function sendChestPlace(x, z, y, rot, tid) {
@@ -656,7 +666,22 @@ window.BrixNet = (function () {
     sendSocial: sendSocial,
     sendWorldTo: sendWorldTo,
     setStatusEl: setStatusEl,
-    on: function (name, fn) { handlers[name] = fn; },
+    /* ✅ fix v0.4.30: on() больше НЕ ЗАТИРАЕТ старый обработчик, а строит
+       ЦЕПОЧКУ. Раньше handlers[name] = fn — второй BrixNet.on('bhp', ...)
+       в gameworld.js (хп-плашка постройки) затирал первый (хп бочек:
+       clearPendingHit + BrixProps.applyHp), и хп бочек от сервера не
+       применялся. Теперь все обработчики события выполняются по очереди */
+    on: function (name, fn) {
+      var prev = handlers[name];
+      if (typeof prev !== 'function') { handlers[name] = fn; return; }
+      handlers[name] = function () {
+        var args = arguments;
+        try { prev.apply(null, args); }
+        catch (e) { console.warn('[net] обработчик "' + name + '" упал:', e && e.message); }
+        try { fn.apply(null, args); }
+        catch (e) { console.warn('[net] обработчик "' + name + '" упал:', e && e.message); }
+      };
+    },
     get mode() { return mode; },
     get serverVer() { return serverVer; },
     get serverSv() { return serverSv; },   // ✅ v0.4.17: для диагностики панели (9)

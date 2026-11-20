@@ -302,21 +302,32 @@ window.BrixBuilding = (function () {
   var wallBoxes = [];         // AABB стен (мутируем на месте; ссылку держит controls)
 
   /* ============================================================
-     ✅ v0.4.28 ЛОМАНИЕ ПОСТРОЕК: у каждой детали есть ХП.
-       фундамент/стена/окно/проём/потолок — 200
-       дверь — 150, сундук — 25.
-     Урон ТОЛЬКО топорами/кирками (сервер решает):
-       каменные — 67 за удар (200 хп = 3 удара), железные — 100 (2 удара).
-     Сервер шлёт 'bhp' (остаток) и 'brem' (сломал). В соло/вкладках —
-     локальный урон (localHit). hitGroups — группы для луча удара,
-     pieceById — id -> запись (всплывающее ХП, звук, чистка)
+     ✅ v0.4.31 ЛОМАНИЕ ПОСТРОЕК: у каждой детали есть ХП.
+       НОВЫЕ ХП: фундамент — 350, остальные постройки (стена/окно/
+       проём/дверь/потолок) — 300, сундук — 25 (как был).
+     Урон ТОЛЬКО топорами/кирками, «1 хп за N ударов» (дробный):
+       каменный топор — 0.2 хп/удар (5 ударов = 1 хп)
+       каменная кирка — 0.25 хп/удар (4 удара = 1 хп)
+       железная кирка — 0.5 хп/удар (2 удара = 1 хп)
+       железный топор — 1/3 хп/удар (3 удара = 1 хп)
+     В серверном режиме авторитет — СЕРВЕР: он шлёт 'bhp' (остаток) и
+     'brem' (сломал, удаляется у ВСЕХ). В соло/вкладках — localHit.
+     hitGroups — группы для луча удара и луча ХП-бара, pieceById —
+     id -> запись (ХП-бар прицела, звук, чистка), pieceHp — остаток хп
      ============================================================ */
   var hitGroups = [];         // THREE.Group каждой живой детали
   var pieceById = new Map();  // id -> entry { rec, group, ... }
-  var pieceHp = new Map();    // id -> хп (для соло/вкладок; в серверном режиме авторитет — сервер)
-  var BUILD_MAX_HP = { f: 200, w: 200, wi: 200, dw: 200, c: 200, dr: 150, ch: 25 };
-  var BUILD_DMG = { axe: 67, pickaxe: 67, ironAxe: 100, ironPickaxe: 100 };
-  function buildMaxHp(ty) { return BUILD_MAX_HP[ty] || 200; }
+  var pieceHp = new Map();    // id -> остаток хп (сервер шлёт 'bhp', соло — localHit)
+  var BUILD_MAX_HP = { f: 350, w: 300, wi: 300, dw: 300, c: 300, dr: 300, ch: 25 };
+  /* ✅ v0.4.40 БУЛАВА по постройкам: 2 хп за удар (просьба игрока) —
+     тот же урон и на сервере (server.js BUILD_DMG.mace)
+     ✅ v0.4.41 С4 по постройкам: 400 хп ЗА ВЗРЫВ (каждая постройка в
+     радиусе). Только СОЛО/вкладки: в серверном режиме урон считает
+     server.js в case 'c4boom' — туда BUILD_DMG.c4 НЕ добавляем, чтобы
+     подделанный bhit не ломал стены одним ударом */
+  var BUILD_DMG = { axe: 0.2, pickaxe: 0.25, ironPickaxe: 0.5, ironAxe: 1 / 3, mace: 2,
+    c4: 400 };
+  function buildMaxHp(ty) { return BUILD_MAX_HP[ty] || 300; }
 
   var current = 'f';          // выбранная деталь
   var placeCd = 0;
@@ -908,6 +919,36 @@ window.BrixBuilding = (function () {
   }
 
   /* ============================================================
+     ✅ v0.4.41 С4: все детали в РАДИУсе точки взрыва — мир координат
+     детали (фундамент/потолок — центр клетки на их высоте, стена —
+     центр края на низе, сундук — его точка). Урон накладывает
+     gameworld (localHit 'c4' в соло, сервер в мультиплеере)
+     ============================================================ */
+  function pieceWorldPos(rec) {
+    var half = CELL / 2;
+    if (rec.ty === 'ch') return new THREE.Vector3(rec.x, rec.y || 0, rec.z);
+    if (rec.e !== undefined) {
+      var c = { x: rec.gx * CELL + (rec.e === 1 ? half : rec.e === 3 ? -half : 0),
+        z: rec.gz * CELL + (rec.e === 2 ? half : rec.e === 0 ? -half : 0) };
+      return new THREE.Vector3(c.x, (rec.top || 0) + WALL_H / 2, c.z);
+    }
+    return new THREE.Vector3(rec.gx * CELL, rec.top || 0, rec.gz * CELL);
+  }
+  function piecesInRadius(x, y, z, r) {
+    var out = [];
+    var r2 = r * r;
+    allRecords().forEach(function (rec) {
+      var p = pieceWorldPos(rec);
+      var dx = p.x - x, dz = p.z - z;
+      var dh = dx * dx + dz * dz;
+      if (dh > r2) return;
+      if (Math.abs(p.y - y) > 5.5) return;   // по высоте ±5.5 м
+      out.push({ id: rec.id, ty: rec.ty, pos: p });
+    });
+    return out;
+  }
+
+  /* ============================================================
      ✅ v0.4.22 РЕЕСТР СУНДУКОВ: id -> { rec, group, lidPivot, open,
      target }. rec.cont — содержимое ({ itemId: count }), живёт в
      записи постройки: на сервере, в бэкапе localStorage, в снимках
@@ -1444,30 +1485,99 @@ window.BrixBuilding = (function () {
     return { valid: false, why: 'nodw' };
   }
 
-  /** план для ПОТОЛКА: клетка должна иметь фундамент И хотя бы одну стену */
+  /** план для ПОТОЛКА: клетка должна иметь фундамент И хотя бы одну стену.
+      ✅ v0.4.41 МАГНИТ ПОТОЛКА (было «сложно нормально поставить»):
+      1) целишься в СТЕНУ — потолок встаёт в клетку, где ТЫ стоишь (внутреннюю),
+         а не в «якорную» клетку края (раньше часто ставился в соседнюю);
+      2) целишься в НЕБО/мимо — потолок ищется НАД ИГРОКОМ и на клетку ВПЕРЁД
+         по взгляду (внутри комнаты луч всё равно ни во что не упирался);
+      3) целишься в УЖЕ ПОСТАВЛЕННЫЙ потолок — достройка продолжается:
+         берётся СОСЕДНЯЯ клетка в направлении от игрока к точке прицела;
+      4) прежняя логика (точка прицела) осталась как резервный кандидат.
+      Порядок проверки: первый кандидат, у которого есть фундамент +
+      стена + нет потолка — и есть план */
   function planCeiling(P, hit) {
-    var gx, gz;
-    var viaEdge = null, o2 = hit && hit.object;
+    // разбираем, во что попал луч (стена — bedge, палуба/потолок — bcell)
+    var viaEdge = null, viaCell = null, o2 = hit && hit.object;
     while (o2) {
-      if (o2.userData && o2.userData.bedge) { viaEdge = o2.userData.bedge; break; }
+      if (!viaCell && o2.userData && o2.userData.bcell) viaCell = o2.userData.bcell;
+      if (!viaEdge && o2.userData && o2.userData.bedge) viaEdge = o2.userData.bedge;
       o2 = o2.parent;
     }
-    if (viaEdge) {
-      var pp = viaEdge.split(',');
-      gx = parseInt(pp[0], 10); gz = parseInt(pp[1], 10);
-    } else {
-      gx = Math.round(P.x / CELL); gz = Math.round(P.z / CELL);
+    // клетка игрока и клетка «вперёд по взгляду»
+    var pcx = null, pcz = null;
+    if (_getPos) {
+      pcx = Math.round(_getPos().x / CELL);
+      pcz = Math.round(_getPos().z / CELL);
     }
-    var cell = cellRecs.get(key(gx, gz));
-    if (!cell || !cell.f) return { valid: false, why: 'nofound' };
-    if (cell.c) return { valid: false, why: 'busy' };
-    // есть ли стена на любом из 4 краёв клетки (канонические ключи)
-    var hasWall = edgeRecs.has(key(gx, gz) + ',0') ||
-                  edgeRecs.has(key(gx, gz) + ',3') ||
-                  edgeRecs.has(key(gx, gz + 1) + ',0') ||
-                  edgeRecs.has(key(gx + 1, gz) + ',3');
-    if (!hasWall) return { valid: false, why: 'nowall' };
-    return { valid: true, ty: 'c', gx: gx, gz: gz, top: Math.round((cell.f.rec.top + WALL_H) * 100) / 100 };
+    var fwdCell = null;
+    if (pcx !== null && _camera) {
+      var dir = new THREE.Vector3();
+      _camera.getWorldDirection(dir);
+      var fx = pcx + (Math.abs(dir.x) > 0.4 ? (dir.x > 0 ? 1 : -1) : 0);
+      var fz = pcz + (Math.abs(dir.z) > 0.4 ? (dir.z > 0 ? 1 : -1) : 0);
+      if (fx !== pcx || fz !== pcz) fwdCell = { gx: fx, gz: fz };
+    }
+    // кандидаты (gx,gz) в порядке приоритета
+    var cands = [];
+    function pushCand(gx, gz) {
+      if (gx === null || gz === null || isNaN(gx) || isNaN(gz)) return;
+      for (var i = 0; i < cands.length; i++) {
+        if (cands[i].gx === gx && cands[i].gz === gz) return;
+      }
+      cands.push({ gx: gx, gz: gz });
+    }
+    if (viaEdge) {
+      // стена: обе клетки края; ПЕРВОЙ — та, где стоит игрок
+      var pp = viaEdge.split(',');
+      var ax = parseInt(pp[0], 10), az = parseInt(pp[1], 10), ae = parseInt(pp[2], 10);
+      var bx = ax, bz = az;                    // вторая клетка края
+      if (ae === 0) bz = az - 1;
+      else if (ae === 3) bx = ax - 1;
+      var firstIn = (pcx !== null && pcx === bx && pcz === bz);
+      if (firstIn) { pushCand(bx, bz); pushCand(ax, az); }
+      else { pushCand(ax, az); pushCand(bx, bz); }
+    }
+    if (viaCell) {
+      // попали в палубу/потолок: та клетка + сосед в направлении взгляда
+      var cp = viaCell.split(',');
+      var cx = parseInt(cp[0], 10), cz = parseInt(cp[1], 10);
+      pushCand(cx, cz);
+      var dxc = P.x - cx * CELL, dzc = P.z - cz * CELL;
+      if (Math.abs(dxc) > Math.abs(dzc)) pushCand(cx + (dxc > 0 ? 1 : -1), cz);
+      else pushCand(cx, cz + (dzc > 0 ? 1 : -1));
+    }
+    if (viaEdge && !viaCell) {
+      // целимся в стену изНУТРИ — потолок над ИГРОКОМ главнее точки прицела
+      pushCand(pcx, pcz);
+      if (fwdCell) pushCand(fwdCell.gx, fwdCell.gz);
+    }
+    // точка прицела (прежнее поведение; P может быть null — вызов «по игроку»)
+    if (P) pushCand(Math.round(P.x / CELL), Math.round(P.z / CELL));
+    pushCand(pcx, pcz);
+    if (fwdCell) pushCand(fwdCell.gx, fwdCell.gz);
+
+    for (var i = 0; i < cands.length; i++) {
+      var gx = cands[i].gx, gz = cands[i].gz;
+      var cell = cellRecs.get(key(gx, gz));
+      if (!cell || !cell.f) continue;          // нет фундамента
+      if (cell.c) continue;                    // потолок уже стоит
+      // есть ли стена на любом из 4 краёв клетки (канонические ключи)
+      var hasWall = edgeRecs.has(key(gx, gz) + ',0') ||
+                    edgeRecs.has(key(gx, gz) + ',3') ||
+                    edgeRecs.has(key(gx, gz + 1) + ',0') ||
+                    edgeRecs.has(key(gx + 1, gz) + ',3');
+      if (!hasWall) continue;
+      return { valid: true, ty: 'c', gx: gx, gz: gz,
+        top: Math.round((cell.f.rec.top + WALL_H) * 100) / 100 };
+    }
+    // ничего подходящего — прежняя причина (по первой клетке-якорю, если была)
+    if (viaEdge) {
+      var pp2 = viaEdge.split(',');
+      var cell2 = cellRecs.get(key(parseInt(pp2[0], 10), parseInt(pp2[1], 10)));
+      if (!cell2 || !cell2.f) return { valid: false, why: 'nofound' };
+    }
+    return { valid: false, why: 'nowall' };
   }
 
   function holdingPlan() {
@@ -1535,6 +1645,25 @@ window.BrixBuilding = (function () {
     targets = targets.concat(rayTargets);
     var hits = ray.intersectObjects(targets, false);
     if (!hits.length) {
+      /* ✅ v0.4.41 МАГНИТ ПОТОЛКА БЕЗ ЛУЧА: внутри комнаты смотрим ВВЕРХ —
+         луч ни во что не упирается (потолка ещё нет), и раньше призрак
+         просто исчезал — потолок было не поставить. Теперь для потолка
+         план ищется ПО ИГРОКУ (клетка под ногами + клетка вперёд) */
+      if (current === 'c') {
+        var planSky = planCeiling(null, null);
+        if (planSky && planSky.valid) {
+          planSky.px = _getPos ? _getPos().x : planSky.gx * CELL;
+          planSky.pz = _getPos ? _getPos().z : planSky.gz * CELL;
+          ghost.plan = planSky;
+          ghost.valid = true;
+          ghost.group.position.set(planSky.gx * CELL, planSky.top || 0, planSky.gz * CELL);
+          ghost.group.rotation.y = 0;
+          setGhostColor(true);
+          ghost.group.visible = true;
+          ghost.shown = true;
+          return;
+        }
+      }
       ghost.group.visible = false;
       ghost.shown = false;
       ghost.plan = null;
@@ -1750,17 +1879,29 @@ window.BrixBuilding = (function () {
   }
 
   /* ---------- наведение на дверь/замок + подсказка ---------- */
+  /* ✅ v0.4.32 fix: подсказку двери и ХП-бар нужно крепить в #gameHud
+     (слой HUD ВНУТРИ #gameLayer, z-index 60), а не в <body>. Всё, что
+     висит на <body> с z-index ниже 60, рисуется ПОД игровым экраном и
+     НИКОГДА не видно — из-за этого ХП-бар построек и подсказка «F —
+     ОТКРЫТЬ ДВЕРЬ» были невидимы. #gameHud может исчезнуть при выходе
+     из игры раньше teardown — поэтому каждый раз берём живой узел */
   var _intRay = null;
   var aim = { hit: false, en: null, onLock: false, t: 0 };
   var doorHintEl = null;
+  function uiHost() {
+    return document.getElementById('gameHud') || document.body;
+  }
   function ensureDoorHint() {
-    if (doorHintEl) return doorHintEl;
+    if (doorHintEl && doorHintEl.parentElement === uiHost()) return doorHintEl;
+    if (doorHintEl && doorHintEl.parentElement) doorHintEl.parentElement.removeChild(doorHintEl);
     doorHintEl = document.createElement('div');
     doorHintEl.id = 'brixDoorHint';
-    doorHintEl.style.cssText = 'position:fixed;left:50%;top:56%;transform:translateX(-50%);' +
+    /* ✅ v0.4.32: top 64% — раньше 56%, но теперь там ХП-бар прицела
+       (50%+38px..+84px) — текст «F — ОТКРЫТЬ ДВЕРЬ» лип на бар */
+    doorHintEl.style.cssText = 'position:fixed;left:50%;top:64%;transform:translateX(-50%);' +
       'z-index:8;color:#ffe9b8;font:13px/1.4 Consolas,monospace;letter-spacing:.06em;' +
       'text-shadow:0 1px 4px rgba(0,0,0,.95);pointer-events:none;display:none;';
-    document.body.appendChild(doorHintEl);
+    uiHost().appendChild(doorHintEl);
     return doorHintEl;
   }
   function doorHintText(en, onLock) {
@@ -1840,8 +1981,16 @@ window.BrixBuilding = (function () {
     if (!chestRecs.size) return null;
     _intRay.setFromCamera(center2, _camera);
     _intRay.far = 3.0;
+    /* ✅ v0.4.41 ФИКС «СУНДУК ОТКРЫВАЕТСЯ СКВОЗЬ СТЕНУ»: раньше луч шёл
+       ТОЛЬКО по сундукам — стена/дверь между игроком и сундуком луч не
+       перехватывали, и сундук за стеной открывался на 3 м. Теперь в луче
+       участвуют ВСЕ постройки + рельеф: сундук откроется, только если он
+       ПЕРВОЕ, во что упёрся взгляд (стена ближе — сундук не открыть) */
     var targets = [];
     chestRecs.forEach(function (en) { if (en.group) targets.push(en.group); });
+    var solids = rayTargets.slice();
+    if (_terrainMesh) solids.push(_terrainMesh);
+    targets = targets.concat(solids);
     var hits = _intRay.intersectObjects(targets, true);
     if (!hits.length) return null;
     var o = hits[0].object;
@@ -2120,17 +2269,26 @@ window.BrixBuilding = (function () {
   }
 
   /* ---------- сеть v0.4.10: дверь/замок живут на сервере ---------- */
+  /* ✅ v0.4.31 СНОС ДОХОДИТ ДЛЯ ЛЮБОЙ ДЕТАЛИ: ищем в общем реестре
+     pieceById (там и сундуки). Раньше findRec знал только сетку
+     (фундаменты/стены/потолки) — сломанный на сервере СУНДУК оставался
+     висеть у других игроков, хотя brem приходил */
   function onBrem(msg) {
     if (!msg || !msg.id) return;
+    var en = pieceById.get(String(msg.id));
+    if (en && en.rec) { removeRecord(en.rec); return; }
     removeRecord(findRec(msg.id));
   }
 
   /* ============================================================
-     ✅ v0.4.28 ЛОМАНИЕ: API для gameworld
+     ✅ v0.4.31 ЛОМАНИЕ: API для gameworld
        hitTargets()  — группы деталей для луча удара (ЛКМ)
        findPiece(o)  — меш из луча -> { id, ty } (по userData.bid)
-       pieceInfo(id) — { id, ty, group } для всплывающего ХП
-       localHit(id, tool) — локальный урон (соло/вкладки без сервера)
+       pieceInfo(id) — { id, ty, group }
+       localHit(id, tool) — локальный урон (соло/вкладки без сервера),
+                            дробный: «1 хп за N ударов»
+       setPieceHp(id, hp) — свежий остаток хп от сервера ('bhp') —
+                            кормит ХП-бар прицела и бэкап localStorage
      ============================================================ */
   function hitTargets() {
     return hitGroups.slice();
@@ -2153,14 +2311,120 @@ window.BrixBuilding = (function () {
     var max = buildMaxHp(en.rec.ty);
     var dmg = BUILD_DMG[tool] || 0;
     if (!dmg) return null;
-    var hp = (pieceHp.get(en.rec.id) === undefined ?
-      (en.rec.hp !== undefined ? en.rec.hp : max) : pieceHp.get(en.rec.id)) - dmg;
+    /* ✅ v0.4.31: урон дробный, округляем до 0.001 — копится точно,
+       «5 ударов каменным топором = ровно 1 хп» */
+    var hp = Math.round(((pieceHp.get(en.rec.id) === undefined ?
+      (en.rec.hp !== undefined ? en.rec.hp : max) : pieceHp.get(en.rec.id)) - dmg) * 1000) / 1000;
     if (hp <= 0) {
       removeRecord(en.rec);
-      return { dead: true, max: max };
+      return { dead: true, id: en.rec.id, max: max };
     }
     pieceHp.set(en.rec.id, hp);
+    en.rec.hp = hp;
     return { id: en.rec.id, hp: hp, max: max };
+  }
+  /* ✅ v0.4.31: остаток хп, присланное СЕРВЕРОМ ('bhp' — идёт всем игрокам,
+     не только бьющему). Пишем и в pieceHp (ХП-бар прицела), и в rec.hp
+     (бэкап localStorage), чтобы у каждого игрока были актуальные цифры */
+  function setPieceHp(id, hp, max) {
+    var k = String(id || '');
+    if (!k || typeof hp !== 'number') return;
+    var en = pieceById.get(k);
+    if (max && typeof max === 'number' && hp > max) hp = max;
+    pieceHp.set(k, hp);
+    if (en && en.rec) en.rec.hp = hp;
+  }
+  /* ============================================================
+     ✅ v0.4.31/0.4.32 ХП-БАР ПРИЦЕЛА: смотришь на постройку (≤ 6 м) — под
+     прицелом появляется её полоса хп, и ТОЛЬКО ОДНОЙ — той, в которую
+     смотришь (как в Rust). Отвёл взгляд — бар исчез. Отображается:
+     название детали, полоса (зелёная → жёлтая → красная) и «хп / макс».
+     Данные: pieceHp — обновляется из 'bhp' сервера (все игроки) и
+     welcome-снимка; в соло/вкладках — localHit. Постройка при ударе
+     НЕ шевелится — только бар меняется
+     ============================================================ */
+  var _hpRay = null;
+  var hpBar = { el: null, name: null, fill: null, num: null, acc: 0, id: null };
+  var PIECE_HP_NAME = {
+    f: ['ФУНДАМЕНТ', 'FOUNDATION'], w: ['СТЕНА', 'WALL'],
+    wi: ['ОКНО', 'WINDOW'], dw: ['ДВЕРНОЙ ПРОЁМ', 'DOORWAY'],
+    dr: ['ДВЕРЬ', 'DOOR'], c: ['ПОТОЛОК', 'CEILING'], ch: ['СУНДУК', 'CHEST']
+  };
+  function ensureHpBar() {
+    if (hpBar.el && hpBar.el.parentElement === uiHost()) return hpBar.el;
+    if (hpBar.el && hpBar.el.parentElement) hpBar.el.parentElement.removeChild(hpBar.el);
+    hpBar.name = null; hpBar.fill = null; hpBar.num = null;
+    var el = document.createElement('div');
+    el.id = 'brixBuildHpBar';
+    el.style.cssText = 'position:fixed;left:50%;top:calc(50% + 38px);' +
+      'transform:translateX(-50%);z-index:7;width:216px;pointer-events:none;display:none;';
+    el.innerHTML =
+      '<div id="brixBuildHpName" class="font-h" style="text-align:center;color:#f2e8cf;' +
+      'font-size:11px;letter-spacing:.14em;text-transform:uppercase;' +
+      'text-shadow:0 1px 3px rgba(0,0,0,.92);margin-bottom:4px;"></div>' +
+      '<div style="height:10px;border-radius:5px;background:rgba(10,9,7,0.72);' +
+      'border:1px solid rgba(255,255,255,0.28);box-shadow:0 2px 10px rgba(0,0,0,.55);' +
+      'overflow:hidden;"><div id="brixBuildHpFill" style="height:100%;width:100%;' +
+      'background:#7ec96b;transition:width .1s ease,background .1s ease;"></div></div>' +
+      '<div id="brixBuildHpNum" style="margin-top:3px;text-align:center;color:#d8d2c4;' +
+      'font:11px Consolas,monospace;text-shadow:0 1px 3px rgba(0,0,0,.92);"></div>';
+    /* ✅ v0.4.32 fix: крепим в HUD (#gameHud), а не в <body> — раньше бар
+       с z-index:7 оказывался ПОД #gameLayer (z-index:60, весь мир) и был
+       НЕВИДИМ. Внутри #gameHud (z-index:62) бар выше прицела/хотбара,
+       а пауза (z-index:64) всё равно накрывает его — как в Rust */
+    uiHost().appendChild(el);
+    hpBar.el = el;
+    hpBar.name = el.querySelector('#brixBuildHpName');
+    hpBar.fill = el.querySelector('#brixBuildHpFill');
+    hpBar.num = el.querySelector('#brixBuildHpNum');
+    return el;
+  }
+  /** «349.8 / 350»: целое — без дробной части, дробное — один знак */
+  function fmtHpVal(hp, max) {
+    if (hp >= max - 0.005) return String(max);
+    var r = Math.round(Math.max(0, hp) * 10) / 10;
+    if (Math.abs(r - Math.round(r)) < 0.049) return String(Math.round(r));
+    return r.toFixed(1);
+  }
+  function hpBarHide() {
+    if (hpBar.el && hpBar.el.style.display !== 'none') hpBar.el.style.display = 'none';
+  }
+  function hpBarTick(dt) {
+    if (!inited) return;
+    hpBar.acc -= dt;
+    if (hpBar.acc <= 0) {
+      hpBar.acc = 0.08;   // пересчёт прицела ~12 раз/с — плавно и дёшево
+      hpBar.id = null;
+      if (_hpRay && _camera && center2 && window.BrixGame &&
+          BrixGame.state.phase === 'playing' && !isUiBlocked() && hitGroups.length) {
+        _hpRay.setFromCamera(center2, _camera);
+        _hpRay.far = 6.0;   // «рядом» — та же дистанция, что у сервера для bhit
+        var hits = _hpRay.intersectObjects(hitGroups, true);
+        if (hits.length) {
+          var pc = findPiece(hits[0].object);
+          if (pc && pc.id) hpBar.id = pc.id;
+        }
+      }
+    }
+    if (!hpBar.id) { hpBarHide(); return; }
+    var en = pieceById.get(hpBar.id);
+    if (!en || !en.rec) { hpBar.id = null; hpBarHide(); return; }   // сломали — бар исчез
+    var max = buildMaxHp(en.rec.ty);
+    var hp = pieceHp.has(hpBar.id) ? pieceHp.get(hpBar.id)
+      : (en.rec.hp !== undefined ? en.rec.hp : max);
+    if (hp > max) hp = max;
+    ensureHpBar();
+    var nm = PIECE_HP_NAME[en.rec.ty] || ['ПОСТРОЙКА', 'BUILD'];
+    var nmTxt = L(nm[0], nm[1]);
+    if (hpBar.name.textContent !== nmTxt) hpBar.name.textContent = nmTxt;
+    var pct = Math.max(0, Math.min(100, hp / max * 100));
+    var wTxt = pct.toFixed(1) + '%';
+    if (hpBar.fill.style.width !== wTxt) hpBar.fill.style.width = wTxt;
+    var col = pct > 60 ? '#7ec96b' : (pct > 30 ? '#e2b13c' : '#e05a4a');
+    if (hpBar.fill.style.background !== col) hpBar.fill.style.background = col;
+    var numTxt = fmtHpVal(hp, max) + ' / ' + max;
+    if (hpBar.num.textContent !== numTxt) hpBar.num.textContent = numTxt;
+    if (hpBar.el.style.display !== 'block') hpBar.el.style.display = 'block';
   }
   function onBdoor(msg) {
     if (!msg || !msg.id) return;
@@ -2443,6 +2707,7 @@ window.BrixBuilding = (function () {
     center2 = new THREE.Vector2(0, 0);
     _intRay = new THREE.Raycaster();   // ✅ v0.4.10: луч F по двери/замку
     _bRay = new THREE.Raycaster();     // ✅ v0.4.10: луч пули по постройкам
+    _hpRay = new THREE.Raycaster();    // ✅ v0.4.31: луч ХП-бара прицела
     rebuildGhost();
 
     // ✅ v0.4.9: СРАЗУ после сборки материалов/призрака — раньше inited
@@ -2534,7 +2799,13 @@ window.BrixBuilding = (function () {
       }
     });
     vaultTick(dt);          // перелаз через окно
+    /* ✅ v0.4.32 fix: aim.t НИКОГДА не уменьшался — aimCheck(false) после
+       первого вызова уходил в ранний return навсегда, и подсказка «F —
+       ОТКРЫТЬ ДВЕРЬ» не появлялась НИКОГДА (F всё же открывал дверь,
+       потому что interact() зовёт aimCheck(true) без троттлинга) */
+    if (aim.t > 0) aim.t = Math.max(0, aim.t - dt);
     updateDoorHint();       // подсказка F у двери/замка
+    hpBarTick(dt);          // ✅ v0.4.31: ХП-бар той постройки, в которую смотришь
   }
 
   function shutdown() {
@@ -2562,6 +2833,11 @@ window.BrixBuilding = (function () {
     hintEl = null;
     if (doorHintEl && doorHintEl.parentElement) doorHintEl.parentElement.removeChild(doorHintEl);
     doorHintEl = null;
+    /* ✅ v0.4.31: убрать ХП-бар прицела */
+    if (hpBar.el && hpBar.el.parentElement) hpBar.el.parentElement.removeChild(hpBar.el);
+    hpBar.el = null; hpBar.name = null; hpBar.fill = null; hpBar.num = null;
+    hpBar.id = null; hpBar.acc = 0;
+    _hpRay = null;
     _disposables.forEach(function (d) { if (d.dispose) d.dispose(); });
     _disposables.length = 0;
     _mat = null; _geo = null; _scene = null; _camera = null; _terrainMesh = null;
@@ -2597,6 +2873,8 @@ window.BrixBuilding = (function () {
     findPiece: findPiece,               // меш -> { id, ty }
     pieceInfo: pieceInfo,               // id -> { id, ty, group } (ХП-плашка)
     localHit: localHit,                 // локальный урон (соло/вкладки)
+    setPieceHp: setPieceHp,             // ✅ v0.4.31: хп от сервера ('bhp') — для ХП-бара
+    piecesInRadius: piecesInRadius,     // ✅ v0.4.41: детали в радиусе взрыва С4
     bulletBlock: bulletBlock,           // где пуля встречает постройку
     isUiBlocked: isUiBlocked,           // клавиатура замка/перелаз — гасят движение
     applyUnl: applyUnl,                 // «какие замки я разгадал» из welcome

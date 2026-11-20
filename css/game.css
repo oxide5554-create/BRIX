@@ -511,3 +511,15 @@
 .bap-skin-name { font: 600 13px Oswald, Arial Narrow, sans-serif; color: #e8ebe6; }
 .bap-skin-item { font: 11px RobotoCondensed, Arial Narrow, sans-serif; color: #9aa096; margin-top: 1px; }
 .bap-skin.on { border-color: #8cc35d; background: rgba(109, 156, 70, .18); }
+
+/* ============================================================
+   ✅ v0.4.34 ХОЛОД: пульс баннера температуры при уроне от холода.
+   Сам баннер/иней создаются в gameworld.js со инлайн-стилями (не
+   зависят от этого файла), здесь только анимация danger */
+@keyframes brixColdPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.45); }
+}
+#brixColdBanner.danger {
+  animation: brixColdPulse 1.1s ease-in-out infinite;
+}

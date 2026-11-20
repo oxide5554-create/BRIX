@@ -142,6 +142,8 @@ window.BrixI18N = (function () {
     'item.shotgunShell': 'ПАТРОН ДРОБОВИКА',
     'item.rifleAk': 'КАЛАШ',
     'item.rifleBullet': 'ПАТРОН КАЛАША',
+    'item.thompson': 'ТОМПСОН',   // ✅ v0.4.35
+    'item.rev3x': 'РЕВОЛЬВЕР-КАРАБИН 3×',   // ✅ v0.4.36
     'item.ammo': 'ПАТРОНЫ',
     'hint.emptyMag': 'Обойма пуста — нажми R для перезарядки',
     'hint.noAmmo': 'Нет патронов — ищи в ВОЕННЫХ (зелёных) ящиках',
@@ -153,6 +155,10 @@ window.BrixI18N = (function () {
     'death.weapon': 'ОРУЖИЕ: {w}',
     'death.dist': 'ДИСТАНЦИЯ: {d} м',
     'death.random': 'СЛУЧАЙНОЕ МЕСТО',
+    /* ✅ v0.4.34 ХОЛОД: баннер температуры и смерть от мороза */
+    'cold.warn': 'ХОЛОДНО',
+    'cold.danger': 'СЛИШКОМ ХОЛОДНО',
+    'death.frozen': 'ТЫ ЗАМЁРЗ НАСМЕРТЬ',
     'wep.axe': 'Каменный топор',
     'wep.ironAxe': 'Железный топор',
     'wep.pickaxe': 'Каменная кирка',
@@ -160,6 +166,11 @@ window.BrixI18N = (function () {
     'wep.revolver': 'Револьвер',
     'wep.ak': 'Калаш',
     'wep.shotgun': 'Дробовик',
+    'wep.thompson': 'Томпсон',   // ✅ v0.4.35
+    'wep.rev3x': 'Револьвер-карабин 3×',   // ✅ v0.4.36
+    'wep.mace': 'Булава',   // ✅ v0.4.40
+    'wep.c4': 'С4',   // ✅ v0.4.41 (взрыв)
+    'death.hs': ' · В ГОЛОВУ',   // ✅ v0.4.40 хит-маркеры: метка в меню смерти
     'loot.title': 'ЯЩИК',
     'loot.take': 'ВЗЯТЬ',
     'loot.takeAll': 'ВЗЯТЬ ВСЁ',
@@ -446,6 +457,8 @@ window.BrixI18N = (function () {
     'item.shotgunShell': 'SHOTGUN SHELL',
     'item.rifleAk': 'AK RIFLE',
     'item.rifleBullet': 'RIFLE BULLET',
+    'item.thompson': 'THOMPSON',   // ✅ v0.4.35
+    'item.rev3x': 'SCOPED REVOLVER 3×',   // ✅ v0.4.36
     'item.ammo': 'AMMO',
     'hint.emptyMag': 'Cylinder empty — press R to reload',
     'hint.noAmmo': 'No ammo — look in MILITARY (green) crates',
@@ -457,6 +470,10 @@ window.BrixI18N = (function () {
     'death.weapon': 'WEAPON: {w}',
     'death.dist': 'DISTANCE: {d} m',
     'death.random': 'RANDOM SPOT',
+    /* ✅ v0.4.34 COLD: temperature banner and freezing death */
+    'cold.warn': 'COLD',
+    'cold.danger': 'TOO COLD',
+    'death.frozen': 'YOU FROZE TO DEATH',
     'wep.axe': 'Stone Axe',
     'wep.ironAxe': 'Iron Axe',
     'wep.pickaxe': 'Stone Pickaxe',
@@ -464,6 +481,11 @@ window.BrixI18N = (function () {
     'wep.revolver': 'Revolver',
     'wep.ak': 'Kalash (AK)',
     'wep.shotgun': 'Shotgun',
+    'wep.thompson': 'Thompson',   // ✅ v0.4.35
+    'wep.rev3x': 'Scoped Revolver 3×',   // ✅ v0.4.36
+    'wep.mace': 'Mace',
+    'wep.c4': 'C4',   // ✅ v0.4.40
+    'death.hs': ' · HEADSHOT',   // ✅ v0.4.40 hitmarkers: death screen tag
     'loot.title': 'CRATE',
     'loot.take': 'TAKE',
     'loot.takeAll': 'TAKE ALL',
