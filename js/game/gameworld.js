@@ -308,8 +308,15 @@ window.BrixGameWorld = (function () {
     /* ✅ v0.4.44 УРОН ОТ ВЫСОТЫ (controls.js считает высоту и скорость падения):
        свой урон применяем сразу (без красной вспышки — она тут нужна),
        серверу шлём 'fdmg' — он вычтет хп у себя и разошлёт phit kind 'fall'
-       остальным (полоска над головой). Умер — меню смерти «Ты разбился» */
+       остальным (полоска над головой). Умер — меню смерти «Ты разбился»
+       ✅ v0.4.52 ФИКС «С БЕССМЕРТИЕМ ВСЁ РАВНО УМИРАЛ ОТ ВЫСОТЫ»: урон
+       падения считает КЛИЕНТ, а god тут не проверялся — тумблер
+       «БЕСКОНЕЧНОЕ ХП» защищал только от чужих ударов (сервер его смотрел
+       в 'fdmg', но свой урон уже был применён и смерть была локальной).
+       Теперь бессмертие защищает и от падения — и в соло, и на сервере;
+       сервер, для надёжности, god-игроку не поверит даже в 'pdeath' */
     controls.onFallDamage = function (info) {
+      if (window.BrixAdmin && BrixAdmin.god) return;   // ✅ v0.4.52: бессмертие
       if (!info || dead || BrixGame.state.phase !== 'playing') return;
       var nhp = Math.max(0, myHp - info.dmg);
       setMyHp(nhp);
@@ -353,6 +360,9 @@ window.BrixGameWorld = (function () {
     var disposables = [];
     var lockedRef = false;
     var hud = { fpsFrames: 0, fpsLast: performance.now(), posLast: 0 };
+    /* ✅ v0.4.51: сутки/погода (клиентская половина) и 3D-осадки;
+       ✅ v0.4.52: гроза — молнии и гром */
+    var env = null, precip = null, storm = null;
 
     function isInvOpen() {
       var inv = window.BrixInventory && BrixInventory.get();
@@ -401,6 +411,7 @@ window.BrixGameWorld = (function () {
     var hudEl = document.getElementById('gameHud');
     var fpsEl = document.getElementById('hudFps');
     var posEl = document.getElementById('hudPos');
+    var timeEl = document.getElementById('hudTime');   // ✅ v0.4.51: часы суток
 
     function updateHudLock(v) {
       if (BrixGame.state.phase !== 'playing') return;
@@ -1248,6 +1259,22 @@ window.BrixGameWorld = (function () {
       });
       /* ✅ v0.4.34 ХОЛОД: сервер пушит шкалу холода раз в секунду */
       BrixNet.on('cold', onColdMsg);
+      /* ✅ v0.4.51 СУТКИ И ПОГОДА: время тикает НА СЕРВЕРЕ — сюда
+         раз в секунду прилетает 'dnc' {ct, wx, wt}; клиент мягко
+         догоняет (env.update). Также состояние приходит в welcome.dnc */
+      BrixNet.on('dnc', function (msg) { if (env) env.setServerState(msg); });
+      /* ✅ v0.4.52 СИГНАЛЫ АДМИНА ВСЕМ: сервер после смены погоды/времени
+         (админ-панель) рассылает объявление 'atoast' — все игроки видят
+         «Админ сменил погоду: …» тостом. Доставка — generic (net.js),
+         новых типов в switch не нужно */
+      BrixNet.on('atoast', function (msg) {
+        if (!msg || !msg.m) return;
+        try {
+          if (window.BrixHud && BrixGame.state.phase === 'playing') {
+            BrixHud.toast(String(msg.m).slice(0, 140), 5);
+          }
+        } catch (eAt) {}
+      });
       /* ============================================================
          ✅ v0.4.43 С4 ПОД ПОЛНЫМ КОНТРОЛЕМ СЕРВЕРА. Сервер рассылает
          'c4placed' {id, x,y,z, n, ms} ВСЕМ — включая бросавшего:
@@ -2245,7 +2272,10 @@ window.BrixGameWorld = (function () {
       } else if (!dead) {
         /* соло/вкладки: локальная симуляция — та же, что в server.js */
         var zk = coldZoneAt(controls.position.x, controls.position.z);
-        if (zk > 0.15) coldVal = Math.min(100, coldVal + 1.4 * zk * dt);
+        /* ✅ v0.4.51: НОЧЬЮ В ЗИМЕ мороз ×2 (та же математика, что у
+           сервера: envNightFactor — сумерки/ночь) */
+        var nColdK = (window.BrixEnvironment && BrixEnvironment.isNight()) ? 2 : 1;
+        if (zk > 0.15) coldVal = Math.min(100, coldVal + 1.4 * zk * nColdK * dt);
         else coldVal = Math.max(0, coldVal - 1.25 * dt);
         if (coldVal >= COLD_DMG_FROM &&
             !(window.BrixAdmin && BrixAdmin.god)) {
@@ -3935,6 +3965,26 @@ window.BrixGameWorld = (function () {
         var lights = BrixWorld.createLights(scene, quality);
         disposables.push(water, sky, { dispose: function () { scene.remove(lights.sun); scene.remove(lights.sun.target); } });
 
+        /* ✅ v0.4.51 СУТКИ И ПОГОДА (клиентская половина):
+           env ведёт палитры неба/света/воды/тумана (время приходит
+           с сервера — 'dnc'), precip рисует 3D-дождь/снег и играет
+           тихий звук дождя. В соло часы идут локально */
+        if (window.BrixEnvironment) {
+          env = BrixEnvironment.create(scene, sky, lights, water, renderer);
+        }
+        if (window.BrixPrecip) {
+          precip = BrixPrecip.create(scene, quality);
+        }
+        /* ✅ v0.4.52 ГРОЗА (фича): молнии (вспышка неба + свет) и гром */
+        if (window.BrixStorm) {
+          storm = BrixStorm.create(scene);
+        }
+        disposables.push({ dispose: function () {
+          if (env) { env.dispose(); env = null; }
+          if (precip) { precip.dispose(); precip = null; }
+          if (storm) { storm.dispose(); storm = null; }
+        } });
+
         /* 5 — компиляция шейдеров (реальная) */
         setStage('load.step.shaders', 91);
         await nextFrame();
@@ -4163,6 +4213,18 @@ window.BrixGameWorld = (function () {
           lights.tick(controls.position);
           sky.tick(camera);
           water.tick(tt);
+          /* ✅ v0.4.51: сутки/погода каждый кадр; зимность места
+             (снеговая линия) превращает дождь в снег ПЛАВНО */
+          if (env) {
+            var wk = 0;
+            try { wk = coldZoneAt(controls.position.x, controls.position.z); } catch (eWk) { wk = 0; }
+            env.update(dt, wk);
+            if (precip) precip.update(dt, camera, env);
+            /* ✅ v0.4.52 ГРОЗА: молнии/гром — ПОСЛЕ env.update, чтобы
+               вспышка подмешалась в уже выставленный свет (env.update
+               на следующем кадре вернёт базу — накопления нет) */
+            if (storm) storm.update(dt, env, lights);
+          }
           /* ✅ v0.4.44: лагерь на спавне убран (костер/кубики) — camp.tick больше нет */
 
           /* ✅ v0.4.37: рендерим только при живом WebGL-контексте.
@@ -4198,6 +4260,8 @@ window.BrixGameWorld = (function () {
               posEl.textContent = controls.position.x.toFixed(0) + ' · ' +
                 controls.position.y.toFixed(0) + ' · ' + controls.position.z.toFixed(0);
             }
+            /* ✅ v0.4.51: игровые часы + фаза + погода (HH:MM · День · Хмуро) */
+            if (timeEl) timeEl.textContent = env ? env.hudText() : '';
           }
         };
         loop();

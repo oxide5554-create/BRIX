@@ -36,12 +36,20 @@ const ROOT = __dirname;
    версии не присылает — и панель на 9 молчит). В консоли при старте
    печатается ПОЛНЫЙ ПУТЬ папки сервера — чтобы admins.json правился
    именно там, где сервер РЕАЛЬНО запущен */
-const SRV_VER = '0.4.50';   /* ✅ v0.4.50 — ЗАМЕНИ server.js И ПЕРЕЗАПУСТИ:
-   1) ТРУПЫ: незалутанный труп исчезает через 10 МИНУТ (CORPSE_TTL_MS
-      20 → 10 мин; просьба игрока «трупы исчезают через каждые 10 мин,
-      если их никто не залутал»). С которого уже что-то взяли (lt=1) —
-      20 минут страховки. В сейв/снапшот добавлены lt + age.
-   2) Клиент 0.4.50 с С4/шприцом/иконками дружит с этим сервером.
+const SRV_VER = '0.4.52';   /* ✅ v0.4.52 — ЗАМЕНИ server.js И ПЕРЕЗАПУСТИ:
+   1) СИГНАЛЫ СЕРВЕРУ ИЗ АДМИН-ПАНЕЛИ: op 'wx' (погода ЯСНО/ХМУРО) и
+      op 'phase' (РАССВЕТ/ДЕНЬ/ЗАКАТ/СУМЕРКИ/НОЧЬ) — сервер меняет
+      envState, сразу рассылает 'dnc' всем + объявление 'atoast'
+      («Админ сменил погоду: …»), пишет world-env.json. Переход у
+      клиентов плавный (сглаживание в environment.js).
+   2) ФИКС «С БЕССМЕРТИЕМ ВСЁ РАВНО УМИРАЛ ОТ ВЫСОТЫ»: сервер теперь
+      не принимает 'pdeath' от god-соединения (клиент тоже не шлёт
+      урон при god — gameworld.js); двойная защита.
+   3) АТОСТ ОБЪЯВЛЕНИЙ: broadcast({t:'atoast', m}) — generic-доставка
+      net.js (v0.4.43) доводит без правок switch.
+   —— История: v0.4.51 — сутки/погода на сервере ('dnc' 1 Гц, welcome.dnc,
+      world-env.json), холод ночью в зиме ×2.
+   —— История: v0.4.50 — трупы 10 мин, С4 в горах, звук шприца.
    —— История: v0.4.46 — лестница (2 марша, коллайдер ступеней, потолок
       в клетке запрещён), окно на 2 этаж, фикс разрушения руды, фикс
       F по трупу (камера в луч наводки); v0.4.43 — С4 на сервере,
@@ -1786,6 +1794,47 @@ function adminOp(p, msg) {
       console.log('[admin] ' + p.name + ' бессмертие: ' + (p.god ? 'ВКЛ' : 'ВЫКЛ'));
       break;
     }
+    /* ============================================================
+       ✅ v0.4.52 СИГНАЛЫ СЕРВЕРУ — ПОГОДА И ВРЕМЯ (админ-панель).
+       Время суток и погода ведутся ТОЛЬКО здесь (envState) — админ
+       просто «поворачивает ручку»: сервер меняет состояние, немедленно
+       рассылает 'dnc' ВСЕМ игрокам (у них переход плавный — небо
+       сглаживает), пишет world-env.json (переживает рестарт) и
+       рассылает объявление 'atoast' всем в игре.
+       ============================================================ */
+    case 'wx': {
+      const w = String(msg.v || '');
+      const wRec = ENV_WX.find((x) => x.id === w);
+      if (!wRec) { p.send({ t: 'aok', op, info: 'Нет такой погоды: ' + w }); break; }
+      envState.wx = w;
+      envState.wt = 0;                       // таймер периода — с начала
+      writeEnvNow();
+      broadcast(Object.assign({ t: 'dnc' }, envPublic()), null);
+      const wName = w === 'gloomy' ? 'Хмуро (тучи, дождь)' : 'Ясно (солнце)';
+      broadcast({ t: 'atoast', m: 'Админ сменил погоду: ' +
+        (w === 'gloomy' ? 'Хмуро' : 'Ясно') }, null);
+      p.send({ t: 'aok', op, info: 'Погода сменилась: ' + wName + ' — у всех игроков' });
+      console.log('[env] ' + p.name + ' сменил погоду: ' + wName +
+        ' · фаза суток: ' + envPhaseIdAt(envState.ct));
+      break;
+    }
+    case 'phase': {
+      const ph = String(msg.v || '');
+      const pi = ENV_PHASES.findIndex((x) => x.id === ph);
+      if (pi < 0) { p.send({ t: 'aok', op, info: 'Нет такой фазы суток: ' + ph }); break; }
+      let acc = 0;
+      for (let i2 = 0; i2 < pi; i2++) acc += ENV_PHASES[i2].dur;
+      envState.ct = acc;                     // начало выбранной фазы
+      writeEnvNow();
+      broadcast(Object.assign({ t: 'dnc' }, envPublic()), null);
+      const phName = { dawn: 'Рассвет', day: 'День', sunset: 'Закат',
+        dusk: 'Сумерки', night: 'Ночь' }[ph] || ph;
+      broadcast({ t: 'atoast', m: 'Админ сменил время суток: ' + phName }, null);
+      p.send({ t: 'aok', op, info: 'Время суток: ' + phName + ' — у всех игроков' });
+      console.log('[env] ' + p.name + ' сменил фазу суток: ' + ph +
+        ' (ct=' + acc + ' с от рассвета)');
+      break;
+    }
     default:
       p.send({ t: 'adeny', op, why: 'unknown' });
   }
@@ -1938,6 +1987,9 @@ server.on('upgrade', (req, sock) => {
       /* ✅ v0.4.10: постройки — публичные копии без кода замка,
          dunl — замки, которые ЭТОТ игрок уже разгадал */
           objs: objsSnapshot(p),  // ✅ v0.3.6: бочки/чекблоки/дропы (авторитет сервера)
+          /* ✅ v0.4.51: сутки и погода ТИКАЮТ НА СЕРВЕРЕ — новичок сразу
+             видит верное время/погоду, дальше — пуши 'dnc' раз в секунду */
+          dnc: envPublic(),
           /* ✅ v0.4.46: СОХРАНЕНИЕ ЭТОГО ИГРОКА (позиция+инвентарь+слот
              хотбара) — client восстановит сразу после спавна */
           psave: p.psaved || undefined
@@ -2655,6 +2707,11 @@ server.on('upgrade', (req, sock) => {
            инвентарь ушёл в труп-лутбокс; при следующем входе игрок
            начнёт с чистого спавна и стартового набора */
         case 'pdeath': {
+          /* ✅ v0.4.52 ФИКС БЕССМЕРТИЯ: god-соединение не может «умереть»
+             и по своему же сообщению (клиент при god урон от падения
+             не шлёт — gameworld.js; тут двойная защита от читов/лагов:
+             pdeath от бога игнорируется, сохранение не стирается) */
+          if (msg.tid === p.id && p.god) break;
           if (msg.tid === p.id) {
             p.dead = true;
             p.hp = 0;
@@ -3094,8 +3151,10 @@ setInterval(() => {
     const zoneK = brixSmoothstep(COLD_ZONE_FROM, COLD_ZONE_TO,
       brixHeightAt(Number(st.x) || 0, Number(st.z) || 0));
     if (zoneK > COLD_ZONE_MIN) {
-      /* в зиме: чем выше — тем быстрее замерзаешь */
-      p.cold = Math.min(100, (p.cold || 0) + COLD_RATE * zoneK);
+      /* ✅ v0.4.51: НОЧЬЮ В ЗИМЕ мороз усиливается ×2 — фаза суток
+         тикает на сервере (envState), у всех игроков одинаково;
+         днём/на рассвете — обычная скорость */
+      p.cold = Math.min(100, (p.cold || 0) + COLD_RATE * zoneK * envNightFactor());
     } else {
       /* в тепле: шкала по чуть-чуть тает — в тепле исчезает полностью */
       p.cold = Math.max(0, (p.cold || 0) - WARM_RATE);
@@ -3123,6 +3182,123 @@ setInterval(() => {
       z: Math.round(zoneK * 100) / 100, hp: hpMsg });
   });
 }, COLD_TICK_MS);
+
+/* ============================================================
+   ✅ v0.4.51 СУТКИ И ПОГОДА — АВТОРИТЕТ СЕРВЕРА.
+   Время суток ТИКАЕТ ТОЛЬКО ЗДЕСЬ (на сервере), а не у игроков —
+   все видят одну и ту же фазу, погоду и рассвет одновременно:
+     • РАССВЕТ 2 мин → ДЕНЬ 12 мин → ЗАКАТ 3 мин → СУМЕРКИ 1.5 мин
+       → НОЧЬ 10 мин (полный цикл 28.5 минут);
+     • ПОГОДА: ясно 20 мин ↔ ХМУРО 15 мин (тучи закрывают солнце,
+       густой туман, дождь; в зиме — снег, переход плавный);
+     • раз в секунду всем уходит 'dnc' {ct, wx, wt} — клиент мягко
+       догоняет серверное время, часы идут синхронно у всех;
+     • состояние включено в welcome (новичок сразу видит верное время);
+     • цикл ПЕРЕЖИВАЕТ РЕСТАРТ СЕРВЕРА: world-env.json (как мир).
+   НОЧЬЮ В ЗИМЕ холод растёт ×2 (envNightFactor в тике холода выше).
+   ============================================================ */
+
+const ENV_FILE = path.join(ROOT, 'world-env.json');
+
+/* фазы суток (секунды) — 1:1 с js/game/environment.js */
+const ENV_PHASES = [
+  { id: 'dawn',   dur: 120 },   // рассвет — малая фаза
+  { id: 'day',    dur: 720 },   // день — 12 минут
+  { id: 'sunset', dur: 180 },   // закат — 3 минуты
+  { id: 'dusk',   dur: 90 },    // сумерки — малая фаза
+  { id: 'night',  dur: 600 }    // ночь — 10 минут
+];
+const ENV_CYCLE_LEN = ENV_PHASES.reduce((s, p) => s + p.dur, 0);   // 1710 с
+
+/* погода (секунды) */
+const ENV_WX = [
+  { id: 'clear',  dur: 1200 },  // ясно — 20 минут
+  { id: 'gloomy', dur: 900 }    // хмуро — 15 минут
+];
+
+let envState = { ct: 0, wx: 'clear', wt: 0 };
+let envDirty = false;
+let envTimer = null;
+
+function envPhaseIdAt(t) {
+  let acc = 0;
+  for (let i = 0; i < ENV_PHASES.length; i++) {
+    acc += ENV_PHASES[i].dur;
+    if (t < acc) return ENV_PHASES[i].id;
+  }
+  return 'night';
+}
+/** ×2 к холоду, когда ночь (сумерки/ночь) — считает тик холода */
+function envNightFactor() {
+  const id = envPhaseIdAt(envState.ct);
+  return (id === 'night' || id === 'dusk') ? 2 : 1;
+}
+function envPublic() {
+  return {
+    ct: Math.round(envState.ct * 10) / 10,
+    wx: envState.wx,
+    wt: Math.round(envState.wt * 10) / 10
+  };
+}
+
+function loadEnvNow() {
+  try {
+    if (!fs.existsSync(ENV_FILE)) return;
+    const j = JSON.parse(fs.readFileSync(ENV_FILE, 'utf8'));
+    if (!j || typeof j !== 'object') return;
+    envState.ct = Math.max(0, Math.min(ENV_CYCLE_LEN, Number(j.ct) || 0));
+    envState.wt = Math.max(0, Number(j.wt) || 0);
+    const wxOk = ENV_WX.some((w) => w.id === j.wx);
+    envState.wx = wxOk ? j.wx : 'clear';
+    if (envState.wt >= (ENV_WX.find((w) => w.id === envState.wx) || ENV_WX[0]).dur) envState.wt = 0;
+    console.log('[env] сутки восстановлены: ' + envPhaseIdAt(envState.ct) +
+      ' (' + Math.round(envState.ct) + ' с от рассвета), погода: ' + envState.wx);
+  } catch (e) { console.log('[env] не прочитал world-env.json: ' + e.message); }
+}
+
+function writeEnvNow() {
+  try {
+    fs.writeFileSync(ENV_FILE, JSON.stringify(envPublic()));
+    envDirty = false;
+  } catch (e) { console.log('[env] не сохранил world-env.json: ' + e.message); }
+}
+
+function markEnvDirty() {
+  envDirty = true;
+  if (envTimer) return;
+  envTimer = setTimeout(() => { envTimer = null; writeEnvNow(); }, 5000);
+}
+
+loadEnvNow();
+
+/* такт суток и погоды: раз в секунду — тикание ТОЛЬКО на сервере */
+setInterval(() => {
+  envState.ct += 1;
+  if (envState.ct >= ENV_CYCLE_LEN) envState.ct -= ENV_CYCLE_LEN;
+  envState.wt += 1;
+  const curWx = ENV_WX.find((w) => w.id === envState.wx) || ENV_WX[0];
+  if (envState.wt >= curWx.dur) {
+    /* смена погоды: ясно ↔ хмуро (порядок из ENV_WX) */
+    const idx = ENV_WX.findIndex((w) => w.id === envState.wx);
+    const next = ENV_WX[(idx + 1) % ENV_WX.length];
+    envState.wx = next.id;
+    envState.wt = 0;
+    console.log('[env] погода сменилась: ' + next.id +
+      ' на ' + Math.round(next.dur / 60) + ' мин · фаза суток: ' + envPhaseIdAt(envState.ct));
+  }
+  /* всем игрокам: время цикла + погода (клиент рисует плавно сам) */
+  if (players.size > 0) broadcast(Object.assign({ t: 'dnc' }, envPublic()), null);
+  markEnvDirty();   // debounce 5 с — запись только если 5 с никто не трогал
+}, 1000);
+
+/* страховка: раз в 30 с и при остановке сервера */
+setInterval(() => { if (envDirty) writeEnvNow(); }, 30000);
+function saveEnvOnExit() {
+  try { if (envTimer) { clearTimeout(envTimer); envTimer = null; } writeEnvNow(); } catch (e) {}
+}
+process.on('SIGINT', saveEnvOnExit);
+process.on('SIGTERM', saveEnvOnExit);
+process.on('exit', () => { try { saveEnvOnExit(); } catch (e) {} });
 
 /* ---------- 5. Старт ---------- */
 

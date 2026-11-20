@@ -39,6 +39,15 @@ window.BrixWorld = (function () {
 
   /* ---------------- Небо ---------------- */
 
+  /* ✅ v0.4.51 ЖИВОЕ НЕБО: палитры ведёт BrixEnvironment (сутки),
+     солнце ходит по небосводу, ночью выходят ЗВЁЗДЫ и ЛУНА, у
+     горизонта — закатный ореол; облака стали мягкими (canvas-
+     градиент вместо жёстких плит) + отдельный слой ХМУРЫХ туч,
+     которые затягивают небо и ЗАКРЫВАЮТ СОЛНЦЕ (ведёт погода).
+     ✅ v0.4.52: облака и в ЯСНУЮ погоду — их теперь 20, они
+     заметнее, закат красит их в золото, ночью они темнеют; в
+     шейдер неба добавлены РАДУГА (кольцо напротив солнца) и
+     ВСПЫШКА МОЛНИИ (пишет storm.js) */
   function createSky(scene) {
     var geo = new THREE.SphereGeometry(1600, 24, 14);
     var mat = new THREE.ShaderMaterial({
@@ -49,7 +58,13 @@ window.BrixWorld = (function () {
         topColor: { value: new THREE.Color(0x5c86b0) },
         horizonColor: { value: new THREE.Color(0xd3c8ab) },
         sunDir: { value: new THREE.Vector3(-0.45, 0.62, -0.4).normalize() },
-        sunColor: { value: new THREE.Color(0xfff1cf) }
+        sunColor: { value: new THREE.Color(0xfff1cf) },
+        sunDim: { value: 1 },        // тучи приглушают солнце
+        glowK: { value: 0 },         // закатный ореол у горизонта
+        moonDir: { value: new THREE.Vector3(0.45, 0.5, 0.4).normalize() },
+        moonI: { value: 0 },         // луна видна ночью
+        flashK: { value: 0 },        // ✅ v0.4.52: вспышка молнии 0..1
+        rainbowK: { value: 0 }       // ✅ v0.4.52: радуга 0..1
       },
       vertexShader: [
         'varying vec3 vDir;',
@@ -63,13 +78,42 @@ window.BrixWorld = (function () {
         'uniform vec3 horizonColor;',
         'uniform vec3 sunDir;',
         'uniform vec3 sunColor;',
+        'uniform float sunDim;',
+        'uniform float glowK;',
+        'uniform vec3 moonDir;',
+        'uniform float moonI;',
+        'uniform float flashK;',
+        'uniform float rainbowK;',
         'varying vec3 vDir;',
         'void main() {',
         '  vec3 d = normalize(vDir);',
         '  float t = clamp(d.y, 0.0, 1.0);',
         '  vec3 col = mix(horizonColor, topColor, pow(t, 0.6));',
         '  float s = max(dot(d, normalize(sunDir)), 0.0);',
-        '  col += sunColor * (pow(s, 350.0) * 1.4 + pow(s, 8.0) * 0.14);',
+        '  /* солнце: диск + широкий ореол, тучи гасят */',
+        '  col += sunColor * ((pow(s, 350.0) * 1.4 + pow(s, 8.0) * 0.14) * sunDim);',
+        '  /* закат/рассвет: тёплое зарево вокруг солнца у горизонта */',
+        '  col += sunColor * pow(s, 3.0) * 0.34 * glowK * sunDim;',
+        '  /* луна: диск + мягкое гало (ночью) */',
+        '  float m = max(dot(d, normalize(moonDir)), 0.0);',
+        '  col += vec3(0.82, 0.88, 1.0) * (pow(m, 1500.0) * 2.4 + pow(m, 90.0) * 0.16) * moonI;',
+        '  /* ✅ v0.4.52 молния: небо коротко вспыхивает (плавный спад ведёт storm.js) */',
+        '  col += vec3(0.85, 0.9, 1.0) * flashK * (0.3 + 0.45 * (1.0 - t));',
+        '  /* ✅ v0.4.52 радуга: кольцо НАПРОТИВ солнца (~38-44 градуса от линии солнце-наблюдатель), */',
+        '  /* красный внутри, фиолетовый снаружи; появляется после дождя на солнце */',
+        '  if (rainbowK > 0.004) {',
+        '    vec2 dxz = normalize(d.xz + vec2(1e-5));',
+        '    vec2 sxz = normalize(vec2(sunDir.x, sunDir.z) + vec2(1e-5));',
+        '    float a = acos(clamp(dot(dxz, -sxz), -1.0, 1.0));',
+        '    float band = smoothstep(0.655, 0.678, a) * (1.0 - smoothstep(0.735, 0.762, a));',
+        '    if (band > 0.0 && d.y > 0.0) {',
+        '      float u = clamp((a - 0.655) / 0.107, 0.0, 1.0);',
+        '      vec3 rc = mix(vec3(1.0, 0.18, 0.1), vec3(1.0, 0.72, 0.05), smoothstep(0.0, 0.34, u));',
+        '      rc = mix(rc, vec3(0.25, 0.8, 0.3), smoothstep(0.34, 0.63, u));',
+        '      rc = mix(rc, vec3(0.3, 0.5, 0.95), smoothstep(0.63, 1.0, u));',
+        '      col = mix(col, rc, band * rainbowK * 0.42 * smoothstep(0.005, 0.07, d.y));',
+        '    }',
+        '  }',
         '  gl_FragColor = vec4(col, 1.0);',
         '}'
       ].join('\n')
@@ -79,51 +123,178 @@ window.BrixWorld = (function () {
     mesh.renderOrder = -10;
     scene.add(mesh);
 
-    /* облака — плоские полупрозрачные плиты */
+    /* ✅ ЗВЁЗДЫ — Points на верхней полусфере, ночью проявляются,
+       в хмуро прячутся за тучами; медленно вращаются */
+    var starGeo = new THREE.BufferGeometry();
+    var starPos = new Float32Array(420 * 3);
+    var srng = N.makeRng(20261120);
+    for (var si = 0; si < 420; si++) {
+      var sa = srng() * Math.PI * 2;
+      var sy = 0.12 + srng() * 0.88;                 // над горизонтом
+      var sr = Math.sqrt(Math.max(0, 1 - sy * sy));
+      starPos[si * 3] = Math.cos(sa) * sr * 1540;
+      starPos[si * 3 + 1] = sy * 1540;
+      starPos[si * 3 + 2] = Math.sin(sa) * sr * 1540;
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+    var starMat = new THREE.PointsMaterial({
+      color: 0xdfe8ff, size: 2.4, sizeAttenuation: false,
+      transparent: true, opacity: 0, depthWrite: false, fog: false
+    });
+    var stars = new THREE.Points(starGeo, starMat);
+    stars.frustumCulled = false;
+    mesh.add(stars);
+
+    /* мягкая текстура облака (canvas-градиент, рваные края) */
+    function cloudTexture() {
+      var c = document.createElement('canvas');
+      c.width = c.height = 128;
+      var g = c.getContext('2d');
+      var blobs = [[64, 64, 60, 0.8], [40, 58, 34, 0.55], [88, 60, 30, 0.5],
+        [56, 42, 26, 0.42], [76, 80, 28, 0.4]];
+      for (var bi = 0; bi < blobs.length; bi++) {
+        var b = blobs[bi];
+        var grd = g.createRadialGradient(b[0], b[1], 4, b[0], b[1], b[2]);
+        grd.addColorStop(0, 'rgba(255,255,255,' + b[3] + ')');
+        grd.addColorStop(1, 'rgba(255,255,255,0)');
+        g.fillStyle = grd;
+        g.fillRect(0, 0, 128, 128);
+      }
+      return new THREE.CanvasTexture(c);
+    }
+    var cloudTex = cloudTexture();
+
+    /* ✅ v0.4.52 дневные облака — И В ЯСНУЮ ПОГОДУ их теперь 20 (было
+       12), заметнее и мягче; закат/рассвет красит их в золото,
+       ночью они темнеют, в хмуро бледнеют и прячутся под тучи.
+       ✅ ФИКС «ОБЛАКОВ НЕ ВИДНО»: плоскости повёрнуты нормалью ВВЕРХ,
+       а игрок смотрит с земли СНИЗУ — FrontSide отсекал заднюю грань,
+       и облака были НЕВИДИМЫ. Теперь side: DoubleSide — видны всегда */
     var clouds = new THREE.Group();
     var rng = N.makeRng(777);
     var cloudMat = new THREE.MeshBasicMaterial({
-      color: 0xf2f0ea,
+      color: 0xf7f5ef,
+      alphaMap: cloudTex,
       transparent: true,
-      opacity: 0.3,
+      opacity: 0.46,
       depthWrite: false,
-      fog: false
+      fog: false,
+      side: THREE.DoubleSide
     });
-    for (var i = 0; i < 10; i++) {
-      var w = 70 + rng() * 110;
+    for (var i = 0; i < 20; i++) {
+      var w = 90 + rng() * 150;
       var g2 = new THREE.PlaneGeometry(w, w * (0.5 + rng() * 0.3));
       var m = new THREE.Mesh(g2, cloudMat);
       m.rotation.x = -Math.PI / 2;
       m.position.set(
         (rng() - 0.5) * T.WORLD_SIZE * 1.6,
-        170 + rng() * 70,
+        165 + rng() * 80,
         (rng() - 0.5) * T.WORLD_SIZE * 1.6
       );
       clouds.add(m);
     }
     scene.add(clouds);
 
+    /* ✅ ХМУРЫЕ ТУЧИ — большой нижний слой, затягивает небо и закрывает
+       солнце; opacity ведёт погода (gloomyK), цвет — почти чёрный.
+       ✅ v0.4.52: тоже DoubleSide (видны с земли, как и дневные) */
+    var storm = new THREE.Group();
+    var srng2 = N.makeRng(1313);
+    var stormMat = new THREE.MeshBasicMaterial({
+      color: 0x33383f,
+      alphaMap: cloudTex,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      fog: false,
+      side: THREE.DoubleSide
+    });
+    for (var j = 0; j < 11; j++) {
+      var sw = 150 + srng2() * 160;
+      var g3 = new THREE.PlaneGeometry(sw, sw * (0.55 + srng2() * 0.35));
+      var m2 = new THREE.Mesh(g3, stormMat);
+      m2.rotation.x = -Math.PI / 2;
+      m2.position.set(
+        (srng2() - 0.5) * T.WORLD_SIZE * 1.7,
+        118 + srng2() * 45,
+        (srng2() - 0.5) * T.WORLD_SIZE * 1.7
+      );
+      storm.add(m2);
+    }
+    scene.add(storm);
+
+    /* переиспользуемые цвета — без аллокаций в кадре */
+    var _day = new THREE.Color(0xf7f5ef), _dayGloom = new THREE.Color(0x8d939b);
+    var _storm = new THREE.Color(0x33383f), _stormHi = new THREE.Color(0x565d66);
+    var _nightCloud = new THREE.Color(0x333c4d);   /* ✅ v0.4.52: ночные облака */
+
     return {
       tick: function (camera) {
         mesh.position.copy(camera.position);
-        clouds.children.forEach(function (c, i) {
-          c.position.x += 0.02 * (1 + (i % 3) * 0.4);
-          if (c.position.x > T.WORLD_SIZE * 0.9) c.position.x = -T.WORLD_SIZE * 0.9;
-        });
+        var i2;
+        for (i2 = 0; i2 < clouds.children.length; i2++) {
+          var c1 = clouds.children[i2];
+          c1.position.x += 0.02 * (1 + (i2 % 3) * 0.4);
+          if (c1.position.x > T.WORLD_SIZE * 0.9) c1.position.x = -T.WORLD_SIZE * 0.9;
+        }
+        for (i2 = 0; i2 < storm.children.length; i2++) {
+          var c2 = storm.children[i2];
+          c2.position.x += 0.05 * (1 + (i2 % 4) * 0.3);   // тучи несут быстрее
+          if (c2.position.x > T.WORLD_SIZE * 0.95) c2.position.x = -T.WORLD_SIZE * 0.95;
+        }
+        stars.rotation.y += 0.00016;   // звёздное небо медленно плывёт
+      },
+      /* ✅ v0.4.51: сюда каждый кадр пишет BrixEnvironment */
+      updateEnv: function (e) {
+        mat.uniforms.topColor.value.copy(e.zen);
+        mat.uniforms.horizonColor.value.copy(e.hor);
+        mat.uniforms.sunColor.value.copy(e.sun);
+        var az = e.sunAz, el = Math.max(-0.999, Math.min(0.999, e.sunEl));
+        var ce = Math.sqrt(Math.max(0, 1 - el * el));
+        mat.uniforms.sunDir.value.set(Math.cos(az) * ce, el, Math.sin(az) * ce).normalize();
+        mat.uniforms.sunDim.value = 1 - 0.88 * e.cloudDark;
+        mat.uniforms.glowK.value = e.glowK;
+        /* луна — по ту сторону неба, поднимается, когда солнце садится */
+        var mel = Math.min(0.85, Math.max(0.1, -e.sunEl * 0.75 + 0.14));
+        var mce = Math.sqrt(Math.max(0, 1 - mel * mel));
+        mat.uniforms.moonDir.value
+          .set(Math.cos(az + Math.PI) * mce, mel, Math.sin(az + Math.PI) * mce).normalize();
+        mat.uniforms.moonI.value = e.nightK;
+        mat.uniforms.flashK.value = e.flashK || 0;      /* ✅ v0.4.52 */
+        mat.uniforms.rainbowK.value = e.rainbowK || 0;  /* ✅ v0.4.52 */
+        /* звёзды: ночь включает, тучи выключают */
+        starMat.opacity = e.nightK * (1 - e.cloudDark * 0.92);
+        /* ✅ v0.4.52 облака: в ясную — заметные (0.46), в хмуро бледнеют;
+           закатное зарево красит их в золото, ночью темнеют */
+        cloudMat.opacity = 0.46 - 0.30 * e.cloudDark;
+        cloudMat.color.copy(_day).lerp(_dayGloom, e.cloudDark * 0.85);
+        if (e.glowK > 0.01) cloudMat.color.lerp(e.hor, e.glowK * 0.5);
+        if (e.nightK > 0.01) cloudMat.color.lerp(_nightCloud, e.nightK * 0.75);
+        stormMat.opacity = 0.82 * e.cloudDark;
+        stormMat.color.copy(_storm).lerp(_stormHi, 1 - e.cloudDark);
       },
       dispose: function () {
         scene.remove(mesh);
         scene.remove(clouds);
+        scene.remove(storm);
         geo.dispose();
         mat.dispose();
+        starGeo.dispose();
+        starMat.dispose();
         cloudMat.dispose();
+        stormMat.dispose();
+        cloudTex.dispose();
         clouds.children.forEach(function (c) { c.geometry.dispose(); });
+        storm.children.forEach(function (c) { c.geometry.dispose(); });
       }
     };
   }
 
   /* ---------------- Свет ---------------- */
 
+  /* ✅ v0.4.51: солнце ХОДИТ ПО НЕБУ (азимут/высоту ведёт
+     BrixEnvironment), источник света ночью — ЛУНА (мягкий синий),
+     хмуро гасит и солнце, и полусферный свет */
   function createLights(scene, quality) {
     var hemi = new THREE.HemisphereLight(0x9ab8d0, 0x54503e, 1.15);
     scene.add(hemi);
@@ -144,6 +315,7 @@ window.BrixWorld = (function () {
     scene.add(sun.target);
 
     var sunOffset = new THREE.Vector3(-120, 170, -95);
+    var _sv = new THREE.Vector3(), _mv = new THREE.Vector3();
 
     return {
       sun: sun,
@@ -152,6 +324,23 @@ window.BrixWorld = (function () {
         sun.position.copy(playerPos).add(sunOffset);
         sun.target.position.copy(playerPos);
         sun.target.updateMatrixWorld();
+      },
+      /* ✅ v0.4.51: каждый кадр из environment */
+      updateEnv: function (e) {
+        var az = e.sunAz, el = Math.max(-0.999, Math.min(0.999, e.sunEl));
+        var ce = Math.sqrt(Math.max(0, 1 - el * el));
+        _sv.set(Math.cos(az) * ce, el, Math.sin(az) * ce);
+        /* луна встаёт, когда солнце ушло под горизонт */
+        var mel = Math.min(0.85, Math.max(0.12, -e.sunEl * 0.75 + 0.14));
+        var mce = Math.sqrt(Math.max(0, 1 - mel * mel));
+        _mv.set(Math.cos(az + Math.PI) * mce, mel, Math.sin(az + Math.PI) * mce);
+        _sv.lerp(_mv, e.nightK).normalize();
+        sunOffset.copy(_sv).multiplyScalar(170);
+        sun.color.copy(e.sunC);
+        sun.intensity = Math.max(0.05, e.sunI * (1 - 0.8 * e.cloudDark));
+        hemi.color.copy(e.hemiSky);
+        hemi.groundColor.copy(e.hemiGnd);
+        hemi.intensity = Math.max(0.08, e.hemiI * (1 - 0.35 * e.cloudDark));
       }
     };
   }
@@ -173,9 +362,22 @@ window.BrixWorld = (function () {
     mesh.renderOrder = 1;
     scene.add(mesh);
 
+    /* ✅ v0.4.51: вода живёт вместе со светом — тёмная ночью,
+       закатная у горизонта, серая в хмуро (цвета переиспользуем) */
+    var W_DAY = new THREE.Color(0x3f6d66), W_NIGHT = new THREE.Color(0x14262e),
+      W_DUSK = new THREE.Color(0x5d5a63), W_GLOOM = new THREE.Color(0x46545a);
+    var _wc = new THREE.Color();
+
     return {
       tick: function (t) {
         mat.opacity = 0.82 + Math.sin(t * 0.6) * 0.04;
+      },
+      updateEnv: function (e) {
+        _wc.copy(W_DAY);
+        _wc.lerp(W_NIGHT, e.nightK);
+        _wc.lerp(W_DUSK, e.glowK * 0.6);
+        _wc.lerp(W_GLOOM, e.gloomyK * 0.6);
+        mat.color.copy(_wc);
       },
       dispose: function () {
         scene.remove(mesh);

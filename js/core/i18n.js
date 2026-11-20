@@ -158,6 +158,15 @@ window.BrixI18N = (function () {
     /* ✅ v0.4.34 ХОЛОД: баннер температуры и смерть от мороза */
     'cold.warn': 'ХОЛОДНО',
     'cold.danger': 'СЛИШКОМ ХОЛОДНО',
+    /* ✅ v0.4.51 СУТКИ И ПОГОДА: часы HUD (фазы — 1:1 с server.js) */
+    'hud.time': 'Время',
+    'env.dawn': 'Рассвет',
+    'env.day': 'День',
+    'env.sunset': 'Закат',
+    'env.dusk': 'Сумерки',
+    'env.night': 'Ночь',
+    'wx.clear': 'Ясно',
+    'wx.gloomy': 'Хмуро',
     'death.frozen': 'ТЫ ЗАМЁРЗ НАСМЕРТЬ',
     /* ✅ v0.4.44: смерть от падения с высоты */
     'death.fall': 'ТЫ РАЗБИЛСЯ НАСМЕРТЬ',
@@ -498,6 +507,15 @@ window.BrixI18N = (function () {
     /* ✅ v0.4.34 COLD: temperature banner and freezing death */
     'cold.warn': 'COLD',
     'cold.danger': 'TOO COLD',
+    /* ✅ v0.4.51 DAY/NIGHT + WEATHER: HUD clock (phases — 1:1 with server.js) */
+    'hud.time': 'Time',
+    'env.dawn': 'Dawn',
+    'env.day': 'Day',
+    'env.sunset': 'Sunset',
+    'env.dusk': 'Dusk',
+    'env.night': 'Night',
+    'wx.clear': 'Clear',
+    'wx.gloomy': 'Gloomy',
     'death.frozen': 'YOU FROZE TO DEATH',
     /* ✅ v0.4.44: death by falling */
     'death.fall': 'YOU FELL TO YOUR DEATH',

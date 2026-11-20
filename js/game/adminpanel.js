@@ -1,14 +1,19 @@
 // ============================================================
 //  brix • js/game/adminpanel.js
-//  ✅ v0.4.15 ПАНЕЛЬ РАЗРАБОТЧИКА (клавиша 9) — ТОЛЬКО для ID
+//  ✅ v0.4.52 ПАНЕЛЬ РАЗРАБОТЧИКА (клавиша 9) — ТОЛЬКО для ID
 //  владельца сервера. Сервер подтверждает админа по BRIX-ID
 //  аккаунта (сообщение adminon после welcome) и ПРОВЕРЯЕТ каждую
 //  команду — клиентский флаг включает только интерфейс.
 //
-//  ✅ v0.4.16: почему «нажимаю 9 и ничего не происходит» — раньше
-//  был МОЛЧАНЫЙ отказ (ID не в списке сервера). Теперь ОДИН раз за
-//  сессию при нажатии 9 без прав выходит подсказка с ТВОИМ BRIX-ID
-//  и что с ним сделать (вписать в admins.json рядом с server.js).
+//  ✅ v0.4.52 НОВОЕ:
+//   · ПОГОДА И ВРЕМЯ — СИГНАЛЫ СЕРВЕРУ: кнопки ЯСНО/ХМУРО и
+//     РАССВЕТ/ДЕНЬ/ЗАКАТ/СУМЕРКИ/НОЧЬ — сервер меняет своё
+//     состояние (envState), сразу рассылает всем 'dnc' и
+//     объявление 'atoast' («Админ сменил погоду: …»), пишет
+//     world-env.json — всё переживает рестарт. Переход плавный:
+//     тучи собираются/солнце гаснет мягко, без скачков;
+//   · ПРОХОД СКВОЗЬ СТЕНЫ (noclip): полёт насквозь стен/дверей/
+//     окон и любых построек — Space вверх, C вниз (controls.js);
 //
 //  Функции (в стиле мини-меню/меню игры):
 //   · БЕСКОНЕЧНОЕ ХП — урон от игроков не применяется (сервер);
@@ -207,7 +212,7 @@ window.BrixAdmin = (function () {
     /* шапка */
     var head = el('div', 'bap-head');
     head.appendChild(el('div', 'bap-title font-h', 'PANEL DEVELOPERA'));
-    head.appendChild(el('div', 'bap-sub', 'BRIX · v0.4.25 · только для владельца сервера'));
+    head.appendChild(el('div', 'bap-sub', 'BRIX · v0.4.52 · только для владельца сервера'));
     var x = el('button', 'bap-close');
     x.innerHTML = window.BrixIcon ? BrixIcon('x', 16) : '✕';
     x.onclick = function () { if (window.menuAudio) menuAudio.back(); close(); };
@@ -227,7 +232,9 @@ window.BrixAdmin = (function () {
         /* ✅ v0.4.22 ФИКС «ИГРОКИ НЕ УМИРАЮТ»: бессмертие синхронизируется
            с СЕРВЕРОМ — урон не применяется только при включённом тумблере
            (раньше админский BRIX-ID был неуязвим ВСЕГДА, даже во второй
-           тест-вкладке с тем же аккаунтом — игроки не умирали) */
+           тест-вкладке с тем же аккаунтом — игроки не умирали).
+           ✅ v0.4.52: теперь бессмертие защищает и от УРОНА ОТ ВЫСОТЫ
+           (раньше падение с крыши убивало даже с бесконечным ХП) */
         if (window.BrixNet && BrixNet.mode === 'server' && BrixNet.send) {
           BrixNet.send({ t: 'admin', op: 'god', v: v });
         }
@@ -239,7 +246,56 @@ window.BrixAdmin = (function () {
     flags.appendChild(toggleBtn('СКОРОСТЬ ×2',
       function () { return speedOn; },
       function (v) { speedOn = v; }));
+    /* ✅ v0.4.52 NOCLIP — полёт сквозь стены/двери/окна */
+    flags.appendChild(toggleBtn('ПРОХОД СКВОЗЬ СТЕНЫ',
+      function () { return !!(window.__brixControls && window.__brixControls.noclip); },
+      function (v) {
+        if (!window.__brixControls || !window.__brixControls.setNoclip) {
+          toast(ru('Enter the world first', 'Сначала войди в игру — мир ещё не построен'), 4);
+          return;
+        }
+        window.__brixControls.setNoclip(v);
+        toast(v ? 'NOCLIP ВКЛ — лети сквозь стены/двери/окна. WASD — куда смотришь, Space — вверх, C — вниз'
+              : 'NOCLIP ВЫКЛ — стены снова мешают', 7);
+      }));
     body.appendChild(flags);
+
+    /* ---------- ✅ v0.4.52 1.5. ПОГОДА И ВРЕМЯ — СИГНАЛЫ СЕРВЕРУ ---------- */
+    body.appendChild(secTitle('ПОГОДА И ВРЕМЯ — СИГНАЛЫ СЕРВЕРУ'));
+    var wxRow = el('div', 'bap-flags');
+    var wxBtns = [
+      ['ЯСНО', 'clear', 'Тучи разойдутся, солнце вернётся — у ВСЕХ игроков'],
+      ['ХМУРО', 'gloomy', 'Тёмные тучи затянут небо и закроют солнце, пойдёт дождь — у ВСЕХ']
+    ];
+    wxBtns.forEach(function (p2) {
+      var b = el('button', 'bap-btn font-h', p2[0]);
+      b.title = p2[2];
+      b.onclick = function () {
+        if (window.menuAudio) menuAudio.click();
+        sendOp('wx', { v: p2[1] });
+      };
+      wxRow.appendChild(b);
+    });
+    body.appendChild(wxRow);
+    var phRow = el('div', 'bap-flags');
+    var phBtns = [
+      ['РАССВЕТ', 'dawn'], ['ДЕНЬ', 'day'], ['ЗАКАТ', 'sunset'],
+      ['СУМЕРКИ', 'dusk'], ['НОЧЬ', 'night']
+    ];
+    phBtns.forEach(function (p3) {
+      var b3 = el('button', 'bap-btn bap-btn-small font-h', p3[0]);
+      b3.title = 'Сервер переведёт время суток на начало фазы «' + p3[0] + '» — у всех игроков';
+      b3.onclick = function () {
+        if (window.menuAudio) menuAudio.click();
+        sendOp('phase', { v: p3[1] });
+      };
+      phRow.appendChild(b3);
+    });
+    body.appendChild(phRow);
+    body.appendChild(el('div', 'bap-note',
+      'Сигнал уходит СЕРВЕРУ — он меняет своё время и погоду и сразу рассылает всем. ' +
+      'Переход плавный: тучи собираются и солнце гаснет мягко, небо «проезжает» к новой фазе. ' +
+      'Состояние пишется в world-env.json — переживает рестарт сервера.'));
 
     /* ---------- 2. ПРЕДМЕТЫ ---------- */
     body.appendChild(secTitle('ПРЕДМЕТЫ — ВЗЯТЬ ЛЮБУЮ ВЕЩЬ'));
@@ -591,6 +647,12 @@ window.BrixAdmin = (function () {
       god = false;
       masterkey = false;
       speedOn = false;
+      /* ✅ v0.4.52: noclip выключается вместе с миром */
+      try {
+        if (window.__brixControls && window.__brixControls.setNoclip) {
+          window.__brixControls.setNoclip(false);
+        }
+      } catch (eNc) {}
       opts = null;
       if (root) { root.classList.add('hidden'); }
     }

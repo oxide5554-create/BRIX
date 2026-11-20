@@ -11,16 +11,46 @@
    АНТИ-КЭШ (почему после замены файлов ничего не менялось):
    python -m http.server и npm-серверы НЕ шлют заголовки запрета
    кэша, и браузер продолжает показывать СТАРЫЕ js-файлы.
-   1) Ко всем скриптам/стилям ниже добавлен ?v=089 — браузер
+   1) Ко всем скриптам/стилям ниже добавлен ?v=091 — браузер
       считает их новыми адресами и качает заново.
    2) Если в адресе нет ?v= — страница один раз перезагружается
-      с ?v=089 (свежий index.html гарантированно).
+      с ?v=091 (свежий index.html гарантированно).
    3) В меню есть ссылка «обновить кэш» (js/main.js).
    ============================================================ */
 (function () {
-  var V = '089';
+  var V = '091';
   window.BRIX_V = V;
-  window.BRIX_VER = '0.4.50';   /* ✅ v0.4.50 (С4 в горах, звук шприца, трупы 10 мин, новые иконки):
+  window.BRIX_VER = '0.4.52';   /* ✅ v0.4.52 (СИГНАЛЫ СЕРВЕРУ + ПЛАВНЫЕ ПЕРЕХОДЫ):
+   1) АДМИН-ПАНЕЛЬ (9): ПОГОДА И ВРЕМЯ — СИГНАЛЫ СЕРВЕРУ (ЯСНО/ХМУРО,
+      РАССВЕТ/ДЕНЬ/ЗАКАТ/СУМЕРКИ/НОЧЬ) — сервер меняет envState и сразу
+      рассылает всем 'dnc' + объявление 'atoast'; state в world-env.json.
+      ПРОХОД СКВОЗЬ СТЕНЫ (noclip): полёт насквозь стен/дверей/окон —
+      Space вверх, C вниз (controls.js setNoclip).
+   2) ПЛАВНЫЕ ПЕРЕХОДЫ ТУЧИ↔СВЕТ: сглаживание в environment.js — солнце,
+      ТЕНИ и туман гаснут/загораются мягко при ЛЮБОЙ смене погоды;
+      большой скачок времени суток (сигнал админа) небо «проезжает».
+   3) ОБЛАКА В ЯСНУЮ ПОГОДУ: 20 мягких облаков (было 12), заметнее,
+      закат красит их в золото, ночью темнеют.
+   4) ГРОЗА (фича 1): молнии (вспышка неба + мерцающий свет, тени)
+      и гром с задержкой — storm.js + assets/sfx/weather/thunder*.wav.
+   5) РАДУГА ПОСЛЕ ДОЖДЯ (фича 2): кольцо напротив солнца, тает ~50 с
+      (шейдер неба world.js).
+   6) ФИКС: с БЕССМЕРТИЕМ больше не умираешь от высоты (god в
+      onFallDamage + сервер не принимает pdeath от god).
+   —— История v0.4.51 (СУТКИ И ПОГОДА НА СЕРВЕРЕ):
+   1) СУТКИ: рассвет 2 мин → день 12 мин → закат 3 мин → сумерки 1.5 мин
+      → ночь 10 мин (цикл 28.5 мин). Время ТИКАЕТ НА СЕРВЕРЕ (server.js
+      шлёт 'dnc' раз в секунду + кладёт в welcome.dnc) — у всех игроков
+      синхронно; в соло/вкладках — те же часы локально. ЖИВОЕ НЕБО:
+      солнце ходит по небосводу, закатное зарево, звёзды и луна ночью,
+      туман и экспозиция дышат со светом, вода меняет цвет.
+   2) ПОГОДА: ясно 20 мин ↔ хмуро 15 мин — тёмные тучи ЗАКРЫВАЮТ СОЛНЦЕ,
+      густой туман, 3D-ДОЖДЬ (GPU-частицы вокруг камеры, ФПС не падает)
+      и тихий бесшовный звук дождя. В ЗИМЕ вместо дождя — СНЕГ, переход
+      плавный (снеговая линия).
+   3) ХОЛОД НОЧЬЮ В ЗИМЕ ×2 (серверная фаза суток, у всех одинаково).
+   4) Часы HUD: «07:15 · День · Хмуро».
+   —— История v0.4.50:
    1) ФИКС «С4 ПРОПАДАЕТ В ГОРАХ/ХОЛМАХ»: страховка полёта мерила дистанцию
       от ЦЕНТРА КАРТЫ (135 м), а карта 900 м — за спавн-плато (там как раз
       холмы и горы) блок удалялся в первый же кадр. Теперь радиус — от
@@ -66,17 +96,17 @@
 })();
 </script>
 <meta name="theme-color" content="#101312">
-<title>BRIX v0.4.50 — С4 в горах · звук шприца · трупы 10 мин · новые иконки — Главное меню</title>
+<title>BRIX v0.4.52 — сигналы серверу · гроза и радуга · плавные переходы — Главное меню</title>
 <link rel="icon" href="assets/icon.png">
 <!-- Стили (перенос старой версии 1:1) -->
-<link rel="stylesheet" href="css/fonts.css?v=089">
-<link rel="stylesheet" href="css/base.css?v=089">
-<link rel="stylesheet" href="css/menu.css?v=089">
-<link rel="stylesheet" href="css/screens.css?v=089">
-<link rel="stylesheet" href="css/modals.css?v=089">
-<link rel="stylesheet" href="css/game.css?v=089">
-<link rel="stylesheet" href="css/minimenu.css?v=089">
-<link rel="stylesheet" href="css/admin.css?v=089">
+<link rel="stylesheet" href="css/fonts.css?v=091">
+<link rel="stylesheet" href="css/base.css?v=091">
+<link rel="stylesheet" href="css/menu.css?v=091">
+<link rel="stylesheet" href="css/screens.css?v=091">
+<link rel="stylesheet" href="css/modals.css?v=091">
+<link rel="stylesheet" href="css/game.css?v=091">
+<link rel="stylesheet" href="css/minimenu.css?v=091">
+<link rel="stylesheet" href="css/admin.css?v=091">
 </head>
 <body>
 
@@ -130,6 +160,7 @@
       <div class="hud-stats">
         <div><span id="hudFpsCap"></span><span class="v" id="hudFps">0</span></div>
         <div style="margin-top:2px"><span id="hudPosCap"></span><span class="v" id="hudPos">0 · 0 · 0</span></div>
+        <div style="margin-top:2px"><span id="hudTimeCap"></span><span class="v" id="hudTime"></span></div>
       </div>
       <div class="hud-hint" id="hudHint"></div>
     </div>
@@ -168,8 +199,8 @@
 </div>
 
 <!-- Скрипты: порядок важен! -->
-<script src="js/lib/three.min.js?v=089"></script>
-<script src="js/core/i18n.js?v=089"></script>
+<script src="js/lib/three.min.js?v=091"></script>
+<script src="js/core/i18n.js?v=091"></script>
 <script>
 /* ✅ v0.4.22 ЗАЩИТА ОТ ПАДЕНИЯ МЕНЮ: если js/core/i18n.js не скопирован
    на сервер (404 — самый частый пропуск при установке обновлений),
@@ -187,49 +218,52 @@ if (!window.BrixI18N) {
   };
 }
 </script>
-<script src="js/core/state.js?v=089"></script>
-<script src="js/core/audio.js?v=089"></script>
-<script src="js/core/icons.js?v=089"></script>
-<script src="js/data/servers.js?v=089"></script>
-<script src="js/data/friends.js?v=089"></script>
-<script src="js/data/skins.js?v=089"></script>
-<script src="js/data/news.js?v=089"></script>
-<script src="js/data/itemicons.js?v=089"></script>
-<script src="js/data/weaponskins.js?v=089"></script>
-<script src="js/ui/toast.js?v=089"></script>
-<script src="js/ui/modals.js?v=089"></script>
-<script src="js/ui/topbar.js?v=089"></script>
-<script src="js/ui/sidebar.js?v=089"></script>
-<script src="js/ui/screens.js?v=089"></script>
-<script src="js/ui/loading.js?v=089"></script>
-<script src="js/game/noise.js?v=089"></script>
-<script src="js/game/embeddata.js?v=089"></script>
-<script src="js/game/glb.js?v=089"></script>
-<script src="js/game/sfx.js?v=089"></script>
-<script src="js/game/terrain.js?v=089"></script>
-<script src="js/game/terrainlook.js?v=089"></script>
-<script src="js/game/lighthouse.js?v=089"></script>
-<script src="js/game/world.js?v=089"></script>
-<script src="js/game/road.js?v=089"></script>
-<script src="js/game/footprints.js?v=089"></script>
-<script src="js/game/controls.js?v=089"></script>
-<script src="js/game/props.js?v=089"></script>
-<script src="js/game/firstperson.js?v=089"></script>
-<script src="js/game/inventory.js?v=089"></script>
-<script src="js/game/lootmenu.js?v=089"></script>
-<script src="js/game/background.js?v=089"></script>
-<script src="js/net/net.js?v=089"></script>
-<script src="js/social/social.js?v=089"></script>
-<script src="js/game/remoteplayer.js?v=089"></script>
-<script src="js/game/corpses.js?v=089"></script>
-<script src="js/game/furnace.js?v=089"></script>
-<script src="js/game/hitmarker.js?v=089"></script>
-<script src="js/game/minimenu.js?v=089"></script>
-<script src="js/game/adminpanel.js?v=089"></script>
-<script src="js/game/craft.js?v=089"></script>
-<script src="js/game/building.js?v=089"></script>
-<script src="js/game/gameworld.js?v=089"></script>
-<script src="js/game/touch.js?v=089"></script>
-<script src="js/main.js?v=089"></script>
+<script src="js/core/state.js?v=091"></script>
+<script src="js/core/audio.js?v=091"></script>
+<script src="js/core/icons.js?v=091"></script>
+<script src="js/data/servers.js?v=091"></script>
+<script src="js/data/friends.js?v=091"></script>
+<script src="js/data/skins.js?v=091"></script>
+<script src="js/data/news.js?v=091"></script>
+<script src="js/data/itemicons.js?v=091"></script>
+<script src="js/data/weaponskins.js?v=091"></script>
+<script src="js/ui/toast.js?v=091"></script>
+<script src="js/ui/modals.js?v=091"></script>
+<script src="js/ui/topbar.js?v=091"></script>
+<script src="js/ui/sidebar.js?v=091"></script>
+<script src="js/ui/screens.js?v=091"></script>
+<script src="js/ui/loading.js?v=091"></script>
+<script src="js/game/noise.js?v=091"></script>
+<script src="js/game/embeddata.js?v=091"></script>
+<script src="js/game/glb.js?v=091"></script>
+<script src="js/game/sfx.js?v=091"></script>
+<script src="js/game/terrain.js?v=091"></script>
+<script src="js/game/terrainlook.js?v=091"></script>
+<script src="js/game/lighthouse.js?v=091"></script>
+<script src="js/game/world.js?v=091"></script>
+<script src="js/game/environment.js?v=091"></script>
+<script src="js/game/precipitation.js?v=091"></script>
+<script src="js/game/storm.js?v=091"></script>
+<script src="js/game/road.js?v=091"></script>
+<script src="js/game/footprints.js?v=091"></script>
+<script src="js/game/controls.js?v=091"></script>
+<script src="js/game/props.js?v=091"></script>
+<script src="js/game/firstperson.js?v=091"></script>
+<script src="js/game/inventory.js?v=091"></script>
+<script src="js/game/lootmenu.js?v=091"></script>
+<script src="js/game/background.js?v=091"></script>
+<script src="js/net/net.js?v=091"></script>
+<script src="js/social/social.js?v=091"></script>
+<script src="js/game/remoteplayer.js?v=091"></script>
+<script src="js/game/corpses.js?v=091"></script>
+<script src="js/game/furnace.js?v=091"></script>
+<script src="js/game/hitmarker.js?v=091"></script>
+<script src="js/game/minimenu.js?v=091"></script>
+<script src="js/game/adminpanel.js?v=091"></script>
+<script src="js/game/craft.js?v=091"></script>
+<script src="js/game/building.js?v=091"></script>
+<script src="js/game/gameworld.js?v=091"></script>
+<script src="js/game/touch.js?v=091"></script>
+<script src="js/main.js?v=091"></script>
 </body>
 </html>

@@ -325,6 +325,9 @@
     document.getElementById('hudHint').textContent = t('hud.hint');
     document.getElementById('hudFpsCap').textContent = t('hud.fps') + ': ';
     document.getElementById('hudPosCap').textContent = t('hud.pos') + ': ';
+    /* ✅ v0.4.51: подпись игровых часов (HH:MM · фаза · погода) */
+    var timeCap = document.getElementById('hudTimeCap');
+    if (timeCap) timeCap.textContent = t('hud.time') + ': ';
     document.getElementById('pauseTitle').textContent = t('pause.title');
     document.getElementById('pauseHint').textContent = t('pause.lockHint');
     document.getElementById('btnResume').textContent = t('pause.resume');    document.getElementById('btnDisconnect').textContent = t('pause.disconnect');

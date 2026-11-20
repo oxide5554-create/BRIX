@@ -3,6 +3,11 @@
 //  Управление от первого лица: pointer lock, мышь — обзор,
 //  WASD/Shift/Space — движение, гравитация и ходьба по рельефу.
 //  Полный перенос из lib/game/controls.ts (класс FpsController).
+//  ✅ v0.4.52 NOCLIP (админ-панель, тумблер «ПРОХОД СКВОЗЬ СТЕНЫ»):
+//  полёт НАСКВОЗЬ стен, дверей, окон и любых построек — коллизии
+//  и гравитация выключены, W/A/S/D летят куда смотришь (с учётом
+//  наклона камеры), Space — вверх, C — вниз. Включается из панели
+//  через controls.setNoclip(true/false).
 // ============================================================
 window.BrixControls = (function () {
   'use strict';
@@ -68,6 +73,7 @@ window.BrixControls = (function () {
     this._fallPeak = 0;
     this._landK = 0;
     this._ladder = null;
+    this.noclip = false;        // ✅ v0.4.52: полёт сквозь стены (админ-панель)
     this.onFallDamage = null;   // (info {dist, dmg}) — gameworld применяет урон
 
     var self = this;
@@ -77,8 +83,9 @@ window.BrixControls = (function () {
       if (e.code === 'Space') e.preventDefault();
       /* ✅ v0.4.28: C — присесть/встать (переключатель).
          ✅ v0.4.46: встать ПОД ЛЕСТНИЦЕЙ нельзя — пока голова упирается
-         в headBlock-бокс (площадка/верхний марш), C игнорируется */
-      if (e.code === 'KeyC') {
+         в headBlock-бокс (площадка/верхний марш), C игнорируется.
+         ✅ v0.4.52: в NOCLIP клавиша C — это «вниз» (полёт), не присед */
+      if (e.code === 'KeyC' && !self.noclip) {
         if (self._crouched && self.cannotStand()) return;
         self._crouched = !self._crouched;
       }
@@ -122,6 +129,28 @@ window.BrixControls = (function () {
 
   /* ✅ v0.4.28: присед (для состояния сети и анимации рук) */
   FpsController.prototype.isCrouched = function () { return !!this._crouched; };
+
+  /* ============================================================
+     ✅ v0.4.52 NOCLIP — полёт сквозь стены/двери/окна (админ-панель).
+     Включение: коллизии и гравитация игнорируются (см. update).
+     Выключение: пик падения и вертикальная скорость сбрасываются —
+     если выключил в воздухе, падение начинается С ТЕКУЩЕЙ ТОЧКИ,
+     урон от высоты считается честно от неё (без накопленного пика).
+     ============================================================ */
+  FpsController.prototype.setNoclip = function (v) {
+    v = !!v;
+    if (this.noclip === v) return;
+    this.noclip = v;
+    this._keys.delete('KeyC');
+    if (v) {
+      this._crouched = false;
+      this._grounded = false;
+      this._vy = 0;
+    } else {
+      this._fallPeak = this.position.y;
+      this._vy = 0;
+    }
+  };
 
   /* ✅ v0.4.46 НЕЛЬЗЯ ВСТАТЬ: голова стоя (глаза 1.7 + макушка) упирается
      в какой-нибудь headBlock-бокс (площадка/верхний марш лестницы)
@@ -346,6 +375,38 @@ window.BrixControls = (function () {
     // ✅ v0.4.41: аналоговое отклонение джойстика — доля полной скорости
     var mag = Math.hypot(fx, fz);
     if (mag > 1) { fx /= mag; fz /= mag; speed *= Math.min(1, mag); }
+
+    /* ============================================================
+       ✅ v0.4.52 NOCLIP — ПОЛЁТ НАСКВОЗЬ СТЕН/ДВЕРЕЙ/ОКОН (админ-панель):
+       коллизии (боксы/цилиндры), гравитация, лестницы и вода не
+       действуют. WASD летит КУДА СМОТРИШЬ (вертикальная составляющая
+       — от наклона камеры), Space — вверх, C — вниз. Урона от высоты
+       нет (пик падения постоянно сбрасывается).
+       ============================================================ */
+    if (this.noclip) {
+      this._crouched = false;
+      var flyY = 0;
+      if (this.enabled && this._keys.has('Space')) flyY += 1;
+      if (this.enabled && this._keys.has('KeyC')) flyY -= 1;
+      var nSpeed = (sprint ? SPRINT_SPEED : WALK_SPEED) * adminMul * 1.35;
+      var magN = Math.hypot(fx, fz) || 1;
+      var sinN = Math.sin(this.yaw), cosN = Math.cos(this.yaw);
+      var dxN = (fx / magN) * cosN + (fz / magN) * sinN;
+      var dzN = -(fx / magN) * sinN + (fz / magN) * cosN;
+      var fwdN = moving ? (-fz / magN) : 0;                 // W = 1, S = -1
+      var pitchN = Math.max(-1.5, Math.min(1.5, this.pitch));
+      this.position.x += dxN * nSpeed * dt;
+      this.position.z += dzN * nSpeed * dt;
+      this.position.y += (flyY * nSpeed * 0.9 +
+        fwdN * Math.sin(pitchN) * nSpeed) * dt;
+      this._vy = 0;
+      this._grounded = false;
+      this._fallPeak = this.position.y;   // урона от высоты в noclip нет
+      this._landK = 0;
+      camera.position.set(this.position.x, this.position.y, this.position.z);
+      camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
+      return;
+    }
 
     // по колено в воде — медленнее (✅ v0.4.6: feetY — по палубе фундамента
     // вода под домом не замедляет)
