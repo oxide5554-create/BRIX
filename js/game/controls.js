@@ -18,6 +18,31 @@ window.BrixControls = (function () {
      состоянии (st.c) — чужие игроки видят присевшего (модель ниже и приземистей) */
   var CROUCH_EYE = 1.05;    // высота глаз в приседе, м
   var CROUCH_SPEED = 3;     // скорость в приседе, м/с
+  /* ✅ v0.4.44 ПАДЕНИЕ С ВЫСОТЫ: раньше при сходе с фундамента/потолка игрок
+     МГНОВЕННО телепортировался вниз (ветка «стоит на земле» прижимала y к
+     новой высоте земли за один кадр). Теперь сход с края — это НАСТОЯЩЕЕ
+     падение с ускорением, уроном от высоты и анимацией приземления.
+     Параметры как в Rust: урон с 4.5 м, дальше — примерно 14 хп за метр,
+     в воду (ниже уровня 3.0) урона нет. Скорость падения ограничена */
+  var FALL_GRAB = 0.55;     // если под ногами упало больше этого — падаем (как STEP_UP)
+  var FALL_DMG_FROM = 4.5;  // высота (м), с которой начинается урон
+  var FALL_DMG_PER_M = 14;  // хп за метр после порога
+  var FALL_DMG_MAX = 100;   // потолок урона от одного падения
+  var FALL_V_MAX = 32;      // предел скорости падения (м/с) — терминальная
+  var FALL_LAND_MIN = 1.2;  // падение с этой высоты — уже анимация приземления (без урона)
+  var LADDER_SPEED = 2.8;   // ✅ v0.4.44: скорость подъёма/спуска по лестнице, м/с
+
+  /* ✅ v0.4.46 ПОД ЛЕСТНИЦЕЙ — ТОЛЬКО В ПРИСЕДЕ: боксы построек с флагом
+     headBlock (площадка и верхний марш лестницы, building.js) блокируют
+     игрока, стоящего В ПОЛНЫЙ РОСТ: голова (глаза + 0.12) упирается в
+     низ бокса — «ударился головой». В приседе глаза 1.05 — проход есть.
+     Вставать ПОД лестницей нельзя (cannotStand не даёт отжать C) */
+  var HEAD_MARGIN = 0.12;   // макушка над глазами, м
+
+  /** высота головы над НОГАМИ с учётом текущего приседа (глаза + макушка) */
+  FpsController.prototype._headH = function () {
+    return this.eyeH + HEAD_MARGIN;
+  };
 
   function FpsController(dom, getHeight) {
     this.position = new THREE.Vector3();
@@ -37,14 +62,26 @@ window.BrixControls = (function () {
     this.eyeH = EYE_HEIGHT;   // плавно меняется 1.7 ↔ 1.05
     this._getHeight = getHeight;
     this._touchVec = { x: 0, y: 0 };   // ✅ v0.4.41: аналоговый джойстик (моб.)
+    /* ✅ v0.4.44 ПАДЕНИЕ: пик высоты текущего падения (для расчёта урона),
+       коэффициент анимации приземления (0..1, камера «приседает») и
+       зона лестницы {y0, y1} — ставится gameworld'ом (BrixBuilding.ladderAt) */
+    this._fallPeak = 0;
+    this._landK = 0;
+    this._ladder = null;
+    this.onFallDamage = null;   // (info {dist, dmg}) — gameworld применяет урон
 
     var self = this;
     this._onKeyDown = function (e) {
       if (!self.enabled) return;
       self._keys.add(e.code);
       if (e.code === 'Space') e.preventDefault();
-      /* ✅ v0.4.28: C — присесть/встать (переключатель) */
-      if (e.code === 'KeyC') self._crouched = !self._crouched;
+      /* ✅ v0.4.28: C — присесть/встать (переключатель).
+         ✅ v0.4.46: встать ПОД ЛЕСТНИЦЕЙ нельзя — пока голова упирается
+         в headBlock-бокс (площадка/верхний марш), C игнорируется */
+      if (e.code === 'KeyC') {
+        if (self._crouched && self.cannotStand()) return;
+        self._crouched = !self._crouched;
+      }
     };
     this._onKeyUp = function (e) { self._keys.delete(e.code); };
     this._onMouseMove = function (e) {
@@ -75,10 +112,37 @@ window.BrixControls = (function () {
     this._grounded = true;
     this._crouched = false;    // ✅ v0.4.28: респавн — всегда стоя
     this.eyeH = EYE_HEIGHT;
+    this._fallPeak = 0;        // ✅ v0.4.44: падение не переносится в нового героя
+    this._landK = 0;
   };
+
+  /* ✅ v0.4.44: зона лестницы под ногами (null — вне лестницы).
+      {y0, y1} — допустимый диапазон высоты НОГ (низ/верх лестницы) */
+  FpsController.prototype.setLadder = function (zone) { this._ladder = zone || null; };
 
   /* ✅ v0.4.28: присед (для состояния сети и анимации рук) */
   FpsController.prototype.isCrouched = function () { return !!this._crouched; };
+
+  /* ✅ v0.4.46 НЕЛЬЗЯ ВСТАТЬ: голова стоя (глаза 1.7 + макушка) упирается
+     в какой-нибудь headBlock-бокс (площадка/верхний марш лестницы)
+     ПРЯМО НАД ИГРОКОМ? Проверка по СЛЕДУ бокса (точка внутри бокса,
+     без радиуса): стоя РЯДОМ с лестницей встать можно, ПОД ней — нет.
+     Ступенька сверху (feet + 0.55 ≥ maxY) — не мешает */
+  FpsController.prototype.cannotStand = function () {
+    var bs = this._boxes;
+    if (!bs || !bs.length) return false;
+    var feet = this.position.y - this.eyeH;
+    var head = EYE_HEIGHT + HEAD_MARGIN;
+    var x = this.position.x, z = this.position.z;
+    for (var i = 0; i < bs.length; i++) {
+      var b = bs[i];
+      if (b.active === false || !b.headBlock) continue;
+      if (feet + 0.55 >= b.maxY) continue;    // ступенька — сверху не мешает
+      if (feet + head <= b.minY) continue;    // низ выше головы — проход
+      if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) return true;
+    }
+    return false;
+  };
 
   /* ============================================================
      ✅ v0.4.41 МОБИЛЬНОЕ УПРАВЛЕНИЕ (touch.js):
@@ -145,11 +209,19 @@ window.BrixControls = (function () {
     var bs = this._boxes;
     if (!bs || !bs.length) return false;
     var r2 = PLAYER_RADIUS * PLAYER_RADIUS;
+    var head = this._headH();
     for (var i = 0; i < bs.length; i++) {
       var b = bs[i];
       if (b.active === false) continue;
-      if (feet + 0.25 < b.minY) continue;          // бокс выше колен — под ним проход
       if (feet + 0.55 >= b.maxY) continue;         // ступенька — зайдём сверху
+      if (b.headBlock) {
+        /* ✅ v0.4.46: под лестницей — только присед: стоя голова
+           упирается в низ бокса (стена), в приседе низ выше головы —
+           проход (вместо старого правила «ниже колен») */
+        if (feet + head <= b.minY) continue;       // присел — голова проходит
+      } else {
+        if (feet + 0.25 < b.minY) continue;        // бокс выше колен — под ним проход
+      }
       var cx = x < b.minX ? b.minX : (x > b.maxX ? b.maxX : x);   // ближайшая точка бокса
       var cz = z < b.minZ ? b.minZ : (z > b.maxZ ? b.maxZ : z);
       var dx = x - cx, dz = z - cz;
@@ -162,14 +234,21 @@ window.BrixControls = (function () {
     var bs = this._boxes;
     if (!bs || !bs.length) return;
     var feet = this.position.y - this.eyeH;
+    var head = this._headH();
     for (var i = 0; i < bs.length; i++) {
       var b = bs[i];
       if (b.active === false) continue;
-      if (feet + 0.25 < b.minY) continue;          // бокс целиком ниже ног
       // ✅ верх бокса в пределах ступеньки (0.55) — не блокируем:
       // groundAt поднимет игрока, он ЗАЙДЁТ сверху (угол фундамента
       // на склоне, палуба чуть выше земли) — как Rust
       if (feet + 0.55 >= b.maxY) continue;
+      // ✅ v0.4.46: headBlock (лестница) — присел: голова ниже низа бокса,
+      // не выталкиваем; встал — выталкивает из-под лестницы
+      if (b.headBlock) {
+        if (feet + head <= b.minY) continue;
+      } else {
+        if (feet + 0.25 < b.minY) continue;        // бокс целиком ниже ног
+      }
       var minX = b.minX - PLAYER_RADIUS, maxX = b.maxX + PLAYER_RADIUS;
       var minZ = b.minZ - PLAYER_RADIUS, maxZ = b.maxZ + PLAYER_RADIUS;
       if (this.position.x <= minX || this.position.x >= maxX ||
@@ -250,6 +329,13 @@ window.BrixControls = (function () {
       }
     }
     var moving = fx !== 0 || fz !== 0;
+    /* ✅ v0.4.44 ЛЕСТНИЦА: если ноги уже в зоне лестницы и игрок жмёт ВПЕРЁД
+       (W) — горизонтальный шаг гасим (лезем ВВЕРХ на месте, не «уплываем»
+       в стену/проём). Назад (S) — обычный шаг, можно сойти с лестницы */
+    var feetPre = this.position.y - this.eyeH;
+    var onLadderZone = !!(this._ladder && this.enabled &&
+      feetPre >= this._ladder.y0 - 0.4 && feetPre <= this._ladder.y1 + 0.55);
+    var climbingNow = onLadderZone && moving && fz < -0.25;
     var sprint = this._keys.has('ShiftLeft') || this._keys.has('ShiftRight');
     // ✅ v0.4.5: slowFactor < 1 — перезарядка револьвера (медленно даже бегом)
     // ✅ v0.4.15: BrixAdmin.speedOn — СКОРОСТЬ ×2 из панели разработчика
@@ -266,7 +352,7 @@ window.BrixControls = (function () {
     var floorH = this._getHeight(this.position.x, this.position.z, this.position.y - this.eyeH);
     if (floorH < 2.9) speed *= 0.55;
 
-    if (moving) {
+    if (moving && !climbingNow) {
       var len = Math.hypot(fx, fz);
       fx /= len; fz /= len;
       var sin = Math.sin(this.yaw);
@@ -311,10 +397,49 @@ window.BrixControls = (function () {
       this._vy = JUMP_SPEED;
       this._grounded = false;
     }
-    if (!this._grounded) {
+
+    /* ============================================================
+       ✅ v0.4.44 ЛЕСТНИЦА (залезть на 2 этаж): пока игрок внутри зоны
+       лестницы (feet между y0 и y1) — гравитация выключена («взялсь за
+       перекладины»): W/вперёд или Space — лезем вверх, S/назад — вниз.
+       На вершине шагаем НАЗАЗД на потолок 2 этажа (floorAt соседней
+       клетки держит игрока — см. floorAt в building.js)
+       ============================================================ */
+    var feetL = this.position.y - this.eyeH;
+    var inLadder = !!(this._ladder && this.enabled &&
+      feetL >= this._ladder.y0 - 0.4 && feetL <= this._ladder.y1 + 0.55);
+    if (inLadder && climbingNow) {
+      // лезем вверх (и с клавиатуры W, и с джойстика)
+      this.position.y += LADDER_SPEED * dt;
+      this._vy = 0;
+      this._grounded = false;
+      this._fallPeak = this.position.y;
+    } else if (inLadder && moving && fz > 0.25) {
+      // спускаемся
+      this.position.y -= LADDER_SPEED * dt;
+      this._vy = 0;
+      this._grounded = false;
+      this._fallPeak = this.position.y;
+    } else if (inLadder && this.enabled && this._keys.has('Space')) {
+      this.position.y += LADDER_SPEED * dt;
+      this._vy = 0;
+      this._grounded = false;
+      this._fallPeak = this.position.y;
+    } else if (inLadder && !this._grounded) {
+      // держимся за лестницу: не падаем, медленно съезжаем вниз
+      this._vy = 0;
+      this._fallPeak = this.position.y;
+      this.position.y -= 0.35 * dt;
+      if (this.position.y - this.eyeH <= this._ladder.y0) {
+        this.position.y = this._ladder.y0 + this.eyeH;
+        this._grounded = true;
+      }
+    } else if (!this._grounded) {
       var prevY = this.position.y;         // высота глаз до шага кадра
       this._vy -= GRAVITY * dt;
+      if (this._vy < -FALL_V_MAX) this._vy = -FALL_V_MAX;   // ✅ v0.4.44 терминальная скорость
       this.position.y += this._vy * dt;
+      if (this.position.y > this._fallPeak) this._fallPeak = this.position.y;
       /* ✅ v0.4.41 ГОЛОВА ОБ ПОТОЛОК: раньше при прыжке под потолком
          игрок ПРОЛЕТАЛ сквозь него наверх (оказывался на крыше, не
          строя её). Теперь пока летим ВВЕРХ (_vy > 0) проверяем боксы
@@ -341,11 +466,43 @@ window.BrixControls = (function () {
       }
       if (this.position.y <= ground) {
         this.position.y = ground;
+        /* ✅ v0.4.44 УРОН ОТ ВЫСОТЫ + АНИМАЦИЯ ПРИЗЕМЛЕНИЯ: высота падения —
+           от пика (не от «вышел из-под потолка»). Вода (уровень < 3.0) гасит
+           урон. Урон идёт через onFallDamage (gameworld шлёт fdmg серверу) */
+        var fallDist = this._fallPeak - this.position.y;   // м, по глазам
+        if (fallDist > FALL_LAND_MIN) this._landK = 1;   // присед камеры при посадке
+        if (this.onFallDamage && fallDist > FALL_DMG_FROM && ground - this.eyeH >= 3.0) {
+          var fd = Math.min(FALL_DMG_MAX,
+            Math.round((fallDist - FALL_DMG_FROM) * FALL_DMG_PER_M));
+          if (fd > 0) {
+            try { this.onFallDamage({ dist: Math.round(fallDist * 10) / 10, dmg: fd }); }
+            catch (eFall) {}
+          }
+        }
+        this._fallPeak = this.position.y;
         this._vy = 0;
         this._grounded = true;
       }
     } else {
-      this.position.y = ground;
+      /* ✅ v0.4.44 ФИКС «РЕЗКО ПАДАЕШЬ С ФУНДАМЕНТА»: раньше стоящего игрока
+         ВСЕГДА прижимало к земле (position.y = ground) — сход с края палубы
+         телепортировал вниз за 1 кадр. Теперь: земля просела меньше ступеньки
+         (FALL_GRAB) — прижимаем (склон, спуск по лестнице высоты фундамента);
+         земля провалилась СИЛЬНО — значит сошли с края: НАСТОЯЩЕЕ ПАДЕНИЕ
+         с ускорением и уроном (обрывающаяся высота считается от текущей точки) */
+      if (ground >= this.position.y - FALL_GRAB) {
+        this.position.y = ground;
+        this._fallPeak = this.position.y;
+      } else {
+        this._grounded = false;
+        this._vy = 0;
+        this._fallPeak = this.position.y;
+      }
+    }
+
+    /* ✅ v0.4.44: анимация приземления — камера коротко «приседает» */
+    if (this._landK > 0) {
+      this._landK = Math.max(0, this._landK - dt * 2.6);
     }
 
     // лёгкое покачивание при ходьбе
@@ -354,8 +511,9 @@ window.BrixControls = (function () {
       this._bobPhase += dt * speed * 1.15;
       bob = Math.sin(this._bobPhase) * 0.045;
     }
+    var landDip = Math.sin(this._landK * Math.PI) * 0.22;   // 0 → 0.22 → 0
 
-    camera.position.set(this.position.x, this.position.y + bob, this.position.z);
+    camera.position.set(this.position.x, this.position.y + bob - landDip, this.position.z);
     camera.rotation.set(this.pitch, this.yaw, 0, 'YXZ');
   };
 

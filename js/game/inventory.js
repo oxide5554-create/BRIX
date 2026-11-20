@@ -105,10 +105,22 @@ window.BrixItems = {
      прилипает к земле/стенам/потолку, 15 «тыков» (пищит всё ТИШЕ,
    «писклявее» и БЫСТРЕЕ с каждым тыком), после 15-го — ВЗРЫВ:
      постройки в радиусе −400 хп за удар, игроки в радиусе — насмерть.
-     Крафт: металлолом 20 + метал 40 + сера 15. Иконка — рендер модели */
+     Крафт: металлолом 20 + метал 40 + сера 15. Иконка — рендер модели
+     ✅ v0.4.46 СТАК 10 ШТУК (просьба игрока: «пусть С4 стакаются
+     по 10 штук, а не 1»): stackable: true, stack: 10 — в одном слоте
+     до 10 блоков; бросок снимает 1 из стека (throwC4 — removeCount) */
   c4: {
     id: 'c4', name: 'С4', nameEn: 'C4',
-    icon: BrixAx('assets/icons/c4.png'), stackable: false, tool: 'c4'
+    icon: BrixAx('assets/icons/c4.png'), stackable: true, stack: 10, tool: 'c4'
+  },
+  /* ✅ v0.4.46 ШПРИЦ (модель пользователя medical_syringe... → syringe.glb):
+     МЕДИЦИНА по образцу Rust: ЛКМ — УКОЛ (клип 5.73 с из GLB, руки наши),
+     на момент «продавил поршень» (3.45 с) восстанавливает 46 ХП и
+     расходуется. Стакается по 10 (как С4). Крафт: 20 металлолома +
+     10 метал фрагментов; выпадает из ВОЕННЫХ ящиков */
+  syringe: {
+    id: 'syringe', name: 'Шприц', nameEn: 'Syringe',
+    icon: BrixAx('assets/icons/syringe.png'), stackable: true, stack: 10, tool: 'syringe'
   },
   /* ✅ v0.4.7 ПЛАН СТРОИТЕЛЯ — живёт В ИНВЕНТАРЕ (не в хотбаре):
      открой инвентарь (E) и КЛИКНИ по плану — он в руках (синий ватман),
@@ -152,6 +164,19 @@ window.BrixItems = {
   sulfur: {
     id: 'sulfur', name: 'Сера', nameEn: 'Sulfur',
     icon: BrixAx('assets/icons/sulfur.png'), stackable: true, stack: 1000
+  },
+  /* ✅ v0.4.44 ПЛАВЛЕНАЯ СЕРА (иконка от пользователя, Sulfur.png): получается
+     в ПЕЧКЕ — 1 сера плавится за 4 секунды за дерево. Из плавленой серы
+     в крафте делается ПОРОХ */
+  sulfurM: {
+    id: 'sulfurM', name: 'Плавленая сера', nameEn: 'Molten Sulfur',
+    icon: BrixAx('assets/icons/sulfur_molten.png'), stackable: true, stack: 1000
+  },
+  /* ✅ v0.4.44 ПОРОХ (иконка от пользователя, Gun Powder.png): крафт из
+     плавленой серы (2 серы = 1 порох). Нужен для С4 и всех патронов */
+  gunpowder: {
+    id: 'gunpowder', name: 'Порох', nameEn: 'Gun Powder',
+    icon: BrixAx('assets/icons/gunpowder.png'), stackable: true, stack: 1000
   },
   /* ✅ v0.3.8: лут ящиков чекблоков — иконки из репозитория (scr/ui/icons) */
   pipe: {
@@ -215,18 +240,12 @@ window.BrixInventory = (function () {
     // хотбара (перетащи план в слот 1–6 и выбери его). Механика
     // «клик в рюкзаке — взять в руки» (planEquipped) удалена
 
-    // стартовый набор ✅ v0.4.9: хотбар 1–6 (револьвер/патроны/инструменты),
-    // ПЛАН СТРОИТЕЛЯ — первая ячейка РЮКЗАКА (перетащи в хотбар!), дерево/камень рядом
-    this.slots[0] = { item: BrixItems.revolver, count: 1, mag: 6 };
-    this.slots[1] = { item: BrixItems.ammo, count: 50 };
-    this.slots[2] = { item: BrixItems.stoneAxe, count: 1 };
-    this.slots[3] = { item: BrixItems.stonePickaxe, count: 1 };
-    this.slots[4] = { item: BrixItems.ironPickaxe, count: 1 };
-    this.slots[5] = { item: BrixItems.ironAxe, count: 1 };
-    // рюкзак: план строителя + немного ресурсов на старт
-    this.slots[HOTBAR_SIZE] = { item: BrixItems.buildingPlan, count: 1 };
-    this.slots[HOTBAR_SIZE + 1] = { item: BrixItems.wood, count: 10 };
-    this.slots[HOTBAR_SIZE + 2] = { item: BrixItems.stone, count: 5 };
+    // ✅ v0.4.44 СТАРТОВЫЙ НАБОР ПО ПРОСЬБЕ ИГРОКА: «в начале игры или после
+    //    смерти дают КАМЕННЫЙ ТОПОР И КАМЕННУЮ КИРКУ И ВСЁ». Револьвер/патроны/
+    //    железные инструменты/план/ресурсы больше НЕ выдаются — всё это
+    //    добывается и крафтится (план строителя — крафт «5 дерева»)
+    this.slots[0] = { item: BrixItems.stoneAxe, count: 1 };
+    this.slots[1] = { item: BrixItems.stonePickaxe, count: 1 };
 
     this._mount();
     this._bind();
@@ -364,7 +383,11 @@ window.BrixInventory = (function () {
       var to2 = pass2 === 0 ? HOTBAR_SIZE : this.slots.length;
       for (var j = from2; j < to2 && count > 0; j++) {
         if (!this.slots[j]) {
-          var put = item.stackable ? Math.min(item.stack, count) : count;
+          /* ✅ v0.4.46 ФИКС «ДВА КАЛАША СТАКУТСЯ»: нестакуемое (оружие/
+             инструмент) кладётся ПО 1 ШТУКЕ на слот — как в Rust. Раньше
+             count валился целиком в один слот: взял из сундука 2 калаша —
+             получил ОДИН слот «Калаш ×2». Теперь каждый калаш — свой слот */
+          var put = item.stackable ? Math.min(item.stack, count) : 1;
           /* ✅ fix v0.4.20: у ОГНЕСТРЕЛА в слоте сразу есть ОБОЙМА (mag).
              Раньше дробовик/револьвер из админ-панели или ящика приходил
              БЕЗ mag — перезарядка считала «2 − undefined = NaN» и обойма
@@ -668,6 +691,16 @@ window.BrixInventory = (function () {
       return instance;
     },
     get: function () { return instance; },
+    /* ✅ v0.4.44: СТАРТОВЫЙ НАБОР ПОСЛЕ СМЕРТИ — каменный топор + каменная
+       кирка (просьба игрока «после смерти дают каменный топор и каменную
+       кирку и всё»). Полный инвентарь погибшего лежит в трупе-лутбоксе */
+    giveStarterKit: function () {
+      if (!instance) return;
+      instance.slots[0] = { item: BrixItems.stoneAxe, count: 1 };
+      instance.slots[1] = { item: BrixItems.stonePickaxe, count: 1 };
+      instance.renderAll();
+      if (instance._notifySelect) instance._notifySelect();
+    },
     ITEMS: BrixItems
   };
 })();

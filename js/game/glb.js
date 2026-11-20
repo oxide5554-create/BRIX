@@ -28,11 +28,15 @@ window.BrixGLB = (function () {
     var bv = json.bufferViews[acc.bufferView];
     var comp = COMPONENT[acc.componentType];
     var comps = TYPE_SIZE[acc.type];
-    var start = (bv.byteOffset || 0) + (acc.byteOffset || 0);
+    /* ✅ v0.4.46: bin — ВИД на файл (не копия). Для выровненного чтения
+       нужен АБСОЛЮТНЫЙ старт (bin.byteOffset + смещение внутри чанка),
+       для subarray — относительный. GLB-чанк всегда 4-байт выровнен,
+       так что абсолютное выравнивание совпадает с относительным */
+    var rel = (bv.byteOffset || 0) + (acc.byteOffset || 0);   // внутри чанка
+    var start = bin.byteOffset + rel;                         // в файле
     var elems = acc.count * comps;
     var bytes = elems * comp.size;
     var out = new comp.array(elems);
-    // копируем через выровненный view (start может быть не кратен comp.size)
     var aligned = (start % comp.size === 0);
     var src;
     if (aligned) {
@@ -41,7 +45,7 @@ window.BrixGLB = (function () {
     } else {
       var buf = new ArrayBuffer(bytes);
       var u8 = new Uint8Array(buf);
-      u8.set(bin.subarray(start, start + bytes));
+      u8.set(bin.subarray(rel, rel + bytes));
       out.set(new comp.array(buf));
     }
     return { array: out, itemSize: comps, count: acc.count };
@@ -201,7 +205,9 @@ window.BrixGLB = (function () {
       var type = head.getUint32(off + 4, true);
       var chunk = ab.slice(off + 8, off + 8 + len);
       if (type === 0x4E4F534A) json = JSON.parse(new TextDecoder().decode(chunk));
-      else if (type === 0x004E4942) bin = new Uint8Array(chunk);
+      /* ✅ v0.4.46: bin — ВИД на исходный ArrayBuffer (не копия), чтобы
+         проигрыватель анимаций читал с абсолютными смещениями файла */
+      else if (type === 0x004E4942) bin = new Uint8Array(ab, off + 8, len);
       off += 8 + len;
     }
     if (!json) throw new Error('GLB без JSON-чанка');
@@ -353,6 +359,9 @@ window.BrixGLB = (function () {
         });
 
         root.updateMatrixWorld(true);
+        /* ✅ v0.4.46: ВСЕ построенные ноды (индекс = индекс glTF) — нужны
+           проигрывателю анимаций (каналы таргетят ноды ПО ИНДЕКСУ) */
+        root.userData.brixNodes = nodes;
         return root;
       });
     });
@@ -379,5 +388,157 @@ window.BrixGLB = (function () {
       });
   }
 
-  return { load: load };
+  /* ============================================================
+     ✅ v0.4.46 АНИМАЦИИ GLB (шприц): лёгкий проигрыватель каналов
+     translation/rotation/scale — БЕЗ THREE.AnimationMixer (имена нод
+     неуникальны: два скелета «_rootJoint»). Каналы держат ПРЯМЫЕ
+     ссылки на построенные ноды; apply(t) ставит TRS (лерп/склерп).
+     ============================================================ */
+  var _qa = null, _qb = null;   // временные кватернионы (после THREE)
+  var ACC_COMP = null, ACC_TS = null;
+
+  function readAcc(json, bin, i) {
+    var a = json.accessors[i];
+    var bv = json.bufferViews[a.bufferView];
+    var T = ACC_COMP[a.componentType];
+    var comps = ACC_TS[a.type];
+    var start = bin.byteOffset + (bv.byteOffset || 0) + (a.byteOffset || 0);
+    var elems = a.count * comps;
+    var out = new T(elems);
+    var bs = T.BYTES_PER_ELEMENT;
+    if (start % bs === 0) {
+      out.set(new T(bin.buffer, start, elems));
+    } else {
+      var al = new Uint8Array(elems * bs);
+      al.set(new Uint8Array(bin.buffer, start, elems * bs));
+      out.set(new T(al.buffer));
+    }
+    return { arr: out, count: a.count };
+  }
+
+  function buildAnimPlayer(json) {
+    if (!(window.THREE)) return null;
+    if (!_qa) { _qa = new THREE.Quaternion(); _qb = new THREE.Quaternion(); }
+    if (!ACC_COMP) {
+      ACC_COMP = { 5120: Int8Array, 5121: Uint8Array, 5122: Int16Array,
+        5123: Uint16Array, 5125: Uint32Array, 5126: Float32Array };
+      ACC_TS = { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
+    }
+    var anims = json.animations || [];
+    if (!anims.length) return null;
+    /* собираем каналы; данные читаем в attach (после загрузки файла) */
+    var chans = [];
+    anims.forEach(function (a) {
+      (a.channels || []).forEach(function (c) {
+        if (!c.target || c.target.node === undefined) return;
+        var path = c.target.path;
+        if (path !== 'translation' && path !== 'rotation' && path !== 'scale') return;
+        var s = a.samplers[c.sampler];
+        if (!s) return;
+        chans.push({ ni: c.target.node, path: path,
+          interp: s.interpolation || 'LINEAR',
+          comps: path === 'rotation' ? 4 : 3,
+          node: null, t: null, v: null });
+      });
+    });
+    var player = {
+      channels: chans.length,
+      duration: 0,
+      /** применить позу времени t (сек) ко всем анимированным нодам */
+      apply: function (t) {
+        if (!chans.length || chans[0].t === null) return;
+        t = Math.max(0, Math.min(player.duration, t));
+        for (var i = 0; i < chans.length; i++) {
+          var c = chans[i];
+          var times = c.t.arr, n = c.t.count;
+          var k = 0;
+          if (t >= times[n - 1]) k = n - 2;
+          else if (t > times[0]) {
+            for (var q = 0; q < n - 1; q++) {
+              if (t >= times[q] && t <= times[q + 1]) { k = q; break; }
+            }
+          }
+          var span = times[k + 1] - times[k] || 1e-6;
+          var u = Math.min(1, Math.max(0, (t - times[k]) / span));
+          var va = c.v.arr, node = c.node;
+          if (c.path === 'rotation') {
+            _qa.fromArray(va, k * 4);
+            _qb.fromArray(va, (k + 1) * 4);
+            if (c.interp === 'STEP') node.quaternion.copy(_qa);
+            else node.quaternion.slerpQuaternions(_qa, _qb, u);
+          } else {
+            var dst = c.path === 'translation' ? node.position : node.scale;
+            for (var w = 0; w < c.comps; w++) {
+              var a0 = va[k * c.comps + w], a1 = va[(k + 1) * c.comps + w];
+              dst.setComponent(w, c.interp === 'STEP' ? a0 : a0 + (a1 - a0) * u);
+            }
+          }
+        }
+      }
+    };
+    return {
+      channels: chans.length,
+      duration: 0,
+      /* attach: прочитать сэмплеры из файла и связать каналы с нодами */
+      _bind: function (bin, nodes) {
+        var dur = 0;
+        chans.forEach(function (c) {
+          var node = nodes[c.ni];
+          if (!node) return;
+          var a = anims[0];
+          /* находим самплер этого канала (ni+path уникальны в клипе) */
+          for (var ai = 0; ai < anims.length && !c.t; ai++) {
+            var aa = anims[ai];
+            for (var ci = 0; ci < aa.channels.length; ci++) {
+              var cc = aa.channels[ci];
+              if (cc.target && cc.target.node === c.ni && cc.target.path === c.path) {
+                var smp = aa.samplers[cc.sampler];
+                c.node = node;
+                c.t = readAcc(json, bin, smp.input);
+                c.v = readAcc(json, bin, smp.output);
+                var last = c.t.arr[c.t.count - 1];
+                if (last > dur) dur = last;
+                break;
+              }
+            }
+          }
+        });
+        this.duration = dur;
+        player.duration = dur;
+        player.channels = chans.filter(function (c) { return c.node; }).length;
+      },
+      apply: player.apply
+    };
+  }
+
+  /**
+   * ✅ v0.4.46 Загрузка GLB С АНИМАЦИЕЙ (шприц): onReady({group, size, anim}),
+   * anim.apply(t) — поза времени, anim.duration — длина клипа
+   */
+  function loadAnim(url, onReady, onError) {
+    getBytes(url)
+      .then(function (ab) {
+        var parts = parseGLB(ab);
+        return buildScene(parts.json, parts.bin).then(function (root) {
+          var box = new THREE.Box3().setFromObject(root);
+          var player = buildAnimPlayer(parts.json);
+          var anim = null;
+          if (player) {
+            var nodes = root.userData.brixNodes || [];
+            player._bind(parts.bin, nodes);
+            if (player.channels > 0 && player.duration > 0) {
+              anim = { duration: player.duration, apply: player.apply,
+                channels: player.channels };
+            }
+          }
+          onReady({ group: root, size: box.getSize(new THREE.Vector3()), anim: anim });
+        });
+      })
+      .catch(function (err) {
+        if (onError) onError(err);
+        else console.error('[BrixGLB]', err);
+      });
+  }
+
+  return { load: load, loadAnim: loadAnim };
 })();

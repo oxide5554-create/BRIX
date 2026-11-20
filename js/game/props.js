@@ -581,11 +581,14 @@ window.BrixProps = (function () {
       }
       barrels[b.id] = {
         id: b.id, x: w.x, z: w.z, group: barrel,
-        hp: (b.hp !== undefined ? b.hp : 4), brk: !!b.brk, shakeT: 0, lying: !!b.lying
+        /* ✅ v0.4.44: бочки 6 хп (камень 6 ударов / железо 4 / булава 1); старые
+           сохранения с hp 2 подтягиваются до 6 (визуал урона делится на 6) */
+        hp: (b.brk ? 0 : (b.hp !== undefined ? Math.max(b.hp, 6) : 6)),
+        brk: !!b.brk, shakeT: 0, lying: !!b.lying
       };
       if (b.brk) barrel.visible = false;
       else barrelMeshes.push(barrel);
-      if (b.hp !== undefined && b.hp < 4) applyDmgVisual(barrels[b.id]);
+      if (b.hp !== undefined && b.hp < 6) applyDmgVisual(barrels[b.id]);
     });
 
     // ящик с лутом (wooden/military GLB из репозитория) — лут-меню по F
@@ -608,7 +611,7 @@ window.BrixProps = (function () {
     flat.add(hitbox);
     var gone = !!c.gone;
     crates[c.id] = { id: c.id, x: cw.x, z: cw.z, hitbox: hitbox, group: crate,
-      gone: gone, loot: c.loot || null };
+      gone: gone, loot: c.loot || null, mil: c.mil ? 1 : 0 };
     if (gone) {
       crate.visible = false;
       hitbox.userData.brixProp.dead = true;
@@ -783,7 +786,7 @@ window.BrixProps = (function () {
   /* ---------- состояние бочек (команды сервера) ---------- */
 
   function applyDmgVisual(b) {
-    var dmg = 1 - Math.max(b.hp, 0) / 2;
+    var dmg = 1 - Math.max(b.hp, 0) / 6;   /* ✅ v0.4.44: шкала 6 хп */
     b.group.scale.y = 1 - dmg * 0.18;
     b.group.rotation.z = dmg * 0.12;
   }
@@ -813,7 +816,7 @@ window.BrixProps = (function () {
     var b = barrels[id];
     if (!b) return;
     b.brk = false;
-    b.hp = 2;
+    b.hp = 6;   /* ✅ v0.4.44: полные 6 хп */
     b.shakeT = 0;
     b.group.visible = true;
     b.group.scale.y = 1;
@@ -833,14 +836,27 @@ window.BrixProps = (function () {
     if (idx >= 0) crateMeshes.splice(idx, 1);
   }
 
-  /* ✅ v0.3.8: ящик вернулся с НОВЫМ лутом — сразу у всех */
-  function respawnCrate(id, loot) {
+  /* ✅ v0.3.8: ящик вернулся с НОВЫМ лутом — сразу у всех.
+     ✅ v0.4.44: сервер сам выбирает ТИП ящика при каждом респавне
+     (деревянный/военный) — mil приходит в cbrespawn, модель меняем */
+  function respawnCrate(id, loot, mil) {
     var c = crates[id];
     if (!c) return;
     c.gone = false;
     if (loot) c.loot = loot;
     if (c.hitbox && c.hitbox.userData.brixProp) c.hitbox.userData.brixProp.dead = false;
-    if (c.group) c.group.visible = true;
+    if (c.group) {
+      if (mil !== undefined) {
+        var newMil = mil ? 1 : 0;
+        if (c.mil !== newMil) {
+          c.mil = newMil;
+          while (c.group.children.length) c.group.remove(c.group.children[0]);
+          var m = _crateModel(newMil);
+          c.group.add(m || mkCrateFallback(newMil));
+        }
+      }
+      c.group.visible = true;
+    }
     if (crateMeshes.indexOf(c.hitbox) < 0) crateMeshes.push(c.hitbox);
   }
 

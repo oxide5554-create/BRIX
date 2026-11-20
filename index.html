@@ -11,16 +11,43 @@
    АНТИ-КЭШ (почему после замены файлов ничего не менялось):
    python -m http.server и npm-серверы НЕ шлют заголовки запрета
    кэша, и браузер продолжает показывать СТАРЫЕ js-файлы.
-   1) Ко всем скриптам/стилям ниже добавлен ?v=081 — браузер
+   1) Ко всем скриптам/стилям ниже добавлен ?v=089 — браузер
       считает их новыми адресами и качает заново.
    2) Если в адресе нет ?v= — страница один раз перезагружается
-      с ?v=081 (свежий index.html гарантированно).
+      с ?v=089 (свежий index.html гарантированно).
    3) В меню есть ссылка «обновить кэш» (js/main.js).
    ============================================================ */
 (function () {
-  var V = '081';
+  var V = '089';
   window.BRIX_V = V;
-  window.BRIX_VER = '0.4.42';   /* ✅ v0.4.42 ТЕКСТУРЫ БИОМОВ + СЛЕДЫ НОГ. 1) НОВЫЕ ТЕКСТУРЫ И КРАСИВЫЕ ПЕРЕХОДЫ БИОМОВ: земля больше не однотонная заливка — 7 ПРОЦЕДУРНЫХ бесшовных текстур (сочный луг, сухостой, земля, камень, снег, песок, дно) рисуются на canvas без внешних файлов и смешиваются в шейдере по весам слоёв; границы биомов «гуляют» крупным шумом и рвутся пятнами (островки снега на кромке, лоскуты песка на пляже), вблизи края дополнительно рвутся попиксельным шумом — трава, песок и снег выглядят живыми на любой дистанции; снег блестит искрами, крупные пятна света/тени дают рельеф; миникарта (M) раскрашивается теми же рваными границами. 2) СЛЕДЫ НОГ: идёшь по песку или снегу — остаются следы ботинок (лево/право, по ходу движения, лежат по наклону рельефа, мягко проявляются); СВОИХ следов максимум 50 — как только пошёл 51-й, САМЫЙ ПЕРВЫЙ начинает таять (FIFO, чтобы не лагало); ЧУЖИЕ игроки тоже оставляют следы (общий лимит 24); на траве/камне/в прыжке/на постройках следов нет. Всё из 0.4.37–41 работает: С4, мобильное управление, магнит постройки, фикс прыжка через потолок, сундук не открывается сквозь стену, сервер не вырубается, защита видеокарты, булава, хит-маркеры, таблица урона, дорога */
+  window.BRIX_VER = '0.4.50';   /* ✅ v0.4.50 (С4 в горах, звук шприца, трупы 10 мин, новые иконки):
+   1) ФИКС «С4 ПРОПАДАЕТ В ГОРАХ/ХОЛМАХ»: страховка полёта мерила дистанцию
+      от ЦЕНТРА КАРТЫ (135 м), а карта 900 м — за спавн-плато (там как раз
+      холмы и горы) блок удалялся в первый же кадр. Теперь радиус — от
+      ТОЧКИ БРОСКА (gameworld.js tickC4).
+   2) ЗВУК ШПРИЦА (файл игрока): «шприц воткнулся в руку» — звук жидкости
+      (assets/sfx/syringe/inject.mp3) играет в момент входа иглы (2.5 с
+      клипа, SYR_NEEDLE_T). +46 хп по-прежнему на продавливании (3.45 с).
+   3) ТРУПЫ: незалутанный труп исчезает через 10 МИНУТ (было 20 для всех);
+      с которого уже что-то взяли — 20 минут страховки; опустел — сразу
+      (server.js + corpses.js — в соло/вкладках тоже).
+   4) ИКОНКИ: 21 предмет заменён на обновлённые иконки игрока (ICONS.zip):
+      булава, дробовик, томпсон, револьверы, калаш-корпус, патроны, С4,
+      топоры/кирки, руда/сера/дерево/камень/метал, труба, план строителя.
+   5) ФОН МЕНЮ: картинка игрока «меню.png» → assets/menu/bg.jpg
+      (только в главном меню, игра не затронута).
+   —— Предыдущее v0.4.49 (шприц на своём риге): ретаргет модели шприца
+   полностью убран — он делал руки гигантскими/«обрезаными» и ронял шприц
+   с кисти. Шприц запечён в предмет в ПРАВОЙ кисти (поршень-кнопка —
+   отдельный меш, реально продавливается при уколе). АНИМАЦИЯ УКОЛА СВОЯ,
+   процедурная, на наших костях: правая рука подносит шприц, левая
+   подставляет предплечье ладонью вверх, правая вдавливает иглу в левую
+   руку (кончик иглы привязан к ригу — точность не зависит от кейфреймов).
+   Тайминг +46 хп прежний — 3.45 с.
+   —— Предыдущее v0.4.46: 1) под лестницей проход только в приседе,
+   2) сохранение игрока (позиция + инвентарь + слот хотбара), 3) С4
+   стакается по 10, 4) фикс «два калаша в сундуке стакаются», 5) шприц
+   (+46 хп, крафт, военные ящики, стак 10) */
   window.BrixAsset = function (u) { return u + (u.indexOf('?') < 0 ? '?' : '&') + 'v=' + V; };
   try {
     var p = window.location.protocol;
@@ -39,17 +66,17 @@
 })();
 </script>
 <meta name="theme-color" content="#101312">
-<title>BRIX v0.4.42 — текстуры биомов, следы на песке и снегу — Главное меню</title>
+<title>BRIX v0.4.50 — С4 в горах · звук шприца · трупы 10 мин · новые иконки — Главное меню</title>
 <link rel="icon" href="assets/icon.png">
 <!-- Стили (перенос старой версии 1:1) -->
-<link rel="stylesheet" href="css/fonts.css?v=081">
-<link rel="stylesheet" href="css/base.css?v=081">
-<link rel="stylesheet" href="css/menu.css?v=081">
-<link rel="stylesheet" href="css/screens.css?v=081">
-<link rel="stylesheet" href="css/modals.css?v=081">
-<link rel="stylesheet" href="css/game.css?v=081">
-<link rel="stylesheet" href="css/minimenu.css?v=081">
-<link rel="stylesheet" href="css/admin.css?v=081">
+<link rel="stylesheet" href="css/fonts.css?v=089">
+<link rel="stylesheet" href="css/base.css?v=089">
+<link rel="stylesheet" href="css/menu.css?v=089">
+<link rel="stylesheet" href="css/screens.css?v=089">
+<link rel="stylesheet" href="css/modals.css?v=089">
+<link rel="stylesheet" href="css/game.css?v=089">
+<link rel="stylesheet" href="css/minimenu.css?v=089">
+<link rel="stylesheet" href="css/admin.css?v=089">
 </head>
 <body>
 
@@ -141,8 +168,8 @@
 </div>
 
 <!-- Скрипты: порядок важен! -->
-<script src="js/lib/three.min.js?v=081"></script>
-<script src="js/core/i18n.js?v=081"></script>
+<script src="js/lib/three.min.js?v=089"></script>
+<script src="js/core/i18n.js?v=089"></script>
 <script>
 /* ✅ v0.4.22 ЗАЩИТА ОТ ПАДЕНИЯ МЕНЮ: если js/core/i18n.js не скопирован
    на сервер (404 — самый частый пропуск при установке обновлений),
@@ -160,47 +187,49 @@ if (!window.BrixI18N) {
   };
 }
 </script>
-<script src="js/core/state.js?v=081"></script>
-<script src="js/core/audio.js?v=081"></script>
-<script src="js/core/icons.js?v=081"></script>
-<script src="js/data/servers.js?v=081"></script>
-<script src="js/data/friends.js?v=081"></script>
-<script src="js/data/skins.js?v=081"></script>
-<script src="js/data/news.js?v=081"></script>
-<script src="js/data/itemicons.js?v=081"></script>
-<script src="js/data/weaponskins.js?v=081"></script>
-<script src="js/ui/toast.js?v=081"></script>
-<script src="js/ui/modals.js?v=081"></script>
-<script src="js/ui/topbar.js?v=081"></script>
-<script src="js/ui/sidebar.js?v=081"></script>
-<script src="js/ui/screens.js?v=081"></script>
-<script src="js/ui/loading.js?v=081"></script>
-<script src="js/game/noise.js?v=081"></script>
-<script src="js/game/embeddata.js?v=081"></script>
-<script src="js/game/glb.js?v=081"></script>
-<script src="js/game/sfx.js?v=081"></script>
-<script src="js/game/terrain.js?v=081"></script>
-<script src="js/game/terrainlook.js?v=081"></script>
-<script src="js/game/lighthouse.js?v=081"></script>
-<script src="js/game/world.js?v=081"></script>
-<script src="js/game/road.js?v=081"></script>
-<script src="js/game/footprints.js?v=081"></script>
-<script src="js/game/controls.js?v=081"></script>
-<script src="js/game/props.js?v=081"></script>
-<script src="js/game/firstperson.js?v=081"></script>
-<script src="js/game/inventory.js?v=081"></script>
-<script src="js/game/lootmenu.js?v=081"></script>
-<script src="js/game/background.js?v=081"></script>
-<script src="js/net/net.js?v=081"></script>
-<script src="js/social/social.js?v=081"></script>
-<script src="js/game/remoteplayer.js?v=081"></script>
-<script src="js/game/hitmarker.js?v=081"></script>
-<script src="js/game/minimenu.js?v=081"></script>
-<script src="js/game/adminpanel.js?v=081"></script>
-<script src="js/game/craft.js?v=081"></script>
-<script src="js/game/building.js?v=081"></script>
-<script src="js/game/gameworld.js?v=081"></script>
-<script src="js/game/touch.js?v=081"></script>
-<script src="js/main.js?v=081"></script>
+<script src="js/core/state.js?v=089"></script>
+<script src="js/core/audio.js?v=089"></script>
+<script src="js/core/icons.js?v=089"></script>
+<script src="js/data/servers.js?v=089"></script>
+<script src="js/data/friends.js?v=089"></script>
+<script src="js/data/skins.js?v=089"></script>
+<script src="js/data/news.js?v=089"></script>
+<script src="js/data/itemicons.js?v=089"></script>
+<script src="js/data/weaponskins.js?v=089"></script>
+<script src="js/ui/toast.js?v=089"></script>
+<script src="js/ui/modals.js?v=089"></script>
+<script src="js/ui/topbar.js?v=089"></script>
+<script src="js/ui/sidebar.js?v=089"></script>
+<script src="js/ui/screens.js?v=089"></script>
+<script src="js/ui/loading.js?v=089"></script>
+<script src="js/game/noise.js?v=089"></script>
+<script src="js/game/embeddata.js?v=089"></script>
+<script src="js/game/glb.js?v=089"></script>
+<script src="js/game/sfx.js?v=089"></script>
+<script src="js/game/terrain.js?v=089"></script>
+<script src="js/game/terrainlook.js?v=089"></script>
+<script src="js/game/lighthouse.js?v=089"></script>
+<script src="js/game/world.js?v=089"></script>
+<script src="js/game/road.js?v=089"></script>
+<script src="js/game/footprints.js?v=089"></script>
+<script src="js/game/controls.js?v=089"></script>
+<script src="js/game/props.js?v=089"></script>
+<script src="js/game/firstperson.js?v=089"></script>
+<script src="js/game/inventory.js?v=089"></script>
+<script src="js/game/lootmenu.js?v=089"></script>
+<script src="js/game/background.js?v=089"></script>
+<script src="js/net/net.js?v=089"></script>
+<script src="js/social/social.js?v=089"></script>
+<script src="js/game/remoteplayer.js?v=089"></script>
+<script src="js/game/corpses.js?v=089"></script>
+<script src="js/game/furnace.js?v=089"></script>
+<script src="js/game/hitmarker.js?v=089"></script>
+<script src="js/game/minimenu.js?v=089"></script>
+<script src="js/game/adminpanel.js?v=089"></script>
+<script src="js/game/craft.js?v=089"></script>
+<script src="js/game/building.js?v=089"></script>
+<script src="js/game/gameworld.js?v=089"></script>
+<script src="js/game/touch.js?v=089"></script>
+<script src="js/main.js?v=089"></script>
 </body>
 </html>

@@ -248,3 +248,20 @@
 .notif-actions { display: flex; gap: 8px; margin-top: 10px; }
 .notif-empty { color: var(--dim); font-size: 13px; padding: 10px 0 4px; }
 .bell-panel.modal-box { width: min(440px, calc(100vw - 40px)); margin: 0 auto; }
+
+/* ============================================================
+   ✅ v0.4.50 ФОН ГЛАВНОГО МЕНЮ — картинка игрока (меню.png из ICONS.zip
+   → assets/menu/bg.jpg): зимняя база с военными ящиками. Сверху мягкий
+   тёмный градиент, чтобы текст/кнопки меню читались. Слой живёт на
+   #menuChrome — он показывается ТОЛЬКО в меню (в игре .hidden), игровой
+   вид не затрагивает. Если картинки нет — фон остаётся тёмным (--coal).
+   Живую 3D-подложку меню (#bgScene — «ночная сцена») скрываем: она
+   рисуется ВНУТРИ #menuChrome и перекрывала бы картинку. Вернуть как
+   было: удалить строку #bgScene { display: none; }
+   ============================================================ */
+#bgScene { display: none; }
+#menuChrome {
+  background:
+    linear-gradient(180deg, rgba(8, 9, 8, 0.52) 0%, rgba(8, 9, 8, 0.22) 42%, rgba(8, 9, 8, 0.62) 100%),
+    url('../assets/menu/bg.jpg') center / cover no-repeat;
+}

@@ -580,12 +580,25 @@ window.BrixRemotePlayer = (function () {
     g.rotation.y = this.cur.yaw;
     g.scale.y = 1 - 0.38 * this._crK;
 
-    // ✅ v0.4.5: смерть — игрок уходит под землю и исчезает
+    // ✅ v0.4.5 → ✅ v0.4.43 РЭГДОЛЛ-СМЕРТЬ: игрок больше НЕ уходит под
+    // землю — «кости пропадают»: тело падает на землю (поворот на спину),
+    // сжимается к земле и растворяется; на месте остаётся ТРУП-лутбокс
+    // (BrixCorpses) с его инвентарём
     if (this.dead) {
-      this._sinkT += dt;
-      g.position.y -= Math.min(this._sinkT * 1.5, 1.9);
-      if (this._sinkT > 1.3) g.visible = false;
+      this._collT = (this._collT || 0) + dt;
+      var ck = Math.min(1, this._collT / 0.55);
+      var ease = 1 - (1 - ck) * (1 - ck);            // плавное падение
+      var ck2 = Math.max(0, Math.min(1, (this._collT - 0.55) / 0.55));
+      g.rotation.x = -ease * Math.PI / 2;            // валится вперёд на землю
+      g.scale.y = 1 - 0.55 * ck2;                    // «кости пропали» — сжатие к земле
+      g.position.y -= 0.10 * ease + 0.12 * ck2;      // прижим к земле (идемно)
       if (this._hpHideT > 0) { this._hpHideT -= dt; if (this._hpHideT <= 0) this.hpBar.sp.visible = false; }
+      if (this._collT > 1.7) {
+        // тело растворилось — остался труп-лутбокс
+        g.visible = false;
+        g.rotation.x = 0;
+        g.scale.y = 1;
+      }
       return;
     }
     g.visible = true;
@@ -817,21 +830,28 @@ window.BrixRemotePlayer = (function () {
     this._hpHideT = 4;
   };
 
-  /** умер: уходит под землю и исчезает */
+  /** умер: рэгдолл — «кости пропали», тело падает на землю;
+      после анимации остаётся труп-лутбокс (BrixCorpses) */
   RemotePlayer.prototype.die = function () {
     if (this.dead) return;
     this.dead = true;
     this._sinkT = 0;
+    this._collT = 0;
     this.hpBar.sp.visible = false;
+    if (this.tag) this.tag.visible = false;          // плашку даёт труп
   };
 
-  /** возродился: снова видим, хп полное */
+  /** возродился: снова видим, хп полное, поза стоя */
   RemotePlayer.prototype.respawn = function () {
     this.dead = false;
     this._sinkT = 0;
+    this._collT = 0;
     this.hp = 100;
     this.hpBar.sp.visible = false;
     this.group.visible = true;
+    this.group.rotation.x = 0;
+    this.group.scale.y = 1;
+    if (this.tag) this.tag.visible = true;
   };
 
   return RemotePlayer;

@@ -23,6 +23,11 @@
 //  - Анимации: idle (дыхание) + atk1/atk2 (топор и каменная кирка) +
 //    atkP — удар железной кирки ПО ПРЯМОЙ (с v0.2.10 не используется).
 //
+//  ✅ v0.4.49 ШПРИЦ — ПОЛНОСТЬЮ СВОЯ АНИМАЦИЯ НА НАШЕМ РИГЕ (без ретаргета
+//  чужой модели, который делал руки гигантскими/«обрезаными» и ронял шприц
+//  с кисти): syringe.glb запекается в статичный предмет в ПРАВОЙ кисти
+//  (поршень-кнопка — отдельный меш), правая рука подносит шприц, левая
+//  подставляет предплечье, правая вдавливает иглу в левую руку.
 //  ✅ v0.4.6 РЕВОЛЬВЕР переделан: ствол вперёд (авто-ориентация), правая рука
 //  держит рукоять сбоку, левая — с левой стороны, руки не закрывают ствол.
 //  Настройка вживую: BrixFirstPerson.REV (см. блок REV ниже).
@@ -124,6 +129,42 @@ window.BrixFirstPerson = (function () {
     lcurl: 0.85,     // сжатие пальцев
     lthumb: 0.40     // большой палец
   };
+
+  /* ✅ v0.4.49 ШПРИЦ (модель пользователя
+     medical_syringe_healing_fps_animation.glb → assets/models/syringe.glb)
+     — СВОЯ АНИМАЦИЯ НА НАШЕМ РИГЕ. Ретаргет (v0.4.46–0.4.48) УБРАН: он
+     заставлял наши кости занимать мировые позиции костей ЧУЖОЙ модели —
+     руки становились гигантскими и «обрезаными» кадром камеры рук, а сам
+     шприц улетал с кисти (клип модели двигал его независимо от наших рук).
+     Теперь syringe.glb ЗАПЕКАЕТСЯ в статичный предмет: скелетный меш
+     (MatSyringe) переносится в два обычных меша — КОРПУС и ПОРШЕНЬ
+     (кость BOTON_044 — красная кнопка), и держится в ПРАВОЙ кисти как
+     топор/револьвер. Анимация — процедурный клип CL.syringe на наших
+     костях: правая «дротиком» вдавливает иглу в подставленное
+     предплечье левой. Числа сняты вживую (запечённая геометрия):
+     ствол вдоль Z, игла на LOW-Z (−0.081), кнопка BOTON на HIGH-Z
+     (+0.056), длина 0.142 м, сечение 2.6 см.
+     Настраивается вживую (F12): BrixFirstPerson.SYR2.tip = 0.08;
+       SYR2.roll = 20; SYR2.scale = 1.1; SYR2.press = 0.04 … */
+  var SYRINGE_URL = 'assets/models/syringe.glb';
+  var SYR2 = {
+    scale: 1.0,      // размер шприца (модель = 0.142 м)
+    gx: 0.52,        // где ладонь на стволе: доля длины ладони от запястья
+    gn: 0.02,        // отступ ствола от ладони (м)
+    tip: 0.08,       // кончик иглы от центра ладони, м (больше — дальше от руки)
+    roll: 0,         // доворот шприца вокруг иглы (град)
+    press: 0.035,    // ход поршня при уколе, м
+    siteFrac: 0.9,   // точка укола на предплечье левой: 0 = запястье, 1 = локоть
+    siteUp: 0.03,    // приподъём точки укола к стороне ладони-вверх, м
+    hover: 0.07,     // зависание иглы над кожей до укола, м
+    pen: 0.02        // насколько игла входит в руку, м
+  };
+  var SYR_HEAL_T = 3.45;   // момент укола в клипе (gameworld сверяется);
+                           // ✅ v0.4.49: 0.60 × 5.73 с — конец продавливания поршня
+  /* ✅ v0.4.50: момент «игла ВОШЛА в руку» — 0.44 × 5.73 ≈ 2.5 с клипа
+     (0.40–0.46 — вход иглы в предплечье). На него вешается звук шприца
+     (assets/sfx/syringe/inject.mp3 — «жидкость впрыснута», файл игрока) */
+  var SYR_NEEDLE_T = 2.5;
   var PLAYER_URL = 'assets/models/player_claude.glb';
   var AXE_URL = 'assets/models/stone_axe.glb';        // ✅ каменный топор — модель из v0.2.3
   var SPICK_URL = 'assets/models/stone_pickaxe.glb';  // каменная кирка
@@ -587,6 +628,16 @@ window.BrixFirstPerson = (function () {
     lx: -0.22, ly: 0.28, lz: 0.74, lcurl: 0.85
   });
 
+  /* ✅ v0.4.49 поза idle со ШПРИЦЕМ: правая держит шприц иглой вверх-
+     вперёд (любуется, как в референсе), пальцы раскрыты (ствол виден),
+     левая расслаблена. В покое игла не привязана к левой руке */
+  var FIDLE_SYR = Object.assign({}, IDLE, {
+    sx: 0, hx: 0,
+    rx: 0.11, ry: 0.32, rz: 0.50, rphi: 0, ryaw: 0, roll: 90,
+    curl: 0.62, thumb: 0.55,
+    lx: -0.10, ly: -0.03, lz: 0.50, lcurl: 0.40
+  });
+
   // ✅ Поза idle с ЖЕЛЕЗНОЙ КИРКОЙ (две руки на рукояти; левая ставится сама).
   // ✅ v0.2.8: кирка держится БЛИЖЕ к груди и ПО ЦЕНТРУ (rx↓, rz↓) — раньше
   // она висела в 0.5 м впереди справа, и левая рука (размах 0.55 м)
@@ -637,7 +688,8 @@ window.BrixFirstPerson = (function () {
   var k1Pick = mk(FIDLE_PICK);
   var k1Rev = mk(FIDLE_REV);   // ✅ v0.4.5: кейфреймы револьвера
   var k1Sg = mk(FIDLE_REV);    // ✅ v0.4.19: кейфреймы дробовика (стойка та же)
-  var k1C4 = mk(FIDLE_C4);     // ✅ v0.4.41: кейфреймы С4 (обе руки симметрично)
+  var k1C4 = mk(FIDLE_C4);
+  var k1Syr = mk(FIDLE_SYR);   // ✅ v0.4.46 кейфреймы шприца     // ✅ v0.4.41: кейфреймы С4 (обе руки симметрично)
 
   var CL = {
     atk1: {
@@ -760,6 +812,48 @@ window.BrixFirstPerson = (function () {
                      lx: -0.08, ly: 0.24, lz: 0.88, lcurl: 0.5 }, 'in'),
         k1C4(0.50, {})
       ]
+    },
+    /* ✅ v0.4.49 УКОЛ ШПРИЦЕМ — СВОЯ ПРОЦЕДУРНАЯ АНИМАЦИЯ (5.73 с, чтобы
+       момент укола остался на SYR_HEAL_T 3.45 с = 0.60 клипа).
+       Геометрия промерена вживую (камера рук смотрит вниз ~8°, зона
+       видимости — y 1.55–1.9 на глубине 0.3; руки 0.55 от плеч
+       (±0.17, 1.21, −0.05)). Левая подставляет предплечье у середины
+       груди (0.30, 1.56, 0.30), правая перегибается через грудь и
+       вдавливает иглу (кончик привязан к ригу в pose()):
+       0.10–0.22 — левая поднимает предплечье ладонью вверх;
+       0.30–0.40 — правая наводит шприц; 0.40–0.46 — игла входит;
+       0.52–0.60 — правая ПРОДАВЛИВАЕТ поршень (+46 хп на 3.45 с);
+       0.68–0.76 — вынимает иглу; 0.84–1 — руки расходятся в idle.
+       ✅ ВАЖНО: каждый ключ ПОВТОРЯЕТ полный набор параметров (rx…lz) —
+       sample() интерполирует целые наборы, и ключ без lx уронил бы левую
+       руку к базе (за нижний край экрана) */
+    syringe: {
+      dur: 5.73,
+      keys: [
+        k1Syr(0,    {}),
+        k1Syr(0.10, { rx: 0.09, ry: 0.34, rz: 0.50, curl: 0.62, thumb: 0.55,
+                      lx: -0.08, ly: 0.30, lz: 0.62, lcurl: 0.40 }, 'in'),
+        k1Syr(0.22, { rx: 0.08, ry: 0.38, rz: 0.49, curl: 0.62, thumb: 0.55,
+                      lx: -0.25, ly: 0.34, lz: 0.85, lcurl: 0.30 }),
+        k1Syr(0.30, { rx: -0.15, ry: 0.28, rz: 0.62, curl: 0.72, thumb: 0.6,
+                      lx: -0.25, ly: 0.34, lz: 0.85, lcurl: 0.30 }, 'in'),
+        k1Syr(0.40, { rx: -0.45, ry: 0.33, rz: 0.75, curl: 0.80, thumb: 0.7,
+                      lx: -0.25, ly: 0.34, lz: 0.85, lcurl: 0.30 }),
+        k1Syr(0.46, { rx: -0.47, ry: 0.33, rz: 0.75, curl: 0.85, thumb: 0.9,
+                      lx: -0.25, ly: 0.35, lz: 0.85, lcurl: 0.30 }, 'in'),
+        k1Syr(0.52, { rx: -0.48, ry: 0.335, rz: 0.745, curl: 0.85, thumb: 1,
+                      lx: -0.25, ly: 0.35, lz: 0.85, lcurl: 0.30 }),
+        k1Syr(0.60, { rx: -0.47, ry: 0.33, rz: 0.75, curl: 0.85, thumb: 1,
+                      lx: -0.25, ly: 0.35, lz: 0.85, lcurl: 0.30 }),
+        k1Syr(0.68, { rx: -0.42, ry: 0.33, rz: 0.76, curl: 0.80, thumb: 0.7,
+                      lx: -0.25, ly: 0.35, lz: 0.85, lcurl: 0.30 }),
+        k1Syr(0.76, { rx: -0.28, ry: 0.30, rz: 0.70, curl: 0.75, thumb: 0.6,
+                      lx: -0.22, ly: 0.30, lz: 0.78, lcurl: 0.32 }, 'in'),
+        k1Syr(0.84, { rx: 0.06, ry: 0.38, rz: 0.47, curl: 0.68, thumb: 0.55,
+                      lx: -0.12, ly: 0.30, lz: 0.58, lcurl: 0.38 }, 'in'),
+        k1Syr(0.92, { lx: -0.12, ly: -0.02, lz: 0.50, lcurl: 0.40 }),
+        k1Syr(1,    {})
+      ]
     }
   };
 
@@ -814,6 +908,10 @@ window.BrixFirstPerson = (function () {
     /* ✅ v0.4.35: rifle — и КАЛАШ, и ТОМПСОН (одна машина поз, своя
        модель и конфиг по kind: 'ak' | 'tp'; models — обе прото-группы) */
     this.rifle = null;        // {holder, proto, kind, models:{ak,tp}}
+    /* ✅ v0.4.49 ШПРИЦ: {holder, norm, body, plunger, tipZ, _press} —
+       запечённый предмет в правой кисти (поршень — отдельный меш);
+       процедурный клип укола играет через _swingType как у всех */
+    this.syringe = null;
     this._ads = 0;            // 0..1 прицеливание калаша
     this._runW = 0;           // 0..1 бег (автомат к груди)
     this._rec = 0; this._recV = 0;  // пружина отдачи
@@ -900,6 +998,17 @@ window.BrixFirstPerson = (function () {
       }).catch(function () {
         console.warn('[BrixFirstPerson] С4 не загрузился (запускай через сервер) — руки работают, С4 будет без модели');
       });
+      /* ✅ v0.4.46: ШПРИЦ — грузится ОТДЕЛЬНО С АНИМАЦИЕЙ (BrixGLB.loadAnim:
+         клип из GLB — подъем/удержание/укол/убирание). На file:// его нет
+         во встроенных моделях — руки работают, шприц будет без модели */
+      new Promise(function (ok2, no2) {
+        if (!BrixGLB.loadAnim) { no2(new Error('старый glb.js без loadAnim')); return; }
+        BrixGLB.loadAnim(SYRINGE_URL, function (r2) { ok2(r2); }, no2);
+      }).then(function (r2) {
+        if (self._attachSyringe) self._attachSyringe(r2);
+      }).catch(function () {
+        console.warn('[BrixFirstPerson] шприц не загрузился (запускай через сервер) — руки работают, шприц будет без модели');
+      });
       console.log('[BrixFirstPerson] руки готовы: топоры, кирки (v0.4.5, револьвер догружается отдельно)');
     }).catch(function (err) {
       console.error('[BrixFirstPerson] ошибка загрузки:', err);
@@ -967,6 +1076,10 @@ window.BrixFirstPerson = (function () {
       rest[k] = {
         q: b.quaternion.clone(),
         s: b.scale.clone(),
+        /* ✅ v0.4.48 rest-ПОЗИЦИЯ кости: ретаргет шприца пишет position рук
+           (v0.4.47), pose() обязан возвращать её на место каждый кадр —
+           иначе после шприца руки у ВСЕХ предметов остаются сдвинутыми */
+        p: b.position.clone(),
         wq: b.getWorldQuaternion(new THREE.Quaternion())
       };
     }
@@ -1106,6 +1219,130 @@ window.BrixFirstPerson = (function () {
       self.c4 = { holder: cholder, wrap: cwrap, proto: cg };
       console.log('[BrixFirstPerson] С4 в руках готов (ширина ' + C4.len + ' м)');
     };
+
+/* ✅ v0.4.49 ШПРИЦ — модель грузится ОТДЕЛЬНО (см. _load), но больше
+   НИКАКОГО ретаргета и НИКАКОГО клипа модели (v0.4.46–0.4.48 — руки
+   гигантские/«обрезаные», шприц улетал с кисти). Вместо этого скелетный
+   меш шприца (MatSyringe) ЗАПЕКАЕТСЯ в статичную геометрию в позе покоя
+   и разбивается на два меша: КОРПУС (ствол/игла/колпачок) и ПОРШЕНЬ
+   (вершины, чья доминирующая кость — BOTON_044, красная кнопка). Оба
+   меша кладутся в holder в ПРАВОЙ кисти и ездят вместе с рукой, а
+   поршень при уколе съезжает по sy._press (см. placeSyringe). Числа
+   оси сняты analyze_syringe2.js: игла на LOW-Z, кнопка на HIGH-Z */
+this._attachSyringe = function (res) {
+  if (self.syringe || !res || !res.group) return;
+  var root = res.group;
+  root.updateMatrixWorld(true);          // кости в покое (анимация не играла)
+  // 1) найти скелетный меш шприца по материалу MatSyringe
+  var sm = null;
+  root.traverse(function (o) {
+    if (sm || !o.isSkinnedMesh) return;
+    var mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (var i = 0; i < mats.length; i++)
+      if (/syringe/i.test((mats[i] && mats[i].name) || '')) { sm = o; break; }
+  });
+  if (!sm || !sm.skeleton) {
+    console.warn('[BrixFirstPerson] шприц: скелетный меш не найден — предмет без модели');
+    return;
+  }
+  var skel = sm.skeleton;
+  var botonIdx = -1;
+  for (var bi = 0; bi < skel.bones.length; bi++)
+    if (/boton/i.test(skel.bones[bi].name || '')) botonIdx = bi;
+  // 2) запечь: скин = Σ w · (boneWorld · inverseBind) · v, в локале меш-ноды
+  var meshInv = new THREE.Matrix4().copy(sm.matrixWorld).invert();
+  var bm = [];
+  for (var b2 = 0; b2 < skel.bones.length; b2++)
+    bm.push(new THREE.Matrix4().multiplyMatrices(meshInv, skel.bones[b2].matrixWorld)
+      .multiply(skel.boneInverses[b2]));
+  var g0 = sm.geometry;
+  var posA = g0.attributes.position;
+  var siA = g0.attributes.skinIndex, swA = g0.attributes.skinWeight;
+  var n = posA.count;
+  var baked = new Float32Array(n * 3);
+  var isPl = new Uint8Array(n);          // 1 — вершина поршня (BOTON)
+  var vv = new THREE.Vector3(), tv = new THREE.Vector3(), bv = new THREE.Vector3();
+  for (var i = 0; i < n; i++) {
+    vv.fromBufferAttribute(posA, i);
+    tv.set(0, 0, 0);
+    var bestJ = 0, bestW = -1;
+    for (var k = 0; k < 4; k++) {
+      var w = swA.array[i * 4 + k];
+      if (w > bestW) { bestW = w; bestJ = siA.array[i * 4 + k]; }
+      if (w > 0.0001) {
+        bv.copy(vv).applyMatrix4(bm[siA.array[i * 4 + k]]).multiplyScalar(w);
+        tv.add(bv);
+      }
+    }
+    baked[i * 3] = tv.x; baked[i * 3 + 1] = tv.y; baked[i * 3 + 2] = tv.z;
+    if (bestJ === botonIdx) isPl[i] = 1;
+  }
+  // 3) разбить на корпус/поршень по треугольникам (кости 1-й вершины треуг.)
+  var nA = g0.attributes.normal, uvA = g0.attributes.uv;
+  function splitGeo(needPl) {
+    var P = [], I = [], NN = [], UV = [];
+    var pushV = function (vi) {
+      I.push(P.length / 3);
+      P.push(baked[vi * 3], baked[vi * 3 + 1], baked[vi * 3 + 2]);
+      if (nA) NN.push(nA.array[vi * 3], nA.array[vi * 3 + 1], nA.array[vi * 3 + 2]);
+      if (uvA) UV.push(uvA.array[vi * 2], uvA.array[vi * 2 + 1]);
+    };
+    var idxA = g0.index;
+    if (idxA) {
+      for (var t = 0; t + 2 < idxA.count; t += 3) {
+        var v0 = idxA.array[t];
+        if (!!isPl[v0] === needPl) { pushV(v0); pushV(idxA.array[t + 1]); pushV(idxA.array[t + 2]); }
+      }
+    } else {
+      for (var t2 = 0; t2 + 2 < n; t2 += 3)
+        if (!!isPl[t2] === needPl) { pushV(t2); pushV(t2 + 1); pushV(t2 + 2); }
+    }
+    var g2 = new THREE.BufferGeometry();
+    g2.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    if (NN.length) g2.setAttribute('normal', new THREE.Float32BufferAttribute(NN, 3));
+    if (UV.length) g2.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
+    return g2;
+  }
+  var bodyGeo = splitGeo(false), plGeo = splitGeo(true);
+  var body = new THREE.Mesh(bodyGeo, sm.material);
+  var pl = plGeo && plGeo.attributes.position.count ? new THREE.Mesh(plGeo, sm.material) : null;
+  [body, pl].forEach(function (m) {
+    if (!m) return;
+    m.castShadow = false; m.receiveShadow = false; m.frustumCulled = false;
+    if (m.material) {
+      m.material.side = THREE.DoubleSide;
+      if (m.material.map) m.material.map.anisotropy = 8;
+    }
+  });
+  // 4) нормализация в изолированной рамке (до привязки к кисти):
+  //    игла (LOW-Z запечённого меша) → +Z предмета («от руки»),
+  //    кончик иглы ставится на SYR2.tip от начала holder (центра ладони)
+  var norm = new THREE.Group();
+  norm.rotation.y = Math.PI;             // игла −Z модели → +Z
+  norm.add(body);
+  if (pl) norm.add(pl);
+  var tmp = new THREE.Group();
+  tmp.add(norm);
+  tmp.updateMatrixWorld(true);
+  var box = new THREE.Box3().setFromObject(body);
+  if (pl) box.expandByPoint(new THREE.Box3().setFromObject(pl).min)
+             .expandByPoint(new THREE.Box3().setFromObject(pl).max);
+  var c1 = box.getCenter(new THREE.Vector3());
+  /* ✅ фикс: кончик иглы = SYR2.tip от ладони (после поворота игла на
+     box.max.z), а не хардкод по сырым координатам файла */
+  norm.position.set(-c1.x, -c1.y, (SYR2.tip || 0.08) - box.max.z);
+  var tipZ = (SYR2.tip || 0.08);   // кончик иглы от grip (+Z, для привязки укола)
+  // 5) holder в правой кисти
+  var holder = new THREE.Group();
+  holder.add(norm);
+  B.RightHand.add(holder);
+  holder.visible = self.currentWeapon === 'syringe' && self.visible;
+  self.syringe = { holder: holder, norm: norm, body: body, plunger: pl,
+    tipZ: tipZ, _press: 0 };
+  console.log('[BrixFirstPerson] шприц запечён в кисть (корпус ' +
+    bodyGeo.attributes.position.count + ' в., поршень ' +
+    (pl ? plGeo.attributes.position.count : 0) + ' в., игла +Z ' + tipZ.toFixed(3) + ' м)');
+};
 
     /* ✅ v0.4.6 ПЛАН СТРОИТЕЛЯ — процедурный синий ватман-свиток
        (как на референсе: голубой лист с белой сеткой-чертежом,
@@ -1500,6 +1737,35 @@ window.BrixFirstPerson = (function () {
       c4.wrap.position.set(0, 0, 0);
     };
 
+    /* ✅ v0.4.49 хват ШПРИЦА: ствол вдоль пальцев («дротик»), ладонь на
+       точке хвата (SYR2.gx/gn), поршень-кнопка смотрит в сторону большого
+       пальца (SYR2.roll — доворот вокруг иглы). Ориентация строится от
+       текущих осей ладони — orientHand в ветке шприца уже развернул кисть
+       так, что пальцы смотрят в точку укола, значит и игла туда же.
+       sy._press (0..1) съезжает поршень к игле */
+    this.placeSyringe = function () {
+      var sy = self.syringe;
+      if (!sy) return;
+      var H = self.HF.Right;
+      var pos = H.h0.clone()
+        .addScaledVector(H.f, H.palmLen * SYR2.gx)
+        .addScaledVector(H.n, SYR2.gn)
+        .applyMatrix4(H.inv);
+      sy.holder.position.copy(pos);
+      var fl = H.f.clone().applyQuaternion(H.wq.clone().invert());
+      var al = H.a.clone().applyQuaternion(H.wq.clone().invert());
+      var xl = new THREE.Vector3().crossVectors(al, fl).normalize();
+      var qb = new THREE.Quaternion().setFromRotationMatrix(
+        new THREE.Matrix4().makeBasis(xl, al, fl));
+      qb.multiply(new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0, 0, 1), (SYR2.roll || 0) * D));
+      sy.holder.quaternion.copy(qb);
+      /* ✅ как у всех предметов: кость кисти в риге имеет мировой масштаб
+         ~0.009 (единицы модели), поэтому делим — иначе шприц 1 мм */
+      sy.holder.scale.setScalar((SYR2.scale || 1) / (H.ws || 1));
+      if (sy.plunger) sy.plunger.position.z = -(sy._press || 0) * (SYR2.press || 0.035);
+    };
+
     // ✅ v0.4.6 хват РЕВОЛЬВЕРА: рукоять в правой ладони (сбоку), ствол строго
     // ВПЕРЁД. Ориентация берётся не от предплечья, а от «вперёд» торса
     // (self._gunF/_gunA считаются в pose), поэтому ствол всегда смотрит прямо
@@ -1693,6 +1959,11 @@ window.BrixFirstPerson = (function () {
       for (var k in B) {
         B[k].quaternion.copy(rest[k].q);
         B[k].scale.copy(rest[k].s);
+        /* ✅ v0.4.48: и ПОЗИЦИЯ — ретаргет шприца (v0.4.47) сдвигал кости
+           рук, и при смене оружия они оставались сдвинутыми («все руки
+           испортились»). Теперь каждый кадр кость возвращается в rest
+           полностью — у всех предметов руки ровно как в v0.4.46 */
+        B[k].position.copy(rest[k].p);
       }
       if (fp) {
         B.LeftArm.scale.multiplyScalar(ARMS_SCALE);
@@ -1767,6 +2038,97 @@ window.BrixFirstPerson = (function () {
       self._gunF = gg.clone();   // «вперёд» торса ⟂ ладони (куда смотрит ствол)
       self._gunA = a2.clone();   // «вверх» ладони
       self.fingers('Right', p.curl, p.thumb);
+
+      /* ✅ v0.4.49 ШПРИЦ — СВОЯ АНИМАЦИЯ НА НАШЕМ РИГЕ. Левая подставляет
+         предплечье ладонью вверх, правая «дротиком» вдавливает шприц в
+         левую руку. Игла ПРИВЯЗАНА К РИГУ: точка укола считается от
+         реальной левой кисти каждый кадр (как rifleLeftTarget у калаша),
+         и правая рука досылается так, чтобы кончик иглы точно встал в
+         точку (pen<0 — над кожей, >0 — вошла). Пальцы правой обхватывают
+         ствол, большой палец давит поршень. В покое — шприц у лица иглой
+         вверх, руки свободны (кейфреймы). Настройка: BrixFirstPerson.SYR2 */
+      if (self.currentWeapon === 'syringe' && self.syringe) {
+        var sy = self.syringe;
+        var SYD = (CL.syringe && CL.syringe.dur) || 5.73;
+        var playing = self._swingType === 'syringe';
+        var prog = playing ? Math.min(1, Math.max(0, self._animTime / SYD)) : 0;
+        var smq = function (u) { u = Math.min(1, Math.max(0, u)); return u * u * (3 - 2 * u); };
+
+        // поршень: 0.52–0.60 продавливается, до 0.74 остаётся, потом отпускается
+        var pr = 0;
+        if (playing) {
+          if (prog >= 0.52 && prog < 0.60) pr = smq((prog - 0.52) / 0.08);
+          else if (prog >= 0.60 && prog < 0.74) pr = 1;
+          else if (prog >= 0.74 && prog < 0.84) pr = 1 - smq((prog - 0.74) / 0.10);
+        }
+        sy._press = pr;
+
+        // presW — левая в позе «подставила предплечье» (0..1);
+        // ✅ v0.4.49 он же наклоняет камеру рук вниз (см. renderOverlay)
+        var presW = 0;
+        if (prog >= 0.10 && prog < 0.26) presW = smq((prog - 0.10) / 0.16);
+        else if (prog >= 0.26 && prog < 0.74) presW = 1;
+        else if (prog >= 0.74 && prog < 0.90) presW = 1 - smq((prog - 0.74) / 0.16);
+        sy._lookW = playing ? presW : 0;
+
+        /* 1) ЛЕВАЯ РУКА — IK кейфреймов + поворот ладони вверх */
+        self.ik(B.LeftArm, B.LeftForeArm, B.LeftHand,
+          tgt(SL, LL, p.lx, p.ly, p.lz), leftPole);
+        var fLr = wpp(B.LeftHand).clone().sub(wpp(B.LeftForeArm)).normalize();
+        var aLr = Ut.clone().multiplyScalar(0.8).addScaledVector(Rt, 0.5);
+        aLr.addScaledVector(fLr, -aLr.dot(fLr)).normalize();
+        var fLp = Rt.clone().multiplyScalar(0.85).addScaledVector(Ft, -0.45).normalize();
+        var aLp = Ut.clone().cross(fLp).normalize();      // ладонь вверх
+        var fLm = fLr.clone().lerp(fLp, presW).normalize();
+        var aLm = aLr.clone().lerp(aLp, presW).normalize();
+        self.orientHand('Left', fLm, aLm);
+        self.fingers('Left', p.lcurl, 0.3);
+        self.model.updateMatrixWorld(true);
+
+        /* 2) точка укола — на предплечье левой (между запястьем и локтем);
+           приподъём ВВЕРХ (наружная сторона подставленного предплечья —
+           куда игла входит сверху) */
+        var site = wpp(B.LeftForeArm).clone().lerp(wpp(B.LeftHand), SYR2.siteFrac)
+          .addScaledVector(Ut, SYR2.siteUp * presW);
+
+        /* 3) ✅ v0.4.49 направление иглы ЯВНОЕ: сверху-справа ВНИЗ-ВЛЕВО в
+           подставленное предплечье (реальный укол), а не «куда смотрит
+           рука» — иначе правая рука всегда оказывается ниже точки укола
+           (плечо ниже цели) и колет СНИЗУ вверх. В покое — игла вверх. */
+        var fInj = Ut.clone().multiplyScalar(-0.75).addScaledVector(Rt, -0.45)
+          .addScaledVector(Ft, 0.75).normalize();
+        var fIdle = Ut.clone().multiplyScalar(0.62).addScaledVector(Ft, 0.62)
+          .addScaledVector(Rt, 0.05).normalize();
+        var f2s = fInj.clone().lerp(fIdle, 1 - presW).normalize();
+        var aT = Ut.clone().multiplyScalar(0.85).addScaledVector(Ft, 0.45);
+        aT.addScaledVector(f2s, -aT.dot(f2s)).normalize();  // поршень вверх
+        self.orientHand('Right', f2s, aT);
+        self.fingers('Right', p.curl, p.thumb);
+        self.placeSyringe();
+        self.model.updateMatrixWorld(true);
+
+        /* 4) привязка иглы: кончик — точно в точке укола (сдвигаем ВСЮ
+           правую руку вдоль направления иглы — как ADS у калаша) */
+        var pen = null;
+        if (presW > 0.85) {
+          if (prog < 0.38) pen = -SYR2.hover;
+          else if (prog < 0.46) pen = -SYR2.hover +
+            (SYR2.pen + SYR2.hover) * smq((prog - 0.38) / 0.08);
+          else if (prog < 0.68) pen = SYR2.pen;
+          else pen = SYR2.pen + (-SYR2.hover - SYR2.pen) * smq((prog - 0.68) / 0.10);
+        }
+        if (pen !== null) {
+          var tipW = sy.holder.localToWorld(new THREE.Vector3(0, 0, sy.tipZ));
+          var des = site.clone().addScaledVector(f2s, pen);
+          var wr2 = wpp(B.RightHand).clone().add(des.sub(tipW));
+          self.ik(B.RightArm, B.RightForeArm, B.RightHand, wr2, rightPole);
+          self.orientHand('Right', f2s, aT);
+          self.fingers('Right', p.curl, p.thumb);
+          self.placeSyringe();
+        }
+        self.model.updateMatrixWorld(true);
+        return;   // ветка шприца — общая левая/инструменты не нужны
+      }
 
       /* ✅ v0.4.21 КАЛАШ: явная ориентация (gw — при беге ствол к груди) →
          прицел ПКМ (линия целик→мушка на ось камеры, как в репозитории) →
@@ -1977,7 +2339,8 @@ window.BrixFirstPerson = (function () {
                    this.currentWeapon === 'shotgun' ||
                    this.currentWeapon === 'rifle' ||
                    this.currentWeapon === 'smg' ||   // ✅ v0.4.35 томпсон
-                   this.currentWeapon === 'rev3x';   // ✅ v0.4.36 револьвер-карабин 3×
+                   this.currentWeapon === 'rev3x' || // ✅ v0.4.36 револьвер-карабин 3×
+                   this.currentWeapon === 'syringe'; // ✅ v0.4.46 шприц
     // запоминаем состояние ВСЕГДА: если модели ещё грузятся,
     // оно применится в _init после загрузки
     this.visible = showArms;
@@ -2002,6 +2365,12 @@ window.BrixFirstPerson = (function () {
       var isGun = this.currentWeapon === 'rifle' || this.currentWeapon === 'smg';
       this.rifle.holder.visible = showArms && isGun;
       if (isGun) this._setRifleModel(this.currentWeapon === 'smg' ? 'tp' : 'ak');
+    }
+    /* ✅ v0.4.49 ШПРИЦ: виден только когда выбран; смена оружия сбрасывает клип */
+    if (this.syringe) {
+      var syrOn = showArms && this.currentWeapon === 'syringe';
+      this.syringe.holder.visible = syrOn;
+      if (!syrOn) this._swingType = this._swingType === 'syringe' ? null : this._swingType;
     }
     /* ✅ v0.4.25 СКИН: при выборе железной кирки накладываем обёртку
        скина (если надет), при выборе другого оружия — обычная модель */
@@ -2105,6 +2474,19 @@ window.BrixFirstPerson = (function () {
       this._rifleReloadT = 0;
       this._aiming = false;
     }
+  };
+
+  /* ✅ v0.4.49 ШПРИЦ: укол — СВОЙ процедурный клип CL.syringe на наших
+     костях (правая вдавливает иглу в подставленное предплечье левой,
+     поршень продавливается на 0.52–0.60 клипа; +46 хп в gameworld на
+     SYR_HEAL_T 3.45 с = конец продавливания) */
+  FirstPersonPlayer.prototype.playSyringe = function () {
+    if (!this.loaded || !this.visible) return;
+    if (this.currentWeapon !== 'syringe') return;
+    this._aiming = false;
+    this._swingType = 'syringe';
+    this._animTime = 0;
+    if (this.syringe) this.syringe._press = 0;   // свежий поршень
   };
 
   /** ✅ v0.4.5 ПРИЦЕЛИВАНИЕ (ПКМ): on=true — плавно подводим к глазам */
@@ -2218,6 +2600,7 @@ window.BrixFirstPerson = (function () {
         this.currentWeapon === 'rev3x') idle = FIDLE_REV;
     else if (this.currentWeapon === 'mace') idle = FIDLE_MACE;   // ✅ v0.4.40 булава
     else if (this.currentWeapon === 'c4') idle = FIDLE_C4;       // ✅ v0.4.41 С4
+    else if (this.currentWeapon === 'syringe') idle = FIDLE_SYR; // ✅ v0.4.46 шприц
     else idle = FIDLE_AXE;
 
     // ✅ v0.4.5 ПРИЦЕЛИВАНИЕ: плавно 0..1 (не мгновенно). Прицел работает
@@ -2238,6 +2621,10 @@ window.BrixFirstPerson = (function () {
     } else if (this._swingType) {
       var c = CL[this._swingType];
       this._animTime += dt;
+      /* ✅ v0.4.49 отладка/живая настройка: window.__syrHold = t (сек) —
+         заморозить клип укола на моменте t, чтобы посмотреть фазу в кадре */
+      if (this._swingType === 'syringe' && window.__syrHold !== undefined)
+        this._animTime = window.__syrHold;
       if (this._animTime >= c.dur) {
         this._swingType = null;
         p = Object.assign({}, idle);
@@ -2265,6 +2652,11 @@ window.BrixFirstPerson = (function () {
     if (this._aimBlend > 0) p = lerpP(p, FPOSE_AIM, this._aimBlend);
 
     this.pose(p, true);
+
+    /* ✅ v0.4.49 АНИМАЦИЯ ШПРИЦА — теперь целиком внутри pose() (ветка
+       шприца): клип CL.syringe на наших костях + привязка кончика иглы
+       к точке укола на реальном предплечье левой. Здесь делать ничего
+       не нужно — ретаргет и клип модели полностью убраны */
   };
 
   /** рендер рук ПОВЕРХ мира (вызывать после renderer.render(scene, camera)) */
@@ -2276,7 +2668,11 @@ window.BrixFirstPerson = (function () {
     // поверх револьвера) — плавно, вместе с позой
     var aim = this._aimBlend || 0;
     HANDS_CAM_POS.set(0, 1.7 - 0.05 * aim, 0);
-    HANDS_CAM_TARGET.set(0, CAM_TARGET_Y + 0.40 * aim, 5);
+    /* ✅ v0.4.49 ШПРИЦ: во время укола камера рук НАКЛОНЯЕТСЯ ВНИЗ к точке
+       укола (как прицел у калаша, только вниз) — предплечье и игла в кадре */
+    var syw = (this.currentWeapon === 'syringe' && this.syringe)
+      ? (this.syringe._lookW || 0) : 0;
+    HANDS_CAM_TARGET.set(0, CAM_TARGET_Y + 0.40 * aim - 0.8 * syw, 5);
     this.handsCamera.position.copy(HANDS_CAM_POS);
     this.handsCamera.up.set(0, 1, 0);
     this.handsCamera.lookAt(HANDS_CAM_TARGET);
@@ -2330,6 +2726,7 @@ window.BrixFirstPerson = (function () {
     this.rev3x = null;
     this.rifle = null;
     this.c4 = null;
+    this.syringe = null;
     this.pickaxeHolder = null;
     this.bones = null;
     this.loaded = false;
@@ -2370,5 +2767,12 @@ window.BrixFirstPerson = (function () {
   //   BrixFirstPerson.C4.yaw = 180 (если блок повернулся спиной)
   FirstPersonPlayer.C4 = C4;
   FirstPersonPlayer.C4G = C4G;   // левая кисть относительно правой
+  /* ✅ v0.4.49 настройка ШПРИЦА из консоли (F12):
+     BrixFirstPerson.SYR2.tip = 0.08 · .roll = 20 · .scale = 1.1
+     .press = 0.04 · .siteFrac = 0.45 · .hover = 0.07 · .pen = 0.02
+     Отладка фаз клипа: window.__syrHold = 2.0 (сек) — заморозит укол */
+  FirstPersonPlayer.SYR2 = SYR2;
+  FirstPersonPlayer.SYR_HEAL_T = SYR_HEAL_T;   // момент укола в клипе
+  FirstPersonPlayer.SYR_NEEDLE_T = SYR_NEEDLE_T;   // ✅ v0.4.50: момент входа иглы (звук шприца)
   return FirstPersonPlayer;
 })();

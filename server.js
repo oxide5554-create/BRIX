@@ -36,25 +36,60 @@ const ROOT = __dirname;
    версии не присылает — и панель на 9 молчит). В консоли при старте
    печатается ПОЛНЫЙ ПУТЬ папки сервера — чтобы admins.json правился
    именно там, где сервер РЕАЛЬНО запущен */
-const SRV_VER = '0.4.42';   /* ✅ v0.4.42 ТЕКСТУРЫ БИОМОВ + СЛЕДЫ НОГ.
-   ЛОГИКА СЕРВЕРА НЕ МЕНЯЛАСЬ — только версия (матч с клиентом 0.4.42):
-   замени server.js и ПЕРЕЗАПУСТИ, иначе вылезет баннер «СЕРВЕР СТАРЫЙ».
-   В клиенте: 7 процедурных текстур биомов (трава×2/земля/камень/снег/
-   песок/дно) с рваными красивыми переходами + следы ног на песке и
-   снегу (своих максимум 50 — первые исчезают первыми, чужих — 24).
-   Прошлое (v0.4.41, всё работает как раньше) — там ЛОГИКА МЕНЯЛАСЬ:
-   1) С4 не работает: сервер не знает 'c4place'/'c4boom' — блок прилипнет,
-      но постройки (−400 хп) и игроки в радиусе НЕ пострадают;
-   2) сервер по-прежнему будет ВЫРУБАТЬСЯ после ~часа игры: любой брошенный
-      exception в обработчике сокета убивал ВЕСЬ процесс Node («Cannot read
-      properties of undefined (reading 'top')» при установке сундука, когда
-      чанк палубы приходил без поля rec — теперь это место защищено, а ВЕСЬ
-      сервер прикрыт guard'ами uncaughtException/unhandledRejection: ошибка
-      пишется в лог с пометкой [guard] и игра продолжается);
-   3) потолки phit: SHOT_CAP/MELEE_CAP дополнены c4: 250 (режим вкладок).
-   Прошлые версии (0.4.37–40) работают как раньше: защита видеокарты (WebGL
+const SRV_VER = '0.4.50';   /* ✅ v0.4.50 — ЗАМЕНИ server.js И ПЕРЕЗАПУСТИ:
+   1) ТРУПЫ: незалутанный труп исчезает через 10 МИНУТ (CORPSE_TTL_MS
+      20 → 10 мин; просьба игрока «трупы исчезают через каждые 10 мин,
+      если их никто не залутал»). С которого уже что-то взяли (lt=1) —
+      20 минут страховки. В сейв/снапшот добавлены lt + age.
+   2) Клиент 0.4.50 с С4/шприцом/иконками дружит с этим сервером.
+   —— История: v0.4.46 — лестница (2 марша, коллайдер ступеней, потолок
+      в клетке запрещён), окно на 2 этаж, фикс разрушения руды, фикс
+      F по трупу (камера в луч наводки); v0.4.43 — С4 на сервере,
+      обломки, трупы-лутбоксы; v0.4.44 — этажность, печка, бочки,
+      урон от высоты, военный лут. */
+/* —— Архив истории сервера (v0.4.30–0.4.46 подробнее):
+   3) ПЕЧКА ty 'fu' (fuplace/futog/fuput/futake + 'fust' всем): плавит серу
+      4 с/шт → sulfurM и железо 6 с/шт → metal ЗА ДЕРЕВО (1 шт/8 с); состояние
+      cont/on живёт на сервере, переживает рестарт; кончилось дерево — гаснет сама.
+   4) БОЧКИ 6 хп: камень/кулак 1 (6 ударов), железо 1.5 (4 удара), БУЛАВА 6
+      (1 удар); постройки: булава 30 за удар. Старые бочки (hp 2) мигрируют до 6.
+   5) УРОН ОТ ВЫСОТЫ: case 'fdmg' — сервер применяет урон падения ТОЛЬКО жертве
+      (≤100), остальным phit kind 'fall'; pdeath w 'fall' → «ТЫ РАЗБИЛСЯ».
+   6) С4: фьюз РОВНО 8.015 с (C4_FUSE_MS=8015, 12 тыков — таблица совпадает
+      с клиентом); броски до 30 м (было 10/12 — «С4 не ломает маленькие дома»).
+   7) ТРУПЫ: пустой труп НЕ СОЗДАЁТСЯ.
+   8) ЧЕКБЛОКИ: сервер сам выбирает тип ящика (30% военных) и перебрасывает
+      его при каждом респавне; ВОЕННЫЙ ЛУТ: калаш/томпсон/дробовик/булава/
+      карабин + патроны + С4 + порох.
+   История: v0.4.43 — С4 на сервере, обломки, трупы-лутбоксы; 0.4.37–42 —
+   защита видеокарты, булава, хит-маркеры, таблица урона, дорога, биомы.
+   ✅ v0.4.43 С4 НА СЕРВЕРЕ + ОБЛОМКИ + ТРУПЫ-ЛУТБОКСЫ.
+   ЛОГИКА СЕРВЕРА МЕНЯЛАСЬ — замени server.js и ПЕРЕЗАПУСТИ:
+   1) С4 ТИКАЕТ В СЕРВЕРЕ (а не у игрока): сервер хранит каждую С4
+      (id, точка, нормаль, кто поставил, время постановки), сам взрывает
+      её через 11.24 с и сам считает урон (постройки −400, игроки −250).
+      Игрок вышел из игры — бомба ВСЁ РАВНО взорвётся. Новый игрок,
+      зашедший ПОСЛЕ постановки, видит блок (снапшот c4 с остатком фьюза)
+      и слышит тыки с правильной фазы. С4 ПЕРЕЖИВАЕТ ПЕРЕЗАПУСК СЕРВЕРА
+      (world-objs.json v6).
+   2) ОБЛОМКИ: всё, что взрыв С4 снёс, НЕ исчезает молча — сервер
+      рассылает 'debris', и у ВСЕХ игроков разрушенная деталь
+      распадается на решётку 5×5 кусков, которые физически падают на
+      землю и через ~7 с растворяются (у всех одинаково).
+   3) ТРУПЫ-ЛУТБОКСЫ: при смерти игрока его ВЕСЬ инвентарь уходит в
+      труп (rec.id = 'rNN'), труп видят все, синхронизируется сервером,
+      сохраняется в world-objs.json (новые игроки его видят), лутается
+      по F как ящик. Опустел — убран. TTL 20 минут.
+   4) РЭГДОЛЛ: чужой игрок при смерти больше не уходит под землю —
+      «кости пропадают», тело падает на землю (клиент, remoteplayer.js).
+   Прошлое (v0.4.42) — текстуры биомов + следы ног (логика сервера не менялась).
+   Прошлые версии (0.4.37–41) работают как раньше: защита видеокарты (WebGL
    context lost), булава, хит-маркеры, новая таблица урона (голова/тело=голова/2,
    дробовик по дистанции), дорога вокруг озера, хват томпсона/карабина.
+   ✅ v0.4.41 С4 (СТАРОЕ ПОВЕДЕНИЕ, заменено в 0.4.43): фьюз жил на клиенте
+   бросавшего, сервер только считал урон по 'c4boom' — теперь таймер и
+   взрыв авторитетно держит сервер (клиентский 'c4boom' работает как
+   failsafe и для совместимости со старыми клиентами).
    ✅ v0.4.39 ХВАТ ПО ГЕОМЕТРИИ + КАРАБИН + ДОРОГА МНОГОТОННАЯ
    (логика сервера НЕ менялась): только поднята версия. Клиент 0.4.39 —
    1) хват томпсона по вершинам модели (точка рукояти = центр бокса рукояти,
@@ -124,6 +159,21 @@ const CRATE_RESPAWN_MS = {                          // ящик чекблока
   wooden: 5 * 60 * 1000,
   military: 25 * 60 * 1000
 };
+
+/* ✅ v0.4.44: С4 ТИКАЕТ В СЕРВЕРЕ. Полный фьюз = 12 тыков (7.5 с,
+   интервалы 0.735 − 0.02·i — ТАБЛИЦА СОВПАДАЕТ С КЛИЕНТОМ c4Interval(i))
+   + последний интервал 0.515 с = 8.015 с от постановки до взрыва */
+const C4_FUSE_MS = 8015;
+/* ✅ v0.4.43: ТРУП-ЛУТБОКС живёт НА СЕРВЕРЕ (потом убирается по TTL),
+   опустел — убирается сразу. Переживает перезапуск сервера.
+   ✅ v0.4.50: TTL — 10 минут для незалутанного, 20 для залутанного (ниже) */
+/* ✅ v0.4.50 ТТЛ ТРУПОВ (просьба игрока: «трупы исчезают через каждые
+   10 мин, если их никто не залутал»): НЕЗАЛУТАННЫЙ труп живёт 10 минут
+   (было 20), а с которого УЖЕ ЧТО-ТО взяли (lt=1) — 20 минут страховки
+   (опустел — убирается сразу в 'corpseTake', как и было) */
+const CORPSE_TTL_MS = 10 * 60 * 1000;
+const CORPSE_TTL_LOOTED_MS = 20 * 60 * 1000;
+const CORPSE_MAX = 24;
 
 /* ---------- 1. Статика ---------- */
 
@@ -395,7 +445,11 @@ function buildCheckblockLayout(seed) {
       rot: Math.round(rnd() * 628) / 100,
       item: ITEMS[Math.floor(rnd() * 3)],
       seed: 1 + Math.floor(rnd() * 1000000),
-      mil: rnd() < 0.05 ? 1 : 0,
+      /* ✅ v0.4.44 ТИП ЯЩИКА ВЫБИРАЕТ СЕРВЕР (просьба игрока «не ты поставь,
+         а сервер выбирает на каждом чекблоке какой ящик поставить — деревянный
+         или военный»): раньше военный был только у 5% чекблоков и навсегда.
+         Теперь 30% военных, и при каждом респавне лута тип ПЕРЕБРАСЫВАЕТСЯ */
+      mil: rnd() < 0.3 ? 1 : 0,
       taken: false,
       barrels: []
     };
@@ -409,7 +463,8 @@ function buildCheckblockLayout(seed) {
         lz: Math.round(Math.sin(a) * d * 100) / 100,
         wy: Math.round(rnd() * 628) / 100,
         lying: j === 0 ? 1 : 0,
-        hp: 2, brk: false
+        hp: 6, brk: false   /* ✅ v0.4.44: бочка 6 хп — камень 6 ударов,
+                               железо 4 (1.5 за удар), булава 1 (6 за удар) */
       });
     }
     cb.push(rec);
@@ -419,7 +474,11 @@ function buildCheckblockLayout(seed) {
 
 /* ✅ v0.3.8: ЛУТ ЯЩИКА — рецепт из репозитория (scr/world/crates.js rollLoot):
    скрап всегда, метал/пружина/труба с шансом, корпус берданки/АК — редко.
-   Лут ХРАНИТСЯ НА СЕРВЕРЕ: взял один предмет — у всех осталось остальное */
+   Лут ХРАНИТСЯ НА СЕРВЕРЕ: взял один предмет — у всех осталось остальное.
+   ✅ v0.4.44 НОВЫЙ ЛУТ ВОЕННОГО ЯЩИКА (просьба игрока): КАЛАШ, ТОМПСОН,
+   ДРОБОВИК, БУЛАВА, РЕВОЛЬВЕР-КАРАБИН, С4, ПОРОХ и ПАТРОНЫ — оружие
+   попадает ЦЕЛИКОМ (rifleAk/thompson/shotgun/rev3x/mace — нестандартные,
+   штучные предметы). Военный ящик стал НАСТОЯЩЕЙ ДРОП-СТАНЦИЕЙ */
 function rollLoot(mil) {
   const r = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
   const loot = { scrap: r(4, 8), metal: 0, spring: 0, pipe: 0, rifleBody: 0,
@@ -434,9 +493,21 @@ function rollLoot(mil) {
     loot.rifleBody = 1;                        // корпус АК — в военном ящике всегда
     if (Math.random() < 0.35) loot.revolver = 1;
     if (Math.random() < 0.25) loot.berdanaBody = 1;
+    /* ✅ v0.4.44: НОВЫЙ ЛУТ — орудия и взрывчатка. Порох почти всегда,
+       патроны уже сверху; ровно ОДНО оружие (шанс 65%), С4 — редко */
+    if (Math.random() < 0.8) loot.gunpowder = r(15, 60);
+    if (Math.random() < 0.65) {
+      const guns = ['rifleAk', 'thompson', 'shotgun', 'rev3x', 'mace'];
+      loot[guns[Math.floor(Math.random() * guns.length)]] = 1;
+    }
+    if (Math.random() < 0.22) loot.c4 = 1;
+    /* ✅ v0.4.46: ШПРИЦ (+46 хп) — медицина в военном ящике, 1–2 шт */
+    if (Math.random() < 0.3) loot.syringe = 1 + (Math.random() < 0.35 ? 1 : 0);
   } else {
     if (Math.random() < 0.12) loot.revolver = 1;
     if (Math.random() < 0.35) loot.berdanaBody = 1;
+    /* и в деревянном изредка бывает порох */
+    if (Math.random() < 0.2) loot.gunpowder = r(5, 20);
   }
   return loot;
 }
@@ -555,8 +626,12 @@ function writeWorldNow() {
   try {
     const data = {
       /* ✅ v0.4.31: v5 — хп построек в НОВОЙ шкале (фундамент 350,
-         остальные 300). v4 читается и мигрирует (см. loadWorldObjs) */
-      v: 5,
+         остальные 300). v4 читается и мигрирует (см. loadWorldObjs)
+         ✅ v0.4.43: v6 — + С4 и трупы
+         ✅ v0.4.44: v7 — + ДЕРЕВЬЯ И РУДЫ (синхронизация и сохранение
+         запасов как у бочек: срубленное/раскопанное не возвращается
+         после рестарта сервера и одинаково для новичков) */
+      v: 7,
       dropSeq: worldObjs.dropSeq,
       cb: worldObjs.cb.map((c) => ({
         id: c.id, x: c.x, z: c.z, rot: c.rot, item: c.item, seed: c.seed, mil: c.mil,
@@ -568,6 +643,22 @@ function writeWorldNow() {
       // ✅ v0.4.6/0.4.7: ПОСТРОЙКИ (фундаменты/стены/потолки) — переживают
       //    перезапуск сервера, как и весь остальной мир
       builds: worldObjs.builds,
+      // ✅ v0.4.43: живые С4 и трупы-лутбоксы — тоже переживают перезапуск
+      c4: worldObjs.c4.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z,
+        n: c.n || [0, 1, 0], by: c.by, at: c.at })),
+      corpses: worldObjs.corpses.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z,
+        n: c.n, c: c.c, inv: c.inv, at: c.at, lt: c.lt ? 1 : 0 })),
+      corpseSeq: worldObjs.corpseSeq | 0,
+      /* ✅ v0.4.44: запасы деревьев (w/g/fd) и руд (iron/sulfur/stone) —
+         ПЕРЕЖИВАЮТ РЕСТАРТ СЕРВЕРА, как бочки и постройки */
+      world: world ? {
+        trees: world.trees.map((tr) => ({ w: tr.w, g: tr.g, fd: tr.fd })),
+        ores: {
+          iron: world.ores.iron.slice(),
+          sulfur: world.ores.sulfur.slice(),
+          stone: world.ores.stone.slice()
+        }
+      } : null,
       epoch: worldObjs.epoch | 0   // ✅ v0.4.13: поколение мира
     };
     fs.writeFileSync(OBJS_FILE, JSON.stringify(data));
@@ -596,6 +687,52 @@ process.on('SIGINT', () => { saveOnExit(); process.exit(0); });
 process.on('SIGTERM', () => { saveOnExit(); process.exit(0); });
 process.on('exit', () => { try { saveOnExit(); } catch (e) {} });
 
+/* ============================================================
+   ✅ v0.4.46 СОХРАНЕНИЕ ИГРОКА («вышел — зашёл — всё на месте»):
+   позиция (ноги) + поворот + ХП + ВЕСЬ инвентарь + выбранный слот
+   хотбара. Ключ — BRIX-ID (aid, как у замков/админов). Клиент шлёт
+   'psave' раз в 3 с и при выходе со страницы; сервер хранит в
+   players.json (debounce 1.5 с + запись при остановке). welcome
+   возвращает сохранение (psave) — клиент ставит игрока на место и
+   выдаёт вещи. УМЕР → сохранение СТИРАЕТСЯ (pdeath): весь инвентарь
+   уходит в труп-лутбокс, задвоение вещей невозможно
+   ============================================================ */
+const PLAYERS_FILE = path.join(ROOT, 'players.json');
+const playerSaves = new Map();     // aid -> {x,y,z,yaw,hp,hot,inv:[{id,n,mag}],at}
+let playersDirty = false;
+let playersTimer = null;
+function loadPlayerSaves() {
+  try {
+    if (fs.existsSync(PLAYERS_FILE)) {
+      const j = JSON.parse(fs.readFileSync(PLAYERS_FILE, 'utf8'));
+      if (j && typeof j === 'object') {
+        Object.keys(j).forEach((k) => playerSaves.set(String(k).slice(0, 16), j[k]));
+      }
+      console.log('[players] сохранения игроков: ' + playerSaves.size);
+    }
+  } catch (e) { console.log('[players] не прочитал players.json: ' + e.message); }
+}
+function writePlayersNow() {
+  try {
+    const o = {};
+    playerSaves.forEach((v, k) => { o[k] = v; });
+    fs.writeFileSync(PLAYERS_FILE, JSON.stringify(o));
+    playersDirty = false;
+  } catch (e) { console.log('[players] не сохранил players.json: ' + e.message); }
+}
+function markPlayersDirty() {
+  playersDirty = true;
+  if (playersTimer) return;
+  playersTimer = setTimeout(() => { playersTimer = null; writePlayersNow(); }, 1500);
+}
+setInterval(() => { if (playersDirty) writePlayersNow(); }, 20000);
+function savePlayersOnExit() {
+  try { if (playersTimer) { clearTimeout(playersTimer); playersTimer = null; } writePlayersNow(); } catch (e) {}
+}
+process.on('SIGINT', savePlayersOnExit);
+process.on('SIGTERM', savePlayersOnExit);
+process.on('exit', () => { try { savePlayersOnExit(); } catch (e) {} });
+
 function freshWorldObjs() {
   const cb = buildCheckblockLayout(OBJ_SEED);
   cb.forEach((c) => { c.gone = false; c.loot = rollLoot(c.mil); });
@@ -605,6 +742,8 @@ function freshWorldObjs() {
      свой localStorage. ✅ v0.4.14: свежий мир помнит поколение через
      world-epoch.json, поэтому потеря файла больше НЕ сбрасывает эпоху */
   return { cb, drops: new Map(), dropSeq: 0, builds: [],
+    /* ✅ v0.4.43: живые С4 и трупы — в свежем мире пусто */
+    c4: [], corpses: [], corpseSeq: 0,
     /* ✅ v0.4.14: свежий мир ВСЁ РАВНО помнит поколение (сайдкар) —
        старые бэкапы браузеров не примутся даже после потери файла */
     epoch: readEpochSidecar() };
@@ -616,7 +755,9 @@ function loadWorldObjs() {
     const j = JSON.parse(fs.readFileSync(OBJS_FILE, 'utf8'));
     // ✅ v0.4.6: v3 (старый файл без построек) читаем и апгрейдим
     // ✅ v0.4.31: v5 — новая шкала хп; v4 читаем и МИГРИРУЕМ хп
-    if (!j || (j.v !== 3 && j.v !== 4 && j.v !== 5) || !Array.isArray(j.cb)) return null;
+    // ✅ v0.4.43: v6 — + С4 и трупы (v3/v4/v5 читаются, недостающее = [])
+    // ✅ v0.4.44: v7 — + деревья и руды (v3..v7 читаются)
+    if (!j || (j.v !== 3 && j.v !== 4 && j.v !== 5 && j.v !== 6 && j.v !== 7) || !Array.isArray(j.cb)) return null;
     const drops = new Map();
     (j.drops || []).forEach((d) => { if (d && d.id) drops.set(d.id, d); });
     const builds = Array.isArray(j.builds) ? j.builds.filter((b) =>
@@ -625,9 +766,15 @@ function loadWorldObjs() {
         ((b.ty === 'f' || b.ty === 'w' || b.ty === 'c' ||
           b.ty === 'wi' || b.ty === 'dw' || b.ty === 'dr') &&
          Number.isFinite(b.gx) && Number.isFinite(b.gz) && Number.isFinite(b.top)) ||
+        /* ✅ v0.4.44 ЛЕСТНИЦА — сеточная постройка (клетка фундамента) */
+        (b.ty === 'ld' && Number.isFinite(b.gx) && Number.isFinite(b.gz) &&
+         Number.isFinite(b.top)) ||
         /* ✅ v0.4.22 СУНДУК — свободная постройка (не на сетке),
            содержимое (cont) переживает перезапуск сервера */
         (b.ty === 'ch' && Number.isFinite(b.x) && Number.isFinite(b.z) &&
+         Number.isFinite(b.y)) ||
+        /* ✅ v0.4.44 ПЕЧКА — свободная постройка, cont/on тоже живут на диске */
+        (b.ty === 'fu' && Number.isFinite(b.x) && Number.isFinite(b.z) &&
          Number.isFinite(b.y))
       )) : [];
     /* ✅ v0.4.31 МИГРАЦИЯ ХП: в файлах v4 хп хранилось в старой шкале
@@ -635,6 +782,7 @@ function loadWorldObjs() {
        под новую (фундамент 350, остальные 300): полный запас становится
        новым максимумом, повреждённое — пропорционально (133/200 → 199.5/300).
        Миграция ОДНОКРАТНАЯ: сразу после неё файл сохраняется уже как v5 */
+    /* ✅ v0.4.44: миграция хп — печка в той же шкале (300), лестница — 250 */
     if ((j.v | 0) < 5) {
       builds.forEach((b) => {
         if (b.hp === undefined) return;
@@ -648,7 +796,27 @@ function loadWorldObjs() {
         console.log('[objs] миграция хп построек: шкала 200/150 → 350/300 (v4 → v5)');
       }
     }
-    return { cb: j.cb, drops, dropSeq: j.dropSeq || 0, builds,
+    const c4 = Array.isArray(j.c4) ? j.c4.filter((c) => c && c.id &&
+      Number.isFinite(c.x) && Number.isFinite(c.z)).slice(0, 40) : [];
+    const corpses = Array.isArray(j.corpses) ? j.corpses.filter((c) => c && c.id &&
+      Number.isFinite(c.x) && Number.isFinite(c.z)).slice(0, CORPSE_MAX) : [];
+    /* ✅ v0.4.44: запасы деревьев/руд из сохранения (v7). Формат тот же,
+       что у welcome-world: trees [{w, g, fd}], ores {iron, sulfur, stone} */
+    let world = null;
+    if (j.world && Array.isArray(j.world.trees) && j.world.ores) {
+      world = {
+        trees: j.world.trees.map((tr) =>
+          ({ w: Math.max(0, Number(tr.w) || 0), g: tr.g ? 1 : 0,
+             fd: tr.fd === -1 ? -1 : 1 })),
+        ores: {
+          iron: (j.world.ores.iron || []).map((v) => Math.max(0, v | 0)),
+          sulfur: (j.world.ores.sulfur || []).map((v) => Math.max(0, v | 0)),
+          stone: (j.world.ores.stone || []).map((v) => Math.max(0, v | 0))
+        }
+      };
+    }
+    return { cb: j.cb, drops, dropSeq: j.dropSeq || 0, builds, c4, corpses, world,
+      corpseSeq: corpses.reduce((m, c) => Math.max(m, Number(String(c.id).slice(1)) || 0), 0),
       /* ✅ v0.4.14: берём МАКСИМУМ из файла и сайдкара — откат файла
          в прошлое поколение невозможен */
       epoch: Math.max(j.epoch | 0, readEpochSidecar()) };   // ✅ v0.4.13: поколение мира
@@ -656,8 +824,218 @@ function loadWorldObjs() {
 }
 
 const _loaded = loadWorldObjs();
+loadPlayerSaves();   // ✅ v0.4.46: сохранения игроков (позиция/инвентарь/слот)
 const worldObjs = _loaded || freshWorldObjs();
 if (_loaded) console.log('[objs] мир загружен из world-objs.json (лут/бочки как были)');
+/* ✅ v0.4.44: запасы деревьев/руд ПЕРЕЖИВАЮТ РЕСТАРТ — если в файле они
+   есть, initWorld() от первого клиента НЕ перезапишет их (мир детерминированный,
+   позиции одинаковы, «воскресших» руд у новичков больше не будет) */
+if (worldObjs.world) {
+  world = worldObjs.world;
+  console.log('[objs] запасы ресурсов восстановлены: деревьев ' + world.trees.length +
+    ', жил iron/sulfur/stone: ' + world.ores.iron.length + '/' +
+    world.ores.sulfur.length + '/' + world.ores.stone.length);
+}
+worldObjs.c4 = worldObjs.c4 || [];
+worldObjs.corpses = worldObjs.corpses || [];
+worldObjs.corpseSeq = worldObjs.corpseSeq | 0;
+/* ✅ v0.4.44: бочки со старым файлом (hp 2) переводим на новую шкалу 6 хп —
+   «камень 6 ударов / железо 4 / булава 1». Сломанные (brk) не трогаем */
+worldObjs.cb.forEach((c) => (c.barrels || []).forEach((b) => {
+  if (!b.brk && (b.hp === undefined || b.hp < 6)) b.hp = 6;
+}));
+/* ✅ v0.4.43: С4, загруженные с диска — таймер взрыва ПРОДОЛЖАЕТСЯ:
+   остаток фьюза считается от времени постановки (at) */
+worldObjs.c4.forEach(scheduleC4Boom);
+if (worldObjs.c4.length) console.log('[c4] с диска загружено С4: ' + worldObjs.c4.length +
+  ' — таймеры взрыва продолжены');
+
+/* ============================================================
+   ✅ v0.4.43: С4 — АВТОРИТЕТ СЕРВЕРА. Каждая поставленная С4 живёт в
+   worldObjs.c4 {id, x, y, z, n, by, at}: таймер ВЗРЫВА держит СЕРВЕР
+   (setTimeout на остаток фьюза), поэтому:
+   • бросавший вышел из игры — бомба ВСЁ РАВНО взорвётся;
+   • новый игрок, зашедший после постановки, получает блок в снапшоте
+     (objsSnapshot.c4 с ОСТАТКОМ фьюза в мс) — видит его и слышит тыки
+     с правильной фазы;
+   • перезапуск сервера не теряет бомбы (world-objs.json v6).
+   Клиентский 'c4boom' остаётся как failsafe и для СТАРЫХ клиентов:
+   если от клиента пришёл взрыв, а у сервера есть этот блок (≤2.5 м) —
+   сервер гасит свой таймер и взрывает ЕДИНОЖДЫ. Урон (постройки/игроки)
+   всегда считает c4BoomDamage — ОДИН раз на взрыв.
+   ============================================================ */
+let c4Seq = (worldObjs.c4 || []).reduce((m, c) =>
+  Math.max(m, Number(String(c.id).slice(1)) || 0), 0);
+
+function scheduleC4Boom(c) {
+  if (c.to) { clearTimeout(c.to); c.to = null; }
+  const rest = Math.max(400, C4_FUSE_MS - (Date.now() - (c.at || Date.now())));
+  c.to = setTimeout(() => c4SrvExplode(c), rest);
+}
+
+function c4SrvExplode(c) {
+  const i = worldObjs.c4.indexOf(c);
+  if (i >= 0) worldObjs.c4.splice(i, 1);
+  c.to = null;
+  markDirty();
+  /* взрыв уходит ВСЕМ (включая бросавшего — он больше НЕ взрывает свой
+     блок сам, а ждёт сервер): id позволяет клиенту найти именно этот блок */
+  broadcast({ t: 'c4boom', id: c.id, x: c.x, y: c.y, z: c.z }, null);
+  c4BoomDamage(c.x, c.y, c.z, c.by);
+}
+
+/** урон взрыва С4: постройки в 7 м −400 хп, игроки в 6.5 м −250.
+    Вызывается ОДИН раз на взрыв (сервер — единственный источник правды) */
+function c4BoomDamage(bx, by, bz, byId) {
+  const hitList = [];
+  for (const b of worldObjs.builds) {
+    const wx = (b.ty === 'ch') ? b.x : b.gx * CELL;
+    const wz = (b.ty === 'ch') ? b.z : b.gz * CELL;
+    const wy = (b.ty === 'ch') ? (b.y || 0) : (b.top || 0);
+    const dh = dist2(wx, wz, bx, bz);
+    if (dh > 49) continue;                                  // дальше 7 м
+    const dy = Math.abs(wy - by);
+    if (dy > 4.5) continue;
+    hitList.push(b);
+  }
+  const destroyed = [];
+  for (const b of hitList) {
+    b.hp = (b.hp === undefined ? maxBuildHp(b.ty) : b.hp) - 400;
+    if (b.hp <= 0) {
+      worldObjs.builds.splice(worldObjs.builds.indexOf(b), 1);
+      removeBuildIndexes(b);
+      broadcast({ t: 'brem', id: b.id, by: byId }, null);
+      /* ✅ v0.4.43: обломки — разрушенная деталь распадается на 5×5 кусков
+         у ВСЕХ игроков (сд определяет одинаковый разлёт у всех) */
+      destroyed.push({
+        x: (b.ty === 'ch') ? b.x : b.gx * CELL,
+        z: (b.ty === 'ch') ? b.z : b.gz * CELL,
+        y: (b.ty === 'ch') ? (b.y || 0) : (b.top || 0),
+        ty: b.ty, sd: Math.floor(Math.random() * 1000000)
+      });
+      console.log('[c4] взрыв снёс постройку ' + b.id + ' (' + b.ty + ')');
+    } else {
+      broadcast({ t: 'bhp', id: b.id, hp: b.hp, max: maxBuildHp(b.ty) }, null);
+    }
+  }
+  if (hitList.length) {
+    writeWorldNow();   // снос — сразу на диск
+    console.log('[c4] взрыв (' + bx.toFixed(1) + ', ' + bz.toFixed(1) +
+      '): построек задето ' + hitList.length + ', снесено ' + destroyed.length);
+  }
+  if (destroyed.length) {
+    broadcast({ t: 'debris', list: destroyed.slice(0, 8) }, null);   // максимум 8 деталей на взрыв
+  }
+  /* ИГРОКИ в радиусе 6.5 м — 250 урона (насмерть). ХП — авторитет сервера;
+     god, как всегда, неуязвим */
+  players.forEach((t) => {
+    if (t.dead || t.god || !t.state) return;
+    const d2c4 = dist2(t.state.x, t.state.z, bx, bz);
+    if (d2c4 > 6.5 * 6.5) return;
+    const dy2 = Math.abs((t.state.y || 0) - by);
+    if (dy2 > 5) return;
+    t.hp = Math.max(0, (t.hp === undefined ? 100 : t.hp) - 250);
+    broadcast({ t: 'phit', tid: t.id, hp: t.hp, by: byId,
+      kind: 'shot', w: 'c4', hs: 0,
+      dist: Math.round(Math.sqrt(d2c4)) }, null);
+    if (t.hp <= 0) {
+      t.dead = true;
+      broadcast({ t: 'pdeath', tid: t.id, by: byId, w: 'c4', hs: 0,
+        dist: Math.round(Math.sqrt(d2c4)) }, null);
+      console.log('[c4] ' + t.name + ' убит взрывом С4');
+    }
+  });
+}
+
+/* ✅ v0.4.43: ТРУПЫ-ЛУТБОКСЫ. worldObjs.corpses {id 'rNN', x, y, z, n, c,
+   inv {item: count}, at, lt}. Создаёт СЕРВЕР по сообщению 'corpse' от
+   умирающего клиента (у сервера нет копии инвентаря — инвентарь живёт у
+   клиента). Лут по 'corpseOpen'/'corpseTake' — как ящики чекблока.
+   Опустел — убран; ✅ v0.4.50: не залутан 10 минут — убран, залутанный —
+   20 минут страховки; переживает перезапуск сервера */
+function sanitizeInv(inv) {
+  const out = {};
+  if (!inv || typeof inv !== 'object') return out;
+  let n = 0;
+  for (const k of Object.keys(inv)) {
+    if (n >= 24) break;
+    const v = Math.floor(Number(inv[k]) || 0);
+    if (!/^[a-zA-Z0-9_]{1,16}$/.test(k) || v <= 0) continue;
+    out[k] = Math.min(999999, v);
+    n++;
+  }
+  return out;
+}
+
+/* трупы протухают: раз в минуту чистим. ✅ v0.4.50: НЕЗАЛУТАННЫЙ —
+   10 минут (было 20 для всех), ЗАЛУТАННЫЙ (lt=1) — 20 минут страховки;
+   опустевший убирается сразу в 'corpseTake' */
+setInterval(() => {
+  let removed = 0;
+  for (let i = worldObjs.corpses.length - 1; i >= 0; i--) {
+    const c = worldObjs.corpses[i];
+    const ttl = c.lt ? CORPSE_TTL_LOOTED_MS : CORPSE_TTL_MS;
+    if (Date.now() - (c.at || 0) <= ttl) continue;
+    worldObjs.corpses.splice(i, 1);
+    removed++;
+    broadcast({ t: 'corpseGone', id: c.id }, null);
+  }
+  if (removed) { markDirty(); console.log('[corpse] TTL: убрано трупов ' + removed); }
+}, 60000);
+
+/* ============================================================
+   ✅ v0.4.44 ТИК ПЕЧЕК (раз в секунду, пока никто не смотрит —
+   сервер плавит сам): каждая ВКЛЮЧЁННАЯ печка расходует дерево
+   (1 шт за 8 с), плавит СЕРУ (1 шт за 4 с → sulfurM) и ЖЕЛЕЗО
+   (1 шт за 6 с → metal). Изменилось — рассылаем 'fust' всем и
+   пишем на диск (debounce). Кончилось дерево — печка гаснет сама
+   ============================================================ */
+const FUEL_BURN_SEC = 8;      // секунд горения одного дерева
+const SMELT_SEC = { sulfur: 4, iron: 6 };   // секунд на 1 предмет
+const SMELT_OUT = { sulfur: 'sulfurM', iron: 'metal' };
+setInterval(() => {
+  const nowS = Date.now();
+  worldObjs.builds.forEach((fu) => {
+    if (fu.ty !== 'fu' || !fu.on) return;
+    if (!fu.cont) fu.cont = {};
+    if (fu.lastTick === undefined) fu.lastTick = nowS;
+    /* догоняем пропущенное время, но не больше 10 с за тик (лаг/сон сервера) */
+    let dtS = Math.min(10, Math.max(0, (nowS - fu.lastTick) / 1000));
+    fu.lastTick = nowS;
+    let changed = false;
+    let guard = 0;
+    while (dtS > 0.0001 && guard++ < 100) {
+      const step = Math.min(dtS, 1);
+      dtS -= step;
+      if ((fu.cont.wood || 0) <= 0) { fu.on = 0; changed = true; break; }  // топливо кончилось
+      fu.fuelAcc = (fu.fuelAcc || 0) + step;
+      if (fu.fuelAcc >= FUEL_BURN_SEC) {
+        fu.fuelAcc -= FUEL_BURN_SEC;
+        fu.cont.wood = (fu.cont.wood || 0) - 1;
+        if (fu.cont.wood <= 0) { delete fu.cont.wood; }
+        changed = true;
+      }
+      /* плавка идёт, пока есть топливо: сера и железо ПАРАЛЛЕЛЬНО */
+      ['sulfur', 'iron'].forEach((ore) => {
+        if ((fu.cont[ore] || 0) <= 0) return;
+        fu.progAcc = fu.progAcc || {};
+        fu.progAcc[ore] = (fu.progAcc[ore] || 0) + step;
+        if (fu.progAcc[ore] >= SMELT_SEC[ore]) {
+          fu.progAcc[ore] -= SMELT_SEC[ore];
+          fu.cont[ore] = (fu.cont[ore] || 0) - 1;
+          if (fu.cont[ore] <= 0) delete fu.cont[ore];
+          const outItem = SMELT_OUT[ore];
+          fu.cont[outItem] = (fu.cont[outItem] || 0) + 1;
+          changed = true;
+        }
+      });
+    }
+    if (changed) {
+      broadcast({ t: 'fust', id: fu.id, cont: fu.cont, on: fu.on }, null);
+      markDirty();
+    }
+  });
+}, 1000);
 
 /* после перезапуска сервера продолжаются таймеры респавна
    для всего, что было сломано/опустошено до него */
@@ -665,8 +1043,8 @@ function scheduleBarrelRespawn(b, ms) {
   setTimeout(() => {
     if (!b.brk) return;
     b.brk = false;
-    b.hp = 2;
-    broadcast({ t: 'brespawn', id: b.id, hp: 2 }, null);
+    b.hp = 6;   /* ✅ v0.4.44: полные 6 хп (см. таблицу ударов в case 'bhit') */
+    broadcast({ t: 'brespawn', id: b.id, hp: 6 }, null);
     markDirty();
     console.log('[objs] бочка ' + b.id + ' заспавнилась заново (таймер сервера)');
   }, ms);
@@ -676,10 +1054,14 @@ function scheduleCrateRespawn(c, ms) {
     if (!c.gone) return;
     c.gone = false;
     c.taken = false;
+    /* ✅ v0.4.44: тип ящика ПЕРЕБРАСЫВАЕТСЯ при каждом респавне — сервер сам
+       решает, деревянный или военный встанет на этот чекблок теперь */
+    c.mil = Math.random() < 0.3 ? 1 : 0;
     c.loot = rollLoot(c.mil);
     broadcast({ t: 'cbrespawn', id: c.id, loot: c.loot, mil: c.mil }, null);
     markDirty();
-    console.log('[objs] ящик чекблока ' + c.id + ' заспавнился с новым лутом');
+    console.log('[objs] ящик чекблока ' + c.id + ' заспавнился (' +
+      (c.mil ? 'ВОЕННЫЙ' : 'деревянный') + ') с новым лутом');
   }, ms);
 }
 worldObjs.cb.forEach((c) => {
@@ -692,46 +1074,56 @@ const barrelIndex = new Map();
 worldObjs.cb.forEach((c) => c.barrels.forEach((b) => barrelIndex.set(b.id, { cb: c, bar: b })));
 
 /* ============================================================
-   ✅ v0.4.6 СТРОИТЕЛЬСТВО (как в Rust: план строителя)
-   - фундамент: клетка сетки 3×3 м, ставится на 4 ноги, следует
-     рельефу (высоту считает КЛИЕНТ — рельеф у всех одинаковый,
-     детерминированный noise); рядом с фундаментом МАГНИТИТСЯ
-     по его высоте (клиент шлёт готовую высоту соседа)
-   - стена: ставится на ОДИН из 4 КРАЁВ фундамента; сервер
-     проверяет, что фундамент существует, и берёт высоту ИЗ него
-   - потолок: накрывает клетку, у которой ЕСТЬ СТЕНА; высота —
-     тоже из фундамента сервера
-   Канонизация краёв (важно для дедупликации): у клетки 4 края,
-   но южный край = северный край клетки сверху, восточный =
-   западный клетки правее. Поэтому каждая стена хранится один раз:
-   ключ (gx, gz, e), e ∈ {0: северный, 3: западный}. */
+   ✅ v0.4.44: ЭТАЖНОСТЬ. lv — уровень детали: 0 (земля/1 этаж,
+   по умолчанию, старые записи без lv) или 1 (ВТОРОЙ ЭТАЖ).
+   • стена 2 этажа (lv1) стоит на КРАЕ ПОТОЛКА 1 этажа (его верх —
+     это пол 2 этажа); её база = потолок(верх) + толщина плиты
+   • потолок 2 этажа (lv1) требует клетку с потолком lv0 И стеной lv1
+   • ЛЕСТНИЦА (ty 'ld', 250 хп) ставится в клетку фундамента, где
+     НЕТ потолка (проём на 2 этаж) — по ней ЗАЛЕЗАЮТ вверх (W)
+   • ПЕЧКА (ty 'fu') — свободная постройка как сундук (fuplace),
+     состояние (вкл/выкл, топливо/вход/выход) живёт на сервере
+   Ключи индексов с уровнем: lv0 — 'gx,gz,e' (как раньше, старые
+   миры совместимы), lv1 — 'gx,gz,e,1'. Клетка: {f, c (потолок lv0),
+   c1 (потолок 2 этажа), ld (лестница)}
+   ============================================================ */
 const CELL = 3;               // размер клетки сетки, м
 const WALL_H = 3;             // высота стены, м
+const CEIL_T = 0.24;          // толщина плиты потолка (как в building.js)
 function canonicalEdge(gx, gz, e) {
   if (e === 2) return { gx: gx, gz: gz + 1, e: 0 };   // южный край клетки → северный край клетки (gz+1)
   if (e === 1) return { gx: gx + 1, gz: gz, e: 3 };   // восточный край клетки → западный край клетки (gx+1)
   return { gx: gx, gz: gz, e: (e === 3 ? 3 : 0) };
 }
-/* индексы построек: клетка -> запись (фундамент/потолок), край -> стена/
-   окно/проём/дверь (✅ v0.4.10) */
-const buildCell = new Map();   // 'gx,gz' -> {f: rec, c: rec}
-const buildEdge = new Map();   // 'gx,gz,e' -> rec краевой детали
+/* ✅ v0.4.44: ключ края с уровнем (lv0 — старый формат, совместимость) */
+function edgeKey(gx, gz, e, lv) {
+  return (lv === 1) ? (gx + ',' + gz + ',' + e + ',1')
+                    : (gx + ',' + gz + ',' + e);
+}
+/* индексы построек: клетка -> записи (фундамент/потолки/лестница), край -> стена */
+const buildCell = new Map();   // 'gx,gz' -> {f, c, c1, ld}
+const buildEdge = new Map();   // edgeKey(gx,gz,e,lv) -> rec краевой детали
 worldObjs.builds.forEach((b) => {
   /* ✅ v0.4.28: у старых построек (мир до обновления) hp нет — присваиваем
      полный запас по типу, чтобы ломание работало сразу после апдейта.
      ✅ v0.4.31: и кламп — хп не может быть выше нового максимума */
   if (b.hp === undefined) b.hp = maxBuildHp(b.ty);
   else if (b.hp > maxBuildHp(b.ty)) b.hp = maxBuildHp(b.ty);
-  /* ✅ v0.4.22: сундук — свободная постройка, в сеточные индексы не входит */
-  if (b.ty === 'ch') return;
+  /* ✅ v0.4.22: сундук; ✅ v0.4.44: печка — свободные постройки,
+     в сеточные индексы не входят */
+  if (b.ty === 'ch' || b.ty === 'fu') return;
   if (b.ty === 'w' || b.ty === 'wi' || b.ty === 'dw' || b.ty === 'dr') {
     const ce = canonicalEdge(b.gx, b.gz, b.e);
     b.gx = ce.gx; b.gz = ce.gz; b.e = ce.e;
-    buildEdge.set(b.gx + ',' + b.gz + ',' + b.e, b);
+    if (b.lv !== 1) b.lv = 0;
+    buildEdge.set(edgeKey(b.gx, b.gz, b.e, b.lv), b);
   } else {
     const key = b.gx + ',' + b.gz;
     if (!buildCell.has(key)) buildCell.set(key, {});
-    buildCell.get(key)[b.ty === 'f' ? 'f' : 'c'] = b;
+    const cell = buildCell.get(key);
+    if (b.ty === 'f') cell.f = b;
+    else if (b.ty === 'c') { if (b.lv === 1) { b.lv = 0; } cell.c = b; }  // старый потолок — lv0
+    else if (b.ty === 'ld') cell.ld = b;
   }
 });
 let buildSeq = worldObjs.builds.reduce((m, b) => Math.max(m, Number(String(b.id).slice(1)) || 0), 0);
@@ -741,16 +1133,19 @@ let buildSeq = worldObjs.builds.reduce((m, b) => Math.max(m, Number(String(b.id)
    перезапуска сервера: на сломанный фундамент можно было поставить стену,
    сломанный потолок занимал клетку. Теперь клетка/край освобождаются СРАЗУ */
 function removeBuildIndexes(b) {
-  if (!b || b.ty === 'ch') return;
+  if (!b || b.ty === 'ch' || b.ty === 'fu') return;   /* ✅ v0.4.44: печка — свободная */
   if (b.ty === 'w' || b.ty === 'wi' || b.ty === 'dw' || b.ty === 'dr') {
     const ce = canonicalEdge(b.gx, b.gz, b.e);
-    const k = ce.gx + ',' + ce.gz + ',' + ce.e;
+    const k = edgeKey(ce.gx, ce.gz, ce.e, b.lv === 1 ? 1 : 0);
     if (buildEdge.get(k) === b) buildEdge.delete(k);
   } else {
     const cell = buildCell.get(b.gx + ',' + b.gz);
     if (cell) {
       if (b.ty === 'f' && cell.f === b) cell.f = null;
-      if (b.ty === 'c' && cell.c === b) cell.c = null;
+      if (b.ty === 'c' && (b.lv === 1 ? cell.c1 : cell.c) === b) {
+        if (b.lv === 1) cell.c1 = null; else cell.c = null;
+      }
+      if (b.ty === 'ld' && cell.ld === b) cell.ld = null;   /* ✅ v0.4.44: лестница */
     }
   }
 }
@@ -758,6 +1153,13 @@ function removeBuildIndexes(b) {
 function hasWallOnCell(gx, gz) {
   return !!(buildEdge.get(gx + ',' + gz + ',0') || buildEdge.get(gx + ',' + gz + ',3') ||
             buildEdge.get(gx + ',' + (gz + 1) + ',0') || buildEdge.get((gx + 1) + ',' + gz + ',3'));
+}
+
+  /* ✅ v0.4.44: есть ли на клетке СТЕНА ВТОРОГО ЭТАЖА (lv1) — потолок 2 этажа
+     опирается на стены 2 этажа или на соседний потолок 2 этажа */
+function hasWallLv1(gx, gz) {
+  return !!(buildEdge.get(edgeKey(gx, gz, 0, 1)) || buildEdge.get(edgeKey(gx, gz, 3, 1)) ||
+            buildEdge.get(edgeKey(gx, gz + 1, 0, 1)) || buildEdge.get(edgeKey(gx + 1, gz, 3, 1)));
 }
 
 /* ✅ v0.4.10: публичная копия постройки — БЕЗ кода замка и списка
@@ -781,15 +1183,23 @@ function hasWallOnCell(gx, gz) {
    ============================================================ */
 function maxBuildHp(ty) {
   if (ty === 'ch') return 25;
+  /* ✅ v0.4.44: ЛЕСТНИЦА — 250 хп (просьба игрока), печка — как постройки */
+  if (ty === 'ld') return 250;
   return (ty === 'f') ? 350 : 300;   // фундамент 350, остальные постройки 300
 }
 const BUILD_DMG = { axe: 0.2, pickaxe: 0.25, ironPickaxe: 0.5, ironAxe: 1 / 3,
-  mace: 2 };   // ✅ v0.4.40 булава: 2 хп за удар по постройке (просьба игрока)
+  /* ✅ v0.4.44 булава ЛОМАЕТ ПОСТРОЙКИ (просьба игрока «почему булава не
+     может ломать постройки и бочки»): 30 хп за удар — стена/потолок (300)
+     с 10 ударов, сундук (25) с одного. Бочка — с одного удара (6 хп) */
+  mace: 30 };
 
 function publicBuild(b) {
   const out = { id: b.id, ty: b.ty, gx: b.gx, gz: b.gz, top: b.top,
     by: b.by, at: b.at };
   if (b.e !== undefined) out.e = b.e;
+  /* ✅ v0.4.44: уровень детали (2 этаж) — едет только когда 1,
+     старые записи/клиенты совместимы (нет lv = этаж 0) */
+  if (b.lv === 1) out.lv = 1;
   /* ✅ v0.4.28 ХП ПОСТРОЙКИ: едет во всех снапшотах/bnew, чтобы новые
      игроки и перезашедшие знали остаток. Если записи ещё нет (мир старый) —
      присваиваем полный запас по типу — он же уйдёт в persistence */
@@ -808,6 +1218,16 @@ function publicBuild(b) {
     if (b.rot !== undefined) out.rot = b.rot;
     out.own = b.own || '';
     out.cont = b.cont || {};
+  }
+  /* ✅ v0.4.44 ПЕЧКА: координаты/поворот + состояние (вкл/выкл, топливо,
+     вход сера/железо, выход плавленая сера/метал фрагменты) — общее,
+     живёт на сервере, переживает рестарт */
+  if (b.ty === 'fu') {
+    out.x = b.x; out.z = b.z; out.y = b.y;
+    if (b.rot !== undefined) out.rot = b.rot;
+    out.own = b.own || '';
+    out.cont = b.cont || {};
+    out.on = b.on ? 1 : 0;
   }
   return out;
 }
@@ -877,6 +1297,65 @@ function applyPlace(p, msg) {
   }
 
   if (ty === 'w' || ty === 'wi' || ty === 'dw') {
+    /* ============================================================
+       ✅ v0.4.44 СТЕНА НА СТЕНУ (2 ЭТАЖ): lv:1 от клиента — стена
+       второго этажа. Якорь — клетка с ПОТОЛКОМ 1 этажа (его верх —
+       пол 2 этажа), база стены = верх потолка. Край занят — нельзя.
+       ✅ v0.4.45 ОКНО НА 2 ЭТАЖ (просьба игрока «пусть окно можно
+       ставить и на потолок»): окно 'wi' тоже ставится уровнем lv1 —
+       на свободный край потолка и ВМЕТО стены 2 этажа (замена)
+       ============================================================ */
+    const lv1 = (msg.lv === 1) && (ty === 'w' || ty === 'wi');
+    if (lv1) {
+      function cellHasC0(cx, cz) {
+        const c = buildCell.get(cx + ',' + cz);
+        return !!(c && c.c);
+      }
+      let an1 = null;
+      if (cellHasC0(gx, gz)) an1 = { gx: gx, gz: gz };
+      else if (ptx !== null && cellHasC0(ptx, ptz)) an1 = { gx: ptx, gz: ptz };
+      else if (ptx !== null) {
+        const nb1 = [[ptx + 1, ptz], [ptx - 1, ptz], [ptx, ptz + 1], [ptx, ptz - 1]];
+        for (let i = 0; i < nb1.length; i++) {
+          if (cellHasC0(nb1[i][0], nb1[i][1])) { an1 = { gx: nb1[i][0], gz: nb1[i][1] }; break; }
+        }
+      }
+      if (!an1) return 'noceil';                       // потолка 1 этажа нет нигде рядом
+      gx = an1.gx; gz = an1.gz;
+      const cell1 = buildCell.get(gx + ',' + gz);
+      let e1;
+      if (hasPt && (Math.abs(px - gx * CELL) >= 0.05 || Math.abs(pz - gz * CELL) >= 0.05)) {
+        const dx1 = px - gx * CELL, dz1 = pz - gz * CELL;
+        e1 = Math.abs(dx1) > Math.abs(dz1) ? (dx1 > 0 ? 1 : 3) : (dz1 > 0 ? 2 : 0);
+      } else {
+        e1 = Math.max(0, Math.min(3, Number(msg.e) | 0));
+      }
+      const ce1 = canonicalEdge(gx, gz, e1);
+      const ekey1 = edgeKey(ce1.gx, ce1.gz, ce1.e, 1);
+      /* ✅ v0.4.45: окно 2 этажа встаёт ВМЕТО стены 2 этажа (замена,
+         как на 1 этаже); на крае с окном/дверью/проёмом — нельзя,
+         стена на крае с чем-то — тоже нельзя */
+      const exist1 = buildEdge.get(ekey1);
+      if (exist1 && (ty === 'w' || exist1.ty !== 'w')) return 'busy';
+      const rec1 = { id: 'b' + (++buildSeq), ty: ty,
+        gx: ce1.gx, gz: ce1.gz, e: ce1.e, lv: 1,
+        /* в клетке сервера потолок — СЫРАЯ запись (rec), а не entry */
+        top: Math.round((cell1.c.top + CEIL_T) * 100) / 100,
+        by: p.name, at: now };
+      if (exist1) {
+        const oi1 = worldObjs.builds.indexOf(exist1);
+        if (oi1 >= 0) worldObjs.builds.splice(oi1, 1);   /* замена */
+      }
+      worldObjs.builds.push(rec1);
+      buildEdge.set(ekey1, rec1);
+      markDirty();
+      console.log('[build] ' + p.name + ' поставил ' +
+        (ty === 'wi' ? 'ОКНО' : 'СТЕНУ') + ' 2 ЭТАЖА (' + rec1.gx + ',' +
+        rec1.gz + ', край ' + rec1.e + ') на потолок клетки (' + gx + ',' + gz + ')' +
+        (exist1 ? ' — вместо ' + exist1.id : ''));
+      return exist1 ? { b: publicBuild(rec1), old: exist1.id }
+                    : { b: publicBuild(rec1) };
+    }
     /* клетка-якорь: та, где стоит фундамент. v0.4.12: берём её ПО ТОЧКЕ
        ПРИЦЕЛА (сервер главнее), координаты клиента — только резерв */
     const an = anchorFor();
@@ -900,9 +1379,10 @@ function applyPlace(p, msg) {
       e = Math.max(0, Math.min(3, Number(msg.e) | 0));
     }
     // Дедупликация — по ФИЗИЧЕСКОМУ краю: канонический ключ одинаков
-    // для «юг клетки A» и «север клетки B», постройка не задвоится
+    // для «юг клетки A» и «север клетки B», постройка не задвоится.
+    // ✅ v0.4.44: ключ С УРОВНЕМ (этаж 0/1)
     const ce = canonicalEdge(gx, gz, e);
-    const ekey = ce.gx + ',' + ce.gz + ',' + ce.e;
+    const ekey = edgeKey(ce.gx, ce.gz, ce.e, 0);
     const exist = buildEdge.get(ekey);
     if (ty === 'w') {
       if (exist) return 'busy';                       // край занят
@@ -972,15 +1452,81 @@ function applyPlace(p, msg) {
   }
 
   if (ty === 'c') {
-    /* потолок — над клеткой с фундаментом И стеной. v0.4.12: клетку берём
-       по точке прицела, клиентские координаты — резерв */
+    /* ============================================================
+       ✅ v0.4.44 ПОТОЛОК НА ПОТОЛОК (2 этаж): lv:1 — потолок над клеткой,
+       у которой ЕСТЬ потолок 1 этажа (пол 2 этажа) + стена 2 этажа.
+       ============================================================ */
+    const lv1 = msg.lv === 1;
+    if (lv1) {
+      function cellHasC0b(cx, cz) {
+        const cc = buildCell.get(cx + ',' + cz);
+        return !!(cc && cc.c);
+      }
+      let an2 = null;
+      if (cellHasC0b(gx, gz)) an2 = { gx: gx, gz: gz };
+      else if (ptx !== null && cellHasC0b(ptx, ptz)) an2 = { gx: ptx, gz: ptz };
+      else if (ptx !== null) {
+        const nb2 = [[ptx + 1, ptz], [ptx - 1, ptz], [ptx, ptz + 1], [ptx, ptz - 1]];
+        for (let i = 0; i < nb2.length; i++) {
+          if (cellHasC0b(nb2[i][0], nb2[i][1])) { an2 = { gx: nb2[i][0], gz: nb2[i][1] }; break; }
+        }
+      }
+      if (!an2) return 'noceil';
+      gx = an2.gx; gz = an2.gz;
+      const cell2 = buildCell.get(gx + ',' + gz);
+      if (cell2.c1) return 'busy';                    // потолок 2 этажа уже стоит
+      if (!hasWallLv1(gx, gz)) return 'nowall';       // нужна стена 2 этажа
+      const rec2 = { id: 'b' + (++buildSeq), ty: 'c', gx, gz, lv: 1,
+        top: Math.round((cell2.c.top + CEIL_T + WALL_H) * 100) / 100,
+        by: p.name, at: now };
+      worldObjs.builds.push(rec2);
+      cell2.c1 = rec2;
+      markDirty();
+      console.log('[build] ' + p.name + ' поставил ПОТОЛОК 2 ЭТАЖА (' + gx + ',' + gz +
+        ') на высоте ' + rec2.top.toFixed(1));
+      return { b: publicBuild(rec2) };
+    }
+    /* потолок 1 этажа — над клеткой с фундаментом И стеной.
+       v0.4.12: клетку берём по точке прицела, клиентские координаты — резерв.
+       ✅ v0.4.44 ПОТОЛОК НА ПОТОЛОК БЕЗ СТЕНЫ (просьба игрока: «потолок
+       прилипает не только на стену или окно, но и на ближайший потолок,
+       1 потолок может удержать 2 потолка без стены»): если на клетке НЕТ
+       стены, но рядом есть потолок 1 этажа — ставим С ОТЪЕМКИМ ОГРАНИЧЕНИЕМ:
+       один потолок-опора удерживает максимум ДВА соседних потолка без стен
+       (третий уже «не выдержит» — надо ставить стену) */
     const an = anchorFor();
     if (!an) return 'nofound';
     gx = an.gx; gz = an.gz;
     const key = gx + ',' + gz;
     const cell = buildCell.get(key);
     if (cell.c) return 'busy';
-    if (!hasWallOnCell(gx, gz)) return 'nowall';      // потолок требует СТЕНУ
+    /* ✅ v0.4.45: в клетке ЛЕСТНИЦА — потолок нельзя (перекроет проход
+       на 2 этаж; клиент показывает призраку ту же причину 'ld') */
+    if (cell.ld) return 'ld';
+    if (!hasWallOnCell(gx, gz)) {
+      /* ищем соседний потолок-опору и считаем, сколько он уже держит */
+      const nbC = [[gx + 1, gz], [gx - 1, gz], [gx, gz + 1], [gx, gz - 1]];
+      let support = null;
+      for (let i = 0; i < nbC.length; i++) {
+        const nc = buildCell.get(nbC[i][0] + ',' + nbC[i][1]);
+        if (nc && nc.c) { support = nc; break; }
+      }
+      if (!support) return 'nowall';                  // ни стены, ни соседнего потолка
+      /* сколько у опоры уже висит потолков БЕЗ СТЕН (включая новые клетки) */
+      let hanging = 0;
+      const snb = [[Math.round(support.c.gx) + 1, support.c.gz],
+                   [support.c.gx - 1, support.c.gz],
+                   [support.c.gx, support.c.gz + 1],
+                   [support.c.gx, support.c.gz - 1]];
+      for (let j = 0; j < snb.length; j++) {
+        const sc = buildCell.get(snb[j][0] + ',' + snb[j][1]);
+        if (sc && sc.c && !hasWallOnCell(snb[j][0], snb[j][1])) hanging++;
+      }
+      /* hanging считает ПОТОЛКИ-соседи без стен. Новая клетка — ещё один;
+         у самой опоры стены может не быть (она сама держится на стене —
+         тогда она не считается). Лимит: 2 висящих потолка на опору */
+      if (hanging >= 2) return 'ceilmax';             // опора уже держит 2 потолка
+    }
     const rec = { id: 'b' + (++buildSeq), ty: 'c', gx, gz,
       top: Math.round((cell.f.top + WALL_H) * 100) / 100,   // низ потолка = верх фундамента + стена
       by: p.name, at: now };
@@ -990,6 +1536,31 @@ function applyPlace(p, msg) {
     console.log('[build] ' + p.name + ' поставил ПОТОЛОК (' + gx + ',' + gz +
       ') на высоте ' + rec.top.toFixed(1));
     return { b: publicBuild(rec) };
+  }
+
+  /* ============================================================
+     ✅ v0.4.44 ЛЕСТНИЦА НА 2 ЭТАЖ (ty 'ld', 250 хп): клетка фундамента
+     БЕЗ потолка (проём в перекрытии). По лестнице ЗАЛЕЗАЮТ вверх
+     (W/Space в зоне лестницы — см. controls.js setLadder). Ставится
+     где угодно в клетке, клиент показывает призрак по центру
+     ============================================================ */
+  if (ty === 'ld') {
+    const anL = anchorFor();
+    if (!anL) return 'nofound';                       // фундамента нет
+    gx = anL.gx; gz = anL.gz;
+    const keyL = gx + ',' + gz;
+    const cellL = buildCell.get(keyL);
+    if (cellL.ld) return 'busy';                      // лестница уже стоит
+    if (cellL.c) return 'ceil';                       // в клетке потолок — лестнице некуда
+    const recL = { id: 'b' + (++buildSeq), ty: 'ld', gx, gz,
+      top: cellL.f.top,                               // низ лестницы — палуба фундамента
+      by: p.name, at: now };
+    worldObjs.builds.push(recL);
+    cellL.ld = recL;
+    markDirty();
+    console.log('[build] ' + p.name + ' поставил ЛЕСТНИЦУ (' + gx + ',' + gz +
+      ') на фундамент ' + keyL);
+    return { b: publicBuild(recL) };
   }
 
   return 'bad';
@@ -1014,6 +1585,18 @@ function objsSnapshot(p) {
     })),
     dr: Array.from(worldObjs.drops.values()).map((d) =>
       ({ id: d.id, kind: d.kind, x: d.x, z: d.z, amt: d.amt })),
+/* ✅ v0.4.43: ЖИВЫЕ С4 — новый игрок видит бомбы, поставленные до его
+   входа, и знает, когда они взорвутся (ms — остаток фьюза в мс,
+   клиент выставляет фазу тыков по нему). Взрыв решает СЕРВЕР */
+    c4: worldObjs.c4.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z,
+      n: c.n || [0, 1, 0], ms: Math.max(0, C4_FUSE_MS - (Date.now() - (c.at || Date.now()))) })),
+/* ✅ v0.4.43: ТРУПЫ-ЛУТБОКСЫ — видны новым игрокам, переживают
+   перезапуск сервера (inv: {item: count} — весь инвентарь погибшего).
+   ✅ v0.4.50: age — возраст трупа в мс (для клиентского TTL), lt —
+   «с трупа уже что-то лутали» (TTL 20 мин вместо 10) */
+    corpses: worldObjs.corpses.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z,
+      n: c.n, c: c.c, inv: c.inv, lt: c.lt ? 1 : 0,
+      age: Math.max(0, Date.now() - (c.at || Date.now())) })),
 /* ✅ v0.4.10: постройки в снапшоте — новый игрок сразу видит дом
    (даже если на сервере сейчас 0 игроков: builds живёт в памяти сервера).
    publicBuild: код замка не уходит клиенту; dunl — какие замки этот
@@ -1171,8 +1754,8 @@ function adminOp(p, msg) {
         nc++;
         c.barrels.forEach((b) => {
           if (!b.brk) return;
-          b.brk = false; b.hp = 2;
-          broadcast({ t: 'brespawn', id: b.id, hp: 2 }, null);
+          b.brk = false; b.hp = 6;   /* ✅ v0.4.44: 6 хп */
+          broadcast({ t: 'brespawn', id: b.id, hp: 6 }, null);
           nb++;
         });
       });
@@ -1208,9 +1791,12 @@ function adminOp(p, msg) {
   }
 }
 
-/** первый клиент задаёт мир (мир детерминированный — seed общий у всех) */
+/** первый клиент задаёт мир (мир детерминированный — seed общий у всех).
+    ✅ v0.4.44: НЕ перезаписывает восстановленные из world-objs.json запасы
+    (см. loadWorldObjs): срубленное/раскопанное не воскресает после рестарта */
 function initWorld(meta) {
   if (!meta || !meta.trees || !meta.ores) return false;
+  if (world) return true;   // мир уже есть (с диска или от другого клиента)
   world = {
     trees: meta.trees.map(function (tr) {
       return { w: Math.max(0, tr.w | 0), g: 0, fd: 1 };
@@ -1237,6 +1823,7 @@ function applyHit(p, msg) {
     const y = Math.max(1, msg.y | 0);
     const l = Math.max(0, rec.w - y);
     rec.w = l;
+    markDirty();   /* ✅ v0.4.44: запас дерева пишется на диск (debounce) */
     const out = { t: 'hit', k: 'tree', i: idx, l: l, by: p.id };
     if (l <= 0) {
       rec.g = 1;
@@ -1254,6 +1841,7 @@ function applyHit(p, msg) {
   const y2 = Math.max(1, msg.y | 0);
   const l2 = Math.max(0, arr[idx2] - y2);
   arr[idx2] = l2;
+  markDirty();   /* ✅ v0.4.44: запас руды пишется на диск (debounce) */
   return { t: 'hit', k: 'ore', ty: msg.ty, i: idx2, l: l2, d: l2 <= 0 ? 1 : 0, by: p.id };
 }
 
@@ -1314,6 +1902,15 @@ server.on('upgrade', (req, sock) => {
         p.aid = String(msg.aid || '').slice(0, 16);
         p.send = (obj2) => { try { sock.write(wsEncodeText(JSON.stringify(obj2))); } catch (e) {} };
         players.set(p.id, p);
+        /* ✅ v0.4.46: СОХРАНЕНИЕ ИГРОКА по BRIX-ID — позиция/хп/инвентарь/
+           слот хотбара. Хп сервер восстанавливает СРАЗУ (он авторитет урона),
+           остальное уезжает клиенту в welcome.psave */
+        p.psaved = (p.aid && playerSaves.get(p.aid)) || null;
+        if (p.psaved) {
+          p.hp = Math.max(1, Math.min(100, Math.round(Number(p.psaved.hp) || 100)));
+          console.log('[players] ' + p.name + ' — сохранение найдено (hp ' + p.hp +
+            ', предметов ' + ((p.psaved.inv || []).length) + ')');
+        }
         if (!world && msg.meta) initWorld(msg.meta);
         // АВТОРИТЕТНЫЙ welcome: свой id + ВСЕ игроки с позициями + мир
         p.send({
@@ -1340,7 +1937,10 @@ server.on('upgrade', (req, sock) => {
           } : null,
       /* ✅ v0.4.10: постройки — публичные копии без кода замка,
          dunl — замки, которые ЭТОТ игрок уже разгадал */
-          objs: objsSnapshot(p)   // ✅ v0.3.6: бочки/чекблоки/дропы (авторитет сервера)
+          objs: objsSnapshot(p),  // ✅ v0.3.6: бочки/чекблоки/дропы (авторитет сервера)
+          /* ✅ v0.4.46: СОХРАНЕНИЕ ЭТОГО ИГРОКА (позиция+инвентарь+слот
+             хотбара) — client восстановит сразу после спавна */
+          psave: p.psaved || undefined
         });
         // ✅ v0.4.3: в join едет lvl/aid — у всех игроков список полный сразу
         broadcast({ t: 'join', id: p.id, n: p.name, c: p.c,
@@ -1411,8 +2011,14 @@ server.on('upgrade', (req, sock) => {
             const now = Date.now();
             if (p.lastBHit[rec.bar.id] && now - p.lastBHit[rec.bar.id] < 250) break;
             p.lastBHit[rec.bar.id] = now;
-            const dmg = (msg.tool === 'ironAxe' || msg.tool === 'ironPickaxe' ||
-              msg.tool === 'mace') ? 2 : 1;   // ✅ v0.4.40 булава — как железо (бочка с 1 удара)
+            /* ✅ v0.4.44 НОВАЯ ТАБЛИЦА УДАРОВ ПО БОЧКЕ (hp 6):
+               каменные топор/кирка — 1 за удар (6 ударов),
+               железные топор/кирка — 1.5 за удар (4 удара),
+               БУЛАВА — 6 за удар (1 удар, просьба игрока).
+               Кулак — 1 (6 ударов, как камень) */
+            const dmg = msg.tool === 'mace' ? 6
+              : (msg.tool === 'ironAxe' || msg.tool === 'ironPickaxe') ? 1.5
+              : 1;
             rec.bar.hp -= dmg;
             if (rec.bar.hp <= 0) {
               rec.bar.hp = 0;
@@ -1580,8 +2186,11 @@ server.on('upgrade', (req, sock) => {
              ВЕСЬ ПРОЦЕСС после ~часа игры. Теперь проверяем rec И top; если
              записи нет — высоту не трогаем (сундук встанет по высоте луча) */
           const chCell = buildCell.get(Math.floor(chx / CELL) + ',' + Math.floor(chz / CELL));
-          const chFTop = (chCell && chCell.f && chCell.f.rec &&
-            Number.isFinite(chCell.f.rec.top)) ? chCell.f.rec.top : null;
+          /* ✅ v0.4.44: в клетке сервера фундамент — СЫРАЯ запись (rec):
+             раньше читали chCell.f.rec.top — его НЕ СУЩЕСТВУЕТ, поэтому
+             сундук никогда не «примагничивался» к палубе (высоту не брал) */
+          const chFTop = (chCell && chCell.f &&
+            Number.isFinite(chCell.f.top)) ? chCell.f.top : null;
           if (chFTop !== null && Math.abs(chy - chFTop) < 1.0) {
             chy2 = chFTop;                                        // стоит НА палубе
           }
@@ -1649,6 +2258,96 @@ server.on('upgrade', (req, sock) => {
           broadcast({ t: 'chestanim', id: String(msg.id || ''), open: msg.open ? 1 : 0 }, p.id);
           break;
         }
+        /* ============================================================
+           ✅ v0.4.44 ПЕЧКА (ty 'fu') — свободная постройка как сундук.
+           Плавит СЕРУ (1 шт за 4 с → ПЛАВЛЕНАЯ СЕРА sulfurM) и ЖЕЛЕЗО
+           (1 шт за 6 с → МЕТАЛ ФРАГМЕНТ metal) ЗА ДЕРЕВО (1 дерево за
+           8 с горения). Состояние (on/cont) живёт на сервере:
+           • fuplace — поставить (x, z, y, rot)
+           • futog   — включить/выключить
+           • fuput   — положить (wood / sulfur / iron)
+           • futake  — взять (любой из cont)
+           Все изменения рассылаются ВСЕМ как 'fust' {id, cont, on} —
+           у всех игроков печка одинаковая, переживает рестарт сервера
+           ============================================================ */
+        case 'fuplace': {
+          if (!p.state) break;
+          const fux = Number(msg.x), fuz = Number(msg.z), fuy = Number(msg.y);
+          if (!Number.isFinite(fux) || !Number.isFinite(fuz) || !Number.isFinite(fuy) ||
+              Math.abs(fux) > 5000 || Math.abs(fuz) > 5000 || fuy < -50 || fuy > 500) break;
+          if (dist2(p.state.x, p.state.z, fux, fuz) > 36) break;   // дальше 6 м — не верим
+          let clashF = false;
+          worldObjs.builds.forEach((b) => {
+            if (b.ty !== 'fu') return;
+            const dx = b.x - fux, dz = b.z - fuz;
+            if (dx * dx + dz * dz < 1.44) clashF = true;
+          });
+          if (clashF) { p.send({ t: 'bdeny', tid: msg.tid, why: 'clash' }); break; }
+          /* на фундаменте — высоту берём ИЗ серверного фундамента,
+             на потолке/земле — верим клиенту (рельеф детерминированный) */
+          let fuy2 = fuy;
+          const fuCell = buildCell.get(Math.floor(fux / CELL) + ',' + Math.floor(fuz / CELL));
+          const fuFTop = (fuCell && fuCell.f && Number.isFinite(fuCell.f.top)) ? fuCell.f.top : null;
+          if (fuFTop !== null && Math.abs(fuy - fuFTop) < 1.0) fuy2 = fuFTop;
+          const fuRec = { id: 'b' + (++buildSeq), ty: 'fu',
+            x: Math.round(fux * 100) / 100, z: Math.round(fuz * 100) / 100,
+            y: Math.round(fuy2 * 100) / 100,
+            rot: Math.round((Number(msg.rot) || 0) * 100) / 100,
+            by: p.name, at: Date.now(), own: p.aid || ('n:' + p.name),
+            cont: {}, on: 0 };
+          worldObjs.builds.push(fuRec);
+          broadcast({ t: 'bnew', pid: p.id, b: publicBuild(fuRec) }, null);
+          markDirty();
+          console.log('[objs] ' + p.name + ' поставил печку ' + fuRec.id +
+            ' (' + fuRec.x.toFixed(1) + ', ' + fuRec.z.toFixed(1) + ')');
+          break;
+        }
+        case 'futog': {
+          const fu = worldObjs.builds.find((b) => b.ty === 'fu' && b.id === String(msg.id || ''));
+          if (!fu) break;
+          if (p.state && dist2(p.state.x, p.state.z, fu.x, fu.z) > 64) break;  // >8 м
+          fu.on = fu.on ? 0 : 1;
+          fu.fuelAcc = 0;
+          broadcast({ t: 'fust', id: fu.id, cont: fu.cont, on: fu.on }, null);
+          markDirty();
+          console.log('[furnace] ' + p.name + ' ' + (fu.on ? 'включил' : 'выключил') +
+            ' печку ' + fu.id);
+          break;
+        }
+        case 'fuput': {
+          const fu = worldObjs.builds.find((b) => b.ty === 'fu' && b.id === String(msg.id || ''));
+          if (!fu) break;
+          if (p.state && dist2(p.state.x, p.state.z, fu.x, fu.z) > 64) break;
+          const item = String(msg.item || '');
+          /* в печку кладётся только ДЕРЕВО (топливо), СЕРА и ЖЕЛЕЗО (вход) */
+          if (item !== 'wood' && item !== 'sulfur' && item !== 'iron') break;
+          const amt = Math.max(1, Math.min(999, Math.floor(msg.amt || 1)));
+          fu.cont[item] = (fu.cont[item] || 0) + amt;
+          broadcast({ t: 'fust', id: fu.id, cont: fu.cont, on: fu.on,
+            pid: p.id, item, amt, put: true }, null);
+          markDirty();
+          console.log('[furnace] ' + p.name + ' положил в печку ' + fu.id + ': ' + item + ' x' + amt);
+          break;
+        }
+        case 'futake': {
+          const tid = String(msg.tid || '');
+          const fu = worldObjs.builds.find((b) => b.ty === 'fu' && b.id === String(msg.id || ''));
+          if (!fu) { p.send({ t: 'fudenied', id: String(msg.id || ''), tid }); break; }
+          if (p.state && dist2(p.state.x, p.state.z, fu.x, fu.z) > 64) {
+            p.send({ t: 'fudenied', id: fu.id, tid }); break;
+          }
+          const item = String(msg.item || '');
+          const avail = (fu.cont && fu.cont[item]) || 0;
+          if (avail <= 0) { p.send({ t: 'fudenied', id: fu.id, item, tid }); break; }
+          const amt = (msg.amt > 0) ? Math.min(Math.floor(msg.amt), avail) : avail;
+          fu.cont[item] = avail - amt;
+          if (fu.cont[item] <= 0) delete fu.cont[item];
+          broadcast({ t: 'fust', id: fu.id, cont: fu.cont, on: fu.on,
+            pid: p.id, item, amt, take: true, tid }, null);
+          markDirty();
+          console.log('[furnace] ' + p.name + ' взял из печки ' + fu.id + ': ' + item + ' x' + amt);
+          break;
+        }
         /* ✅ v0.3.3: соцсеть — пересылка заявок в друзья адресату по имени.
            Сервер только доставляет: {t:'fsend', to:'Ник', kind, data} →
            адресату {t:'fsoc', from, fromId, kind, data} */
@@ -1675,86 +2374,168 @@ server.on('upgrade', (req, sock) => {
           break;
         }
         /* ============================================================
-           ✅ v0.4.41 С4 — ВЗРЫВЧАТКА (модель и звуки от игрока).
-           Схема: бросок и полёт — у бросавшего локально; прилип блок —
-           он шлёт 'c4place' {x,y,z,n}; сервер рассылает 'c4placed' ВСЕМ
-           ОСТАЛЬНЫМ (те видят блок и слышат 15 «тыков» у себя). После
-           15-го тыка (~10.8 с) блок у бросавшего взрывается: он шлёт
-           'c4boom' {x,y,z} — СЕРВЕР авторитетно снимает 400 хп с КАЖДОЙ
-           постройки в радиусе 7 м (brem/bhp всем) и убивает игроков в
-           радиусе 6.5 м (250 урона → phit/pdeath), а 'c4boom' уходит
-           остальным — визуал+звук взрыва у них. Таймеров на сервере
-           НЕТ: фьюз живёт на клиенте бросавшего (ушёл из игры — бомба
-           просто не взорвётся, у остальных она исчезнет по failsafe)
+           ✅ v0.4.43: С4 ТИКАЕТ В СЕРВЕРЕ (а не у игрока). Блок прилип →
+           бросавший шлёт 'c4place' {x,y,z,n}; сервер СОЗДАЁТ СУЩНОСТЬ
+           {id, x,y,z, n, by, at}, ставит таймер взрыва на остаток фьюза
+           (11.24 с) и рассылает 'c4placed' {id, ..., ms} ВСЕМ — включая
+           бросавшего (тот привязывает свой блок к id). Взрыв решает
+           СЕРВЕР: case c4SrvExplode (сам рассылает 'c4boom' с id и сам
+           наносит урон). Игрок вышел — бомба всё равно взорвётся; новый
+           игрок получит бомбу в снапшоте с остатком фьюза; рестарт
+           сервера бомбы не теряет (world-objs.json v6).
            ============================================================ */
         case 'c4place': {
           const cx = Number(msg.x), cy = Number(msg.y), cz = Number(msg.z);
           if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(cz)) break;
           if (Math.abs(cx) > 5000 || Math.abs(cz) > 5000) break;
-          if (!p.state || dist2(p.state.x, p.state.z, cx, cz) > 100) break;  // >10 м
-          broadcast({ t: 'c4placed', by: p.id,
+          /* ✅ v0.4.44: допуск 30 м (было 10 м). Бросок С4 летит до 45 м,
+             а p.state у сервера опаздывает на ~0.9 с (12 Гц) — при броске
+             в дальнюю стену собственного дома сервер МОЛЧА ОТКЛОНЯЛ
+             постановку: бомба у клиента оставалась без srvId, взрывался
+             failsafe, а легаси-ветка 'c4boom' резала всё дальше 12 м →
+             «С4 иногда не ломает маленькие дома». Теперь и постановка,
+             и легаси-взрыв принимаются до 30 м */
+          if (!p.state || dist2(p.state.x, p.state.z, cx, cz) > 900) break;  // >30 м
+          /* не даём спамить: не чаще 1 постановки в 300 мс с одного соединения */
+          const nowC4 = Date.now();
+          if (p.lastC4 && nowC4 - p.lastC4 < 300) break;
+          p.lastC4 = nowC4;
+          const nArr = Array.isArray(msg.n) ? msg.n.map((v) => Number(v) || 0) : [0, 1, 0];
+          const ent = {
+            id: 'x' + (++c4Seq),
             x: Math.round(cx * 100) / 100, y: Math.round(cy * 100) / 100,
-            z: Math.round(cz * 100) / 100, n: msg.n || [0, 1, 0] }, p.id);
+            z: Math.round(cz * 100) / 100, n: nArr, by: p.id, at: Date.now(), to: null
+          };
+          /* максимум 40 живых С4: переполнение — старейшая взрывается сразу */
+          if (worldObjs.c4.length >= 40) {
+            const old = worldObjs.c4.shift();
+            if (old && old.to) clearTimeout(old.to);
+            c4SrvExplode(old);
+          }
+          worldObjs.c4.push(ent);
+          markDirty();   // бомба переживает рестарт (остаток фьюза — от at)
+          scheduleC4Boom(ent);
+          broadcast({ t: 'c4placed', id: ent.id, by: p.id,
+            x: ent.x, y: ent.y, z: ent.z, n: nArr,
+            ms: C4_FUSE_MS }, null);
           break;
         }
         case 'c4boom': {
           const bx = Number(msg.x), by = Number(msg.y), bz = Number(msg.z);
           if (!Number.isFinite(bx) || !Number.isFinite(by) || !Number.isFinite(bz)) break;
           if (Math.abs(bx) > 5000 || Math.abs(bz) > 5000) break;
-          if (!p.state || dist2(p.state.x, p.state.z, bx, bz) > 144) break;  // >12 м
-          /* 1) ПОСТРОЙКИ в радиусе 7 м (горизонталь) и ±4.5 м (высота):
-             −400 хп КАЖДОЙ — стены/потолки/сундуки (≤300) ломаются с
-             одного взрыва, фундамент (350) — с двух */
-          const hitList = [];
-          for (const b of worldObjs.builds) {
-            const wx = (b.ty === 'ch') ? b.x : b.gx * CELL;
-            const wz = (b.ty === 'ch') ? b.z : b.gz * CELL;
-            const wy = (b.ty === 'ch') ? (b.y || 0) : (b.top || 0);
-            const dh = dist2(wx, wz, bx, bz);
-            if (dh > 49) continue;                                  // дальше 7 м
-            const dy = Math.abs(wy - by);
-            if (dy > 4.5) continue;
-            hitList.push(b);
+          /* ✅ v0.4.44: допуск легаси-ветки 30 м (было 12 м) — см. c4place:
+             при броске дальше 12 м сервер молча игнорировал взрыв, и дом
+             не ломался. Порядок поиска блоков не менялся: свой блок
+             (≤2.5 м) взрывается ЕДИНОЖДЫ и позицию берёт ИЗ СЕРВЕРНОЙ
+             сущности — урон всегда считается по ней */
+          if (!p.state || dist2(p.state.x, p.state.z, bx, bz) > 900) break;  // >30 м
+          /* ✅ v0.4.43: таймер теперь у СЕРВЕРА (см. case 'c4place'), поэтому
+             клиентский 'c4boom' — только FAILSAFE и совместимость со старыми
+             клиентами. Если у сервера есть этот блок (≤2.5 м) — гасим его
+             серверный таймер и взрываем ЕДИНОЖДЫ (иначе было бы ДВОЙНОЕ
+             повреждение: таймер сервера + заявка клиента). */
+          let ent = null, bestD = 2.5 * 2.5;
+          for (const c of worldObjs.c4) {
+            const dd = dist2(c.x, c.z, bx, bz);
+            if (dd < bestD && Math.abs((c.y || 0) - by) < 3) { bestD = dd; ent = c; }
           }
-          for (const b of hitList) {
-            b.hp = (b.hp === undefined ? maxBuildHp(b.ty) : b.hp) - 400;
-            if (b.hp <= 0) {
-              worldObjs.builds.splice(worldObjs.builds.indexOf(b), 1);
-              removeBuildIndexes(b);
-              broadcast({ t: 'brem', id: b.id, by: p.id }, null);
-              console.log('[c4] взрыв снёс постройку ' + b.id + ' (' + b.ty + ')');
-            } else {
-              broadcast({ t: 'bhp', id: b.id, hp: b.hp, max: maxBuildHp(b.ty) }, null);
-            }
+          if (ent) {
+            const ei = worldObjs.c4.indexOf(ent);
+            if (ei >= 0) worldObjs.c4.splice(ei, 1);
+            if (ent.to) { clearTimeout(ent.to); ent.to = null; }
+            markDirty();
+            broadcast({ t: 'c4boom', id: ent.id, x: bx, y: by, z: bz }, null);
+            c4BoomDamage(bx, by, bz, ent.by);
+            console.log('[c4] взрыв (failsafe клиента) на серверном блоке ' + ent.id);
+            break;
           }
-          if (hitList.length) {
-            writeWorldNow();   // снос — сразу на диск
-            console.log('[c4] ' + p.name + ' взорвал С4 (' + bx.toFixed(1) + ', ' +
-              bz.toFixed(1) + '): построек задето ' + hitList.length);
-          }
-          /* 2) ИГРОКИ в радиусе 6.5 м — 250 урона (насмерть). ХП —
-             авторитет сервера; god, как всегда, неуязвим */
-          players.forEach((t) => {
-            if (t.dead || t.god || !t.state) return;
-            const d2c4 = dist2(t.state.x, t.state.z, bx, bz);
-            if (d2c4 > 6.5 * 6.5) return;
-            const dy2 = Math.abs((t.state.y || 0) - by);
-            if (dy2 > 5) return;
-            t.hp = Math.max(0, (t.hp === undefined ? 100 : t.hp) - 250);
-            const w4 = 'c4';
-            broadcast({ t: 'phit', tid: t.id, hp: t.hp, by: p.id,
-              kind: 'shot', w: w4, hs: 0,
-              dist: Math.round(Math.sqrt(d2c4)) }, null);
-            if (t.hp <= 0) {
-              t.dead = true;
-              broadcast({ t: 'pdeath', tid: t.id, by: p.id, w: w4, hs: 0,
-                dist: Math.round(Math.sqrt(d2c4)) }, null);
-              console.log('[c4] ' + t.name + ' убит взрывом С4 (' + p.name + ')');
-            }
-          });
-          /* 3) визуал+звук взрыва — всем, КРОМЕ бросавшего (он сыграл
-             его сам в момент отправки 'c4boom') */
+          /* ЛЕГАСИ-путь (старый клиент 0.4.42 или блок до рестарта сервера):
+             урон считает сервер, блок у БРОСАВШЕГО уже взорвался сам — ему
+             повторный визуал не уходит. Новые клиенты 0.4.43 сюда не попадают */
           broadcast({ t: 'c4boom', x: bx, y: by, z: bz }, p.id);
+          c4BoomDamage(bx, by, bz, p.id);
+          break;
+        }
+        /* ============================================================
+           ✅ v0.4.43 ТРУП-ЛУТБОКС. 'corpse' шлёт УМИРАЮЩИЙ клиент сразу
+           после 'pdeath': свой инвентарь (у сервера его копии нет!) и
+           координаты смерти. Сервер создаёт труп, рассылает ВСЕМ
+           'corpseNew' (включая погибшего — после респауна он может
+           вернуть свои вещи). Лут — 'corpseOpen' (ответ 'corpseLoot')
+           и 'corpseTake' (всем 'corpseLoot' + автоскрытие пустого).
+           Опустел → 'corpseGone'; ✅ v0.4.50: не залутан 10 минут →
+           'corpseGone' (залутанный — 20 минут страховки); рестарт
+           сервера труп переживает (world-objs.json v7).
+           ============================================================ */
+        case 'corpse': {
+          if (!p.dead) break;                       // прислал живой — игнор
+          const kx = Number(msg.x), kz = Number(msg.z);
+          if (!Number.isFinite(kx) || !Number.isFinite(kz)) break;
+          if (Math.abs(kx) > 5000 || Math.abs(kz) > 5000) break;
+          /* защита от вранья с координатами: дальше 40 м от последнего
+             состояния сервера — труп кладём там, где сервер видел игрока */
+          let fx = kx, fz = kz;
+          if (p.state && dist2(p.state.x, p.state.z, kx, kz) > 1600) {
+            fx = p.state.x; fz = p.state.z;
+          }
+          const cinv = sanitizeInv(msg.inv);
+          /* ✅ v0.4.44 ПУСТОЙ ТРУП НЕ СОЗДАЁТСЯ (просьба игрока «трупы пустые
+             сразу исчезают»): у погибшего не было вещей — тела в мире нет.
+             Пустой труп бесполезен и только мусорит карту */
+          const invAny = Object.keys(cinv).some((k) => (cinv[k] | 0) > 0);
+          if (!invAny) break;
+          worldObjs.corpseSeq = (worldObjs.corpseSeq | 0) + 1;
+          const rec = {
+            id: 'r' + worldObjs.corpseSeq,
+            x: Math.round(fx * 10) / 10, z: Math.round(fz * 10) / 10,
+            y: Math.round((Number(msg.y) || 0) * 10) / 10,
+            n: p.name, c: p.c, inv: cinv, at: Date.now()
+          };
+          worldObjs.corpses.push(rec);
+          while (worldObjs.corpses.length > CORPSE_MAX) worldObjs.corpses.shift();
+          markDirty();
+          broadcast({ t: 'corpseNew', id: rec.id, x: rec.x, y: rec.y, z: rec.z,
+            n: rec.n, c: rec.c, inv: rec.inv, lt: 0,
+            age: 0 }, null);
+          console.log('[corpse] труп ' + rec.id + ' (' + rec.n + ') с ' +
+            Object.keys(cinv).length + ' видами вещей (' + rec.x + ', ' + rec.z + ')');
+          break;
+        }
+        /* F у трупа: сервер отвечает текущим содержимым */
+        case 'corpseOpen': {
+          const cc = worldObjs.corpses.find((x) => x.id === String(msg.id || ''));
+          if (!cc) break;
+          if (!p.state || dist2(p.state.x, p.state.z, cc.x, cc.z) > 36) break;  // >6 м
+          p.send({ t: 'corpseLoot', id: cc.id, inv: cc.inv });
+          break;
+        }
+        /* взять предмет из трупа (amt — сколько; без amt — весь стек) */
+        case 'corpseTake': {
+          const ct = worldObjs.corpses.find((x) => x.id === String(msg.id || ''));
+          if (!ct) { p.send({ t: 'corpseDeny', id: String(msg.id || '') }); break; }
+          if (!p.state || dist2(p.state.x, p.state.z, ct.x, ct.z) > 36) {
+            p.send({ t: 'corpseDeny', id: ct.id });   // отошёл дальше 6 м
+            break;
+          }
+          const it = String(msg.item || '');
+          const have = ct.inv[it] || 0;
+          if (!have) { p.send({ t: 'corpseDeny', id: ct.id }); break; }
+          let amt = Math.max(1, Math.floor(Number(msg.amt) || have));
+          amt = Math.min(amt, have);
+          ct.inv[it] = have - amt;
+          ct.lt = 1;   // ✅ v0.4.50: с трупа УЖЕ лутали — TTL 20 мин вместо 10
+          const cempty = !Object.keys(ct.inv).some((k) => (ct.inv[k] | 0) > 0);
+          markDirty();
+          if (cempty) {
+            worldObjs.corpses.splice(worldObjs.corpses.indexOf(ct), 1);
+            markDirty();
+            broadcast({ t: 'corpseGone', id: ct.id }, null);
+            console.log('[corpse] труп ' + ct.id + ' (' + ct.n + ') обыскан и убран');
+          } else {
+            broadcast({ t: 'corpseLoot', id: ct.id, inv: ct.inv, pid: p.id,
+              item: it, amt: amt, tid: String(msg.tid || '') }, null);
+          }
           break;
         }
         /* ✅ v0.4.5 ПВП: заявка попадания. ХП — АВТОРИТЕТ СЕРВЕРА:
@@ -1818,12 +2599,70 @@ server.on('upgrade', (req, sock) => {
           }
           break;
         }
+        /* ============================================================
+           ✅ v0.4.46 ШПРИЦ (+46 хп): клиент укололся — ХП АВТОРИТЕТ
+           СЕРВЕРА. Валидация: жив, не бог, не чаще раза в 4 с, не больше
+           60 за раз. Остальным уходит 'phit' kind 'heal' — полоска хп
+           над головой подрастает у всех
+           ============================================================ */
+        case 'heal': {
+          if (p.dead || p.god) break;
+          const n = Math.max(0, Math.min(60, Math.round(Number(msg.n) || 0)));
+          if (!n) break;
+          const nowHeal = Date.now();
+          if (p.lastHeal && nowHeal - p.lastHeal < 4000) break;   // анти-спам
+          p.lastHeal = nowHeal;
+          const hpOld = Math.round(p.hp === undefined ? 100 : p.hp);
+          p.hp = Math.min(100, hpOld + n);
+          if (p.hp !== hpOld) {
+            broadcast({ t: 'phit', tid: p.id, hp: Math.round(p.hp),
+              kind: 'heal', by: '' }, p.id);
+            console.log('[mp] ' + p.name + ' укололся шприцем: ' +
+              hpOld + ' → ' + Math.round(p.hp));
+          }
+          break;
+        }
+        /* ============================================================
+           ✅ v0.4.46 СОХРАНЕНИЕ ИГРОКА: клиент присылает раз в 3 с и при
+           выходе {x,y,z,yaw,hp,hot,inv:[{id,n,mag}]}. Сервер валидирует и
+           кладёт в players.json под BRIX-ID. Мёртвый сохранение не пишет
+           (и старое стёрто при pdeath — вещи ушли в труп)
+           ============================================================ */
+        case 'psave': {
+          if (!p.aid || p.dead) break;
+          const sx = Number(msg.x), sy = Number(msg.y), sz = Number(msg.z);
+          if (!Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(sz) ||
+              Math.abs(sx) > 5000 || Math.abs(sz) > 5000) break;
+          const inv = Array.isArray(msg.inv) ? msg.inv.slice(0, 26).map((it) => ({
+            id: String((it && it.id) || '').slice(0, 24),
+            n: Math.max(1, Math.min(9999, Math.floor(Number(it && it.n) || 1))),
+            mag: Math.max(0, Math.min(999, Math.floor(Number(it && it.mag) || 0)))
+          })).filter((it) => it.id) : [];
+          playerSaves.set(p.aid, {
+            x: Math.round(sx * 100) / 100, y: Math.round(Math.max(-50, Math.min(500, sy)) * 100) / 100,
+            z: Math.round(sz * 100) / 100,
+            yaw: Math.round((Number(msg.yaw) || 0) * 100) / 100,
+            hp: Math.max(1, Math.min(100, Math.round(Number(msg.hp) || 100))),
+            hot: Math.max(0, Math.min(5, Math.floor(Number(msg.hot) || 0))),
+            inv: inv, at: Date.now()
+          });
+          markPlayersDirty();
+          break;
+        }
         /* ✅ v0.4.5: жертва сама сообщает о своей смерти (надёжнее, чем
-           выводить по hp=0 у стрелка) — рассылаем остальным */
+           выводить по hp=0 у стрелка) — рассылаем остальным.
+           ✅ v0.4.46: при смерти СОХРАНЕНИЕ ИГРОКА СТИРАЕТСЯ — весь
+           инвентарь ушёл в труп-лутбокс; при следующем входе игрок
+           начнёт с чистого спавна и стартового набора */
         case 'pdeath': {
           if (msg.tid === p.id) {
             p.dead = true;
             p.hp = 0;
+            if (p.aid && playerSaves.has(p.aid)) {
+              playerSaves.delete(p.aid);
+              markPlayersDirty();
+              console.log('[players] ' + p.name + ' умер — сохранение стёрто (вещи в трупе)');
+            }
           }
           broadcast({ t: 'pdeath', tid: String(msg.tid || p.id),
             by: String(msg.by || '') }, p.id);
@@ -1836,6 +2675,31 @@ server.on('upgrade', (req, sock) => {
           p.hp = 100;
           p.cold = 0;
           broadcast({ t: 'prespawn', tid: p.id }, p.id);
+          break;
+        }
+        /* ============================================================
+           ✅ v0.4.44 УРОН ОТ ВЫСОТЫ: урон падения считает КЛИЕНТ (высоту
+           падения сервер не видит), поэтому жертва честно шлёт 'fdmg'
+           {dmg} — сервер применяет урон ТОЛЬКО К НЕМУ САМОМУ (максимум
+           100, убить другого нельзя), остальным уходит 'phit' kind 'fall'
+           (полоска хп над головой) и 'pdeath' при 0. Умер от падения —
+           в меню смерти «Ты разбился насмерть»
+           ============================================================ */
+        case 'fdmg': {
+          if (p.dead || p.god) break;
+          const fdist = Math.round(Number(msg.dist) || 0);
+          const fdmg = Math.max(0, Math.min(100, Math.round(Number(msg.dmg) || 0)));
+          if (!fdmg) break;
+          p.hp = Math.max(0, (p.hp === undefined ? 100 : p.hp) - fdmg);
+          broadcast({ t: 'phit', tid: p.id, hp: Math.round(p.hp),
+            by: '', kind: 'fall', w: 'fall', dist: fdist }, p.id);
+          if (p.hp <= 0) {
+            p.dead = true;
+            broadcast({ t: 'pdeath', tid: p.id, by: '', w: 'fall', fall: 1 }, null);
+            console.log('[fall] ' + p.name + ' разбился насмерть (падение ' + fdist + ' м)');
+          } else {
+            console.log('[fall] ' + p.name + ' упал с ' + fdist + ' м (-' + fdmg + ' хп)');
+          }
           break;
         }
         /* ✅ fix v0.4.30: ветка 'bhit' для ПОСТРОЕК перенесена в общий
@@ -1956,10 +2820,12 @@ server.on('upgrade', (req, sock) => {
           const list = Array.isArray(msg.list) ? msg.list.slice(0, 400) : [];
           if (!list.length) break;
           /* ✅ порядок добора: сначала фундаменты, потом краевые детали,
-             потом потолки — СТРОГО (нельзя order[ty] || 9: ноль «фундамент»
+             потом потолки/лестницы — СТРОГО (нельзя order[ty] || 9: ноль «фундамент»
              фальсив и улетал в конец — дверь добиралась раньше фундамента
-             и отбрасывалась как «без фундамента») */
-          const order = { f: 0, w: 1, wi: 1, dw: 1, dr: 1, c: 2 };
+             и отбрасывалась как «без фундамента»).
+             ✅ v0.4.44: + лестницы (ld, ранг 2), печки (fu, ранг 3 —
+             свободные, в конце); lv1-детали добираются в общем порядке */
+          const order = { f: 0, w: 1, wi: 1, dw: 1, dr: 1, c: 2, ld: 2, fu: 3 };
           const rank = (ty) => Object.prototype.hasOwnProperty.call(order, ty) ? order[ty] : 9;
           list.sort((a, b2) => rank(a.ty) - rank(b2.ty));
           let adopted = 0;
@@ -1984,34 +2850,94 @@ server.on('upgrade', (req, sock) => {
               adopted++;
             } else if (ty2 === 'w' || ty2 === 'wi' || ty2 === 'dw' || ty2 === 'dr') {
               const e2 = Math.max(0, Math.min(3, Number(raw.e) | 0));
+              const lv2 = (raw.lv === 1 && ty2 === 'w') ? 1 : 0;   /* ✅ v0.4.44: 2 этаж — только сплошная стена */
+              if (raw.lv === 1 && ty2 !== 'w') continue;          /* окна/двери 2 этажа не добираем */
               const ce2 = canonicalEdge(gx2, gz2, e2);
-              const ekey2 = ce2.gx + ',' + ce2.gz + ',' + ce2.e;
+              const ekey2 = edgeKey(ce2.gx, ce2.gz, ce2.e, lv2);
               if (buildEdge.has(ekey2)) continue;       // край занят — сервер главнее
-              const cell3 = buildCell.get(gx2 + ',' + gz2);
-              if (!cell3 || !cell3.f) continue;         // фундамента нет — не принимаем
+              let baseTop2;
+              if (lv2 === 1) {
+                /* стена 2 этажа: нужен ПОТОЛОК 1 этажа в клетке-якоре */
+                const cellC2 = buildCell.get(gx2 + ',' + gz2);
+                if (!cellC2 || !cellC2.c) continue;
+                baseTop2 = Math.round((cellC2.c.rec.top + CEIL_T) * 100) / 100;
+              } else {
+                const cell3 = buildCell.get(gx2 + ',' + gz2);
+                if (!cell3 || !cell3.f) continue;         // фундамента нет — не принимаем
+                baseTop2 = cell3.f.top;
+              }
               const rec3 = ty2 === 'dr'
                 ? { id: 'b' + (++buildSeq), ty: 'dr', gx: gx2, gz: gz2, e: e2,
-                    top: cell3.f.top, by: by2, at: now2,
+                    top: baseTop2, by: by2, at: now2,
                     own: String(raw.own || p.aid || ('n:' + p.name)).slice(0, 32),
                     open: raw.open ? 1 : 0, code: null, unl: {} }
-                : { id: 'b' + (++buildSeq), ty: ty2, gx: gx2, gz: gz2, e: e2,
-                    top: cell3.f.top, by: by2, at: now2 };
+                : { id: 'b' + (++buildSeq), ty: ty2, gx: ce2.gx, gz: ce2.gz, e: ce2.e,
+                    lv: lv2, top: baseTop2, by: by2, at: now2 };
               worldObjs.builds.push(rec3);
               buildEdge.set(ekey2, rec3);
               broadcast({ t: 'bnew', pid: p.id, b: publicBuild(rec3) }, null);
               adopted++;
             } else if (ty2 === 'c') {
               const key3 = gx2 + ',' + gz2;
+              const lv3 = (raw.lv === 1) ? 1 : 0;
               const cell4 = buildCell.get(key3);
-              if (!cell4 || !cell4.f) continue;
-              if (cell4.c) continue;
-              if (!hasWallOnCell(gx2, gz2)) continue;
-              const rec4 = { id: 'b' + (++buildSeq), ty: 'c', gx: gx2, gz: gz2,
-                top: Math.round((cell4.f.top + WALL_H) * 100) / 100,
-                by: by2, at: now2 };
-              worldObjs.builds.push(rec4);
-              cell4.c = rec4;
-              broadcast({ t: 'bnew', pid: p.id, b: publicBuild(rec4) }, null);
+              if (lv3 === 1) {
+                /* потолок 2 этажа: нужен потолок 1 этажа + стена 2 этажа */
+                if (!cell4 || !cell4.c) continue;
+                if (cell4.c1) continue;
+                if (!hasWallLv1(gx2, gz2)) continue;
+                const rec5 = { id: 'b' + (++buildSeq), ty: 'c', gx: gx2, gz: gz2, lv: 1,
+                  top: Math.round((cell4.c.rec.top + CEIL_T + WALL_H) * 100) / 100,
+                  by: by2, at: now2 };
+                worldObjs.builds.push(rec5);
+                cell4.c1 = rec5;
+                broadcast({ t: 'bnew', pid: p.id, b: publicBuild(rec5) }, null);
+                adopted++;
+              } else {
+                if (!cell4 || !cell4.f) continue;
+                if (cell4.c) continue;
+                if (!hasWallOnCell(gx2, gz2)) continue;
+                const rec4 = { id: 'b' + (++buildSeq), ty: 'c', gx: gx2, gz: gz2,
+                  top: Math.round((cell4.f.top + WALL_H) * 100) / 100,
+                  by: by2, at: now2 };
+                worldObjs.builds.push(rec4);
+                cell4.c = rec4;
+                broadcast({ t: 'bnew', pid: p.id, b: publicBuild(rec4) }, null);
+                adopted++;
+              }
+            } else if (ty2 === 'ld') {
+              /* ✅ v0.4.44 лестница: клетка фундамента без потолка */
+              const keyL2 = gx2 + ',' + gz2;
+              const cellL2 = buildCell.get(keyL2);
+              if (!cellL2 || !cellL2.f) continue;
+              if (cellL2.ld || cellL2.c) continue;
+              const recL2 = { id: 'b' + (++buildSeq), ty: 'ld', gx: gx2, gz: gz2,
+                top: cellL2.f.top, by: by2, at: now2 };
+              worldObjs.builds.push(recL2);
+              cellL2.ld = recL2;
+              broadcast({ t: 'bnew', pid: p.id, b: publicBuild(recL2) }, null);
+              adopted++;
+            } else if (ty2 === 'fu') {
+              /* ✅ v0.4.44 печка: свободная позиция (cont/on из бэкапа) */
+              const fx2 = Number(raw.x), fz2 = Number(raw.z), fy2 = Number(raw.y);
+              if (!Number.isFinite(fx2) || !Number.isFinite(fz2) || !Number.isFinite(fy2)) continue;
+              let clashF2 = false;
+              worldObjs.builds.forEach((b3) => {
+                if (b3.ty !== 'fu') return;
+                const dx3 = b3.x - fx2, dz3 = b3.z - fz2;
+                if (dx3 * dx3 + dz3 * dz3 < 1.44) clashF2 = true;
+              });
+              if (clashF2) continue;
+              const recF2 = { id: 'b' + (++buildSeq), ty: 'fu',
+                x: Math.round(fx2 * 100) / 100, z: Math.round(fz2 * 100) / 100,
+                y: Math.round(fy2 * 100) / 100,
+                rot: Math.round((Number(raw.rot) || 0) * 100) / 100,
+                by: by2, at: now2,
+                own: String(raw.own || p.aid || ('n:' + p.name)).slice(0, 32),
+                cont: (raw.cont && typeof raw.cont === 'object') ? sanitizeInv(raw.cont) : {},
+                on: raw.on ? 1 : 0 };
+              worldObjs.builds.push(recF2);
+              broadcast({ t: 'bnew', pid: p.id, b: publicBuild(recF2) }, null);
               adopted++;
             }
           }

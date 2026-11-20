@@ -36,7 +36,9 @@ window.BrixCraft = (function () {
   var CATS = {
     tool:   { ru: 'ИНСТРУМЕНТЫ', en: 'TOOLS' },
     weapon: { ru: 'ОРУЖИЕ',      en: 'WEAPONS' },
-    comp:   { ru: 'КОМПОНЕНТЫ',  en: 'COMPONENTS' }
+    comp:   { ru: 'КОМПОНЕНТЫ',  en: 'COMPONENTS' },
+    /* ✅ v0.4.44: вкладка патронов/взрывчатки */
+    ammo:   { ru: 'ПАТРОНЫ',     en: 'AMMO' }
   };
   var RECIPES = [
     { id: 'stoneAxe',     cat: 'tool',   out: 'stoneAxe',     req: [['wood', 10]] },
@@ -56,12 +58,27 @@ window.BrixCraft = (function () {
     /* ✅ v0.4.40 булава — тяжёлое оружие: дерево на рукоять, металл на
        голову и обручи. Дорого — она ОДНОУДАРНАЯ (в голову 97) */
     { id: 'mace',         cat: 'weapon', out: 'mace',         req: [['wood', 30], ['metal', 25], ['scrap', 10]] },
-    /* ✅ v0.4.41 С4 — взрывчатка: 400 хп постройкам за взрыв (ломает
-       фундамент с двух взрывов, стены/потолки с одного), игрокам в
-       радиусе — насмерть. Сера на взрывчатку, метал на корпус и плату */
-    { id: 'c4',           cat: 'weapon', out: 'c4',           req: [['scrap', 20], ['metal', 40], ['sulfur', 15]] },
+    /* ✅ v0.4.46 ШПРИЦ (+46 хп): медицина из металлолома и фрагментов
+       (игла/корпус). Ещё падает из военных ящиков */
+    { id: 'syringe',      cat: 'tool',   out: 'syringe',      req: [['scrap', 20], ['metal', 10]] },
+    /* ✅ v0.4.44 С4 — НОВЫЙ РЕЦЕПТ (просьба игрока): 100 пороха +
+       25 скрапа + 15 метал фрагментов. Порох делается из плавленой
+       серы (печка), скрап/метал — из бочек и плавки железа */
+    { id: 'c4',           cat: 'weapon', out: 'c4',           req: [['gunpowder', 100], ['scrap', 25], ['metal', 15]] },
     { id: 'pipe',         cat: 'comp',   out: 'pipe',         req: [['metal', 12], ['scrap', 24]] },
-    { id: 'spring',       cat: 'comp',   out: 'spring',       req: [['metal', 13], ['scrap', 26]] }
+    { id: 'spring',       cat: 'comp',   out: 'spring',       req: [['metal', 13], ['scrap', 26]] },
+    /* ============================================================
+       ✅ v0.4.44 ПОРОХ И ПАТРОНЫ (просьба игрока, ровно его количества):
+       ПОРОХ — из плавленой серы (печка: 1 сера плавится 4 с), 1:1
+       ПАТРОН ДРОБОВИКА (дробь) — 4 пороха + 6 метал фрагментов → 2 шт
+       ПАТРОН КАЛАША (винтовочный) — 10 пороха + 8 фрагментов → 12 шт
+       ПАТРОНЫ (пистолетные, револьвер/томпсон не в счёт — у томпсона
+       винтовочные) — 12 пороха + 4 фрагмента → 24 шт
+       ============================================================ */
+    { id: 'gunpowder',    cat: 'ammo',   out: 'gunpowder',    req: [['sulfurM', 1]], yield: 1 },
+    { id: 'shotgunShell', cat: 'ammo',   out: 'shotgunShell', req: [['gunpowder', 4], ['metal', 6]], yield: 2 },
+    { id: 'rifleBullet',  cat: 'ammo',   out: 'rifleBullet',  req: [['gunpowder', 10], ['metal', 8]], yield: 12 },
+    { id: 'ammoPistol',   cat: 'ammo',   out: 'ammo',         req: [['gunpowder', 12], ['metal', 4]], yield: 24 }
   ];
 
   function lang() { return window.BrixState ? BrixState.data.lang : 'ru'; }
@@ -192,7 +209,7 @@ window.BrixCraft = (function () {
   function paintTabs() {
     var host = root.querySelector('#bxcTabs');
     host.innerHTML = '';
-    var tabs = [['all', ru('ALL', 'ВСЕ')], ['tool', CATS.tool], ['weapon', CATS.weapon], ['comp', CATS.comp]];
+    var tabs = [['all', ru('ALL', 'ВСЕ')], ['tool', CATS.tool], ['weapon', CATS.weapon], ['ammo', CATS.ammo], ['comp', CATS.comp]];
     tabs.forEach(function (tb) {
       var label = typeof tb[1] === 'string' ? tb[1] : (lang() === 'en' ? tb[1].en : tb[1].ru);
       var b = document.createElement('button');
@@ -324,6 +341,7 @@ window.BrixCraft = (function () {
     var rec = recById(selId);
     if (!iv || !rec) return;
     var made = 0;
+    var madeRuns = 0;   /* ✅ v0.4.44: число запусков (рецепт может давать yield > 1) */
     var want = qty;
     for (var i = 0; i < want; i++) {
       // хватает ресурсов на ещё один?
@@ -341,15 +359,18 @@ window.BrixCraft = (function () {
       for (var j = 0; j < rec.req.length; j++) {
         iv.removeCountByItem(rec.req[j][0], rec.req[j][1]);
       }
-      iv.addItem(rec.out, 1);
-      made++;
+      /* ✅ v0.4.44: рецепт выдаёт yield предметов за 1 крафт
+         (дробь ×2, винтовочные ×12, пистолетные ×24) */
+      iv.addItem(rec.out, rec.yield || 1);
+      made += (rec.yield || 1);
+      madeRuns++;
     }
     if (made > 0) {
       try { iv.showPickup(rec.out, made); } catch (e) {}
       toast(ru('Crafted: ' + made + ' × ' + itemName(rec.out),
         'Скрафчено: ' + made + ' × ' + itemName(rec.out)), 4);
       sfx('click');
-    } else if (i === 0) {
+    } else if (madeRuns === 0) {
       // не хватило с первого же раза — называем первый недостающий ресурс
       var miss = null;
       for (var m = 0; m < rec.req.length; m++) {

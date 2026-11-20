@@ -305,6 +305,26 @@ window.BrixGameWorld = (function () {
     controls.onPointerLockLost = function () { setLocked(false); };
     window.__brixControls = controls;   // ✅ v0.4.41: доступ touch.js (джойстик/камера/состояние)
 
+    /* ✅ v0.4.44 УРОН ОТ ВЫСОТЫ (controls.js считает высоту и скорость падения):
+       свой урон применяем сразу (без красной вспышки — она тут нужна),
+       серверу шлём 'fdmg' — он вычтет хп у себя и разошлёт phit kind 'fall'
+       остальным (полоска над головой). Умер — меню смерти «Ты разбился» */
+    controls.onFallDamage = function (info) {
+      if (!info || dead || BrixGame.state.phase !== 'playing') return;
+      var nhp = Math.max(0, myHp - info.dmg);
+      setMyHp(nhp);
+      flashDamage();
+      if (nhp <= 0) {
+        die('', { fall: 1, w: 'fall', dist: info.dist });
+      }
+      if (BrixNet.mode === 'server') {
+        BrixNet.send({ t: 'fdmg', dmg: info.dmg, dist: info.dist });
+      } else if (BrixNet.mode === 'tabs') {
+        BrixNet.send({ t: 'phit', tid: BrixNet.id, hp: nhp,
+          by: '', kind: 'fall', w: 'fall', dist: info.dist });
+      }
+    };
+
     var onLockChange = function () {
       setLocked(document.pointerLockElement === renderer.domElement);
     };
@@ -409,6 +429,9 @@ window.BrixGameWorld = (function () {
     // руки от 1-го лица — порт FirstPersonPlayer из репозитория:
     // риг игрока (player_claude.glb) + топор (axe_claude.glb) в отдельной сцене
     var hands = new BrixFirstPerson(camera, renderer);
+    window.BrixHands = hands;   /* ✅ v0.4.47: хук для живой настройки/отладки
+       рук из консоли (F12): BrixHands.syringe.root, .currentWeapon,
+       .setWeapon('syringe'), .playSyringe() и т.д. */
     var decor = null;   // деревья/кусты/камни (из buildDecor)
     var terrain = null; // для отсечения ударов через рельеф
     var toolCooldown = 0;
@@ -490,7 +513,9 @@ window.BrixGameWorld = (function () {
       hands.setWeapon(tool === 'axe' || tool === 'pickaxe' || tool === 'ironPickaxe' ||
         tool === 'ironAxe' || tool === 'revolver' || tool === 'shotgun' ||
         tool === 'rifle' || tool === 'smg' || tool === 'rev3x' ||
-        tool === 'mace' || tool === 'c4' || tool === 'plan' ? tool : null);
+        tool === 'mace' || tool === 'c4' || tool === 'plan' ||
+        /* ✅ v0.4.46: шприц — руки держат его наготове (модель шприца) */
+        tool === 'syringe' ? tool : null);
       // смена оружия сбрасывает прицеливание (у огнестрелов — оставляем выбор игроку:
       // с револьвера на дробовик/калаш можно перескакивать с прицелом)
       if (tool !== 'revolver' && tool !== 'shotgun' && tool !== 'rifle' &&
@@ -535,6 +560,10 @@ window.BrixGameWorld = (function () {
     // тык тише/писклявее/быстрее — см. c4BeepSound) и ВЗРЫВ (от игрока)
     BrixSfx.load('c4Beep', sfxUrl('assets/sfx/c4/beep.ogg'));
     BrixSfx.load('c4Explosion', sfxUrl('assets/sfx/c4/explosion.ogg'));
+    /* ✅ v0.4.50 ЗВУК ШПРИЦА (файл игрока syringe_squirt_liquid_001):
+       «шприц воткнулся в руку» — играется в момент входа иглы
+       (SYR_NEEDLE_T ≈ 2.5 с клипа, см. useSyringe) */
+    BrixSfx.load('syrSquirt', sfxUrl('assets/sfx/syringe/inject.mp3'));
 
     // стартовое состояние: слот 0 — каменный топор
     var startSel = inventory.slots[0];
@@ -599,6 +628,29 @@ window.BrixGameWorld = (function () {
         scene: scene,
         groundY: window.BrixTerrain ? BrixTerrain.heightAt : function () { return 0; }
       });
+      /* ✅ v0.4.43: ТРУПЫ из снапшота — новый игрок сразу видит трупы
+         погибших (они живут на сервере в world-objs.json) */
+      if (window.BrixCorpses && Array.isArray(objs.corpses)) {
+        BrixCorpses.setScene(scene);
+        BrixCorpses.build(objs.corpses);
+      }
+      /* ✅ v0.4.43: ЖИВЫЕ С4 из снапшота — зашёл ПОСЛЕ постановки бомбы:
+         видишь блок и слышишь тыки с ПРАВИЛЬНОЙ фазы (ms — остаток
+         фьюза), взрыв решает сервер */
+      if (Array.isArray(objs.c4)) {
+        objs.c4.forEach(function (c) {
+          if (!c || !Number.isFinite(c.x) || !Number.isFinite(c.z)) return;
+          var dup = false;
+          for (var i = 0; i < c4s.length; i++) if (c4s[i].srvId === c.id) { dup = true; break; }
+          if (dup) return;
+          var nA = c.n || [0, 1, 0];
+          var e = spawnC4(new THREE.Vector3(c.x, c.y, c.z), new THREE.Vector3(), false);
+          e.st = 'armed';
+          orientC4FromNormal(e, new THREE.Vector3(nA[0], nA[1], nA[2]).normalize());
+          e.srvId = c.id;
+          c4ApplyPhase(e, c.ms);
+        });
+      }
     }
 
     function hitProp(prop, tool) {
@@ -643,9 +695,12 @@ window.BrixGameWorld = (function () {
       var L = window.__objLocal;
       var bp = window.BrixProps ? BrixProps.barrelPos(id) : null;
       if (bp) { L._barrelPos[id] = { x: bp.x, z: bp.z }; }
-      L.hp[id] = (L.hp[id] === undefined ? 2 : L.hp[id]) -
-        ((tool === 'ironAxe' || tool === 'ironPickaxe' || tool === 'mace') ? 2 : 1);
-        // ✅ v0.4.40 булава ломает бочку с одного удара (2 хп), как железо
+      L.hp[id] = (L.hp[id] === undefined ? 6 : L.hp[id]) -
+        /* ✅ v0.4.44: бочка 6 хп — камень/кулак 1 (6 ударов), железо 1.5 (4),
+           булава 6 (1 удар) — ТА ЖЕ ТАБЛИЦА, что у сервера (case 'bhit') */
+        (tool === 'mace' ? 6
+          : (tool === 'ironAxe' || tool === 'ironPickaxe') ? 1.5
+          : 1);
       var hpMsg = { t: 'bhp', id: id, hp: Math.max(L.hp[id], 0) };
       var brkMsg = null;
       if (L.hp[id] <= 0) {
@@ -712,6 +767,8 @@ window.BrixGameWorld = (function () {
         loot.rifleBody = 1;
         if (Math.random() < 0.35) loot.revolver = 1;
         if (Math.random() < 0.25) loot.berdanaBody = 1;
+        /* ✅ v0.4.46: ШПРИЦ — медицина в военном ящике (1–2 шт) */
+        if (Math.random() < 0.3) loot.syringe = 1 + (Math.random() < 0.35 ? 1 : 0);
       } else {
         if (Math.random() < 0.12) loot.revolver = 1;
         if (Math.random() < 0.35) loot.berdanaBody = 1;
@@ -1006,12 +1063,37 @@ window.BrixGameWorld = (function () {
           e.stopImmediatePropagation();
         } else {
           /* ✅ v0.4.22: F у СУНДУКА — открыть хранилище (меню «наоборот»);
-             иначе — обычный подбор лута */
+             ✅ v0.4.43: F у ТРУПА — обыскать труп-лутбокс;
+             ✅ v0.4.44: F у ПЕЧКИ — меню плавки; труп теперь ПО НАВЕДЕНИЮ
+             прицела (не «по близости»), и ЛУТ ЧЕРЕЗ СТЕНУ ЗАПРЕЩЁН */
           var chId = (window.BrixBuilding && BrixBuilding.chestAim)
             ? BrixBuilding.chestAim() : null;
-          if (chId) {
+          var fuId = (window.BrixBuilding && BrixBuilding.furnaceAim && window.BrixFurnace)
+            ? BrixBuilding.furnaceAim() : null;
+          if (fuId) {
+            e.preventDefault();
+            window.BrixFurnace.open(fuId);
+          } else if (chId) {
             e.preventDefault();
             openChest(chId);
+          } else if (window.BrixCorpses && window.BrixCorpses.aimed) {
+            var aimDir = new THREE.Vector3();
+            camera.getWorldDirection(aimDir);
+            var corpId = BrixCorpses.aimed(camera.position, aimDir, 3.4, camera);
+            if (corpId) {
+              e.preventDefault();
+              openCorpse(corpId);
+            } else {
+              tryPickup();
+            }
+          } else if (window.BrixCorpses) {
+            var corpId2 = BrixCorpses.nearest(controls.position, 3.2);
+            if (corpId2) {
+              e.preventDefault();
+              openCorpse(corpId2);
+            } else {
+              tryPickup();
+            }
           } else {
             tryPickup();
           }
@@ -1031,6 +1113,11 @@ window.BrixGameWorld = (function () {
     if (window.BrixLootMenu) {
       BrixLootMenu.init({
         take: function (cbId, item, amt) {
+          /* ✅ v0.4.43: ТРУП — своя ветка (оптимистично + corpseTake) */
+          if (window.BrixCorpses && BrixCorpses.has(cbId)) {
+            BrixCorpses.take(cbId, item, amt || 0);
+            return;
+          }
           /* ✅ v0.4.22: сундук — своя ветка (оптимистично + chesttake) */
           if (isChestId(cbId)) { takeChestOptimistic(cbId, item, amt || 0); return; }
           // ✅ v0.4.2: сервер 42+ понимает tid — берём ОПТИМИСТИЧНО
@@ -1040,8 +1127,10 @@ window.BrixGameWorld = (function () {
           else takeCrateLocal(cbId, item, amt);
         },
         /* ✅ v0.4.1: перетащил свой предмет В ЯЩИК — положить на хранение.
-           ✅ v0.4.22: в сундук — то же, плюс КЛИК по своему предмету кладёт */
+           ✅ v0.4.22: в сундук — то же, плюс КЛИК по своему предмету кладёт.
+           ✅ v0.4.43: В ТРУП класть нельзя — только забирать */
         put: function (cbId, item, amt, fromIndex) {
+          if (window.BrixCorpses && BrixCorpses.has(cbId)) return;
           if (isChestId(cbId)) { putChestLocal(cbId, item, amt, fromIndex); return; }
           putCrateLocal(cbId, item, amt, fromIndex);
         },
@@ -1096,9 +1185,17 @@ window.BrixGameWorld = (function () {
       BrixNet.on('chestanim', function (msg) {
         if (window.BrixBuilding) BrixBuilding.chestLid(msg.id, !!msg.open);
       });
-      /* ✅ v0.3.8: пустой ящик вернулся с новым лутом — сразу у всех */
+      /* ✅ v0.4.44 ПЕЧКА: сервер/вкладки прислали состояние — обновляем
+         модель (огонь) и меню, если оно открыто; отказ — откат предмета */
+      if (window.BrixFurnace) {
+        BrixNet.on('fust', window.BrixFurnace.onFust);
+        BrixNet.on('fudenied', window.BrixFurnace.deny);
+      }
+      /* ✅ v0.3.8: пустой ящик вернулся с новым лутом — сразу у всех.
+         ✅ v0.4.44: сервер сам выбирает ТИП ящика (модель меняется,
+         если деревянный стал военным или наоборот) */
       BrixNet.on('cbrespawn', function (msg) {
-        BrixProps.respawnCrate(msg.id, msg.loot);
+        BrixProps.respawnCrate(msg.id, msg.loot, msg.mil);
       });
       /* ✅ v0.3.8: бочка вернулась по таймеру сервера */
       BrixNet.on('brespawn', function (msg) {
@@ -1151,40 +1248,99 @@ window.BrixGameWorld = (function () {
       });
       /* ✅ v0.4.34 ХОЛОД: сервер пушит шкалу холода раз в секунду */
       BrixNet.on('cold', onColdMsg);
-      /* ✅ v0.4.41 С4: чужой блок прилип — у нас он «чужой» (взрыв у
-         нас только по 'c4boom' от сервера; свой failsafe — на 1.5 с
-         позже полного фьюза, если бросавший вышел из игры) */
+      /* ============================================================
+         ✅ v0.4.43 С4 ПОД ПОЛНЫМ КОНТРОЛЕМ СЕРВЕРА. Сервер рассылает
+         'c4placed' {id, x,y,z, n, ms} ВСЕМ — включая бросавшего:
+         • чужой блок → спавним «чужой» armed-блок (взрыв — сервер);
+         • СВОЙ эхо-блок → привязываем optimistic-блок к серверному id
+           (позицию снапим к серверной) — взрыв придёт с id;
+         • ms — остаток фьюза: зашёл позже — слышишь тыки с правильной
+           фазы (c4ApplyPhase). ВАЖНО: до 0.4.43 net.js ТЕРЯЛ эти события
+           (не было case в switch) — чужие игроки вообще не видели С4.
+         ============================================================ */
       BrixNet.on('c4placed', function (msg) {
-        if (!msg || msg.by === BrixNet.id) return;
-        var x = Number(msg.x), y = Number(msg.y), z = Number(msg.z);
-        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
-        var nA = msg.n || [0, 1, 0];
-        var e = spawnC4(new THREE.Vector3(x, y, z), new THREE.Vector3(), false);
-        e.st = 'armed';
-        orientC4FromNormal(e, new THREE.Vector3(nA[0], nA[1], nA[2]).normalize());
-      });
-      /* ✅ v0.4.41 С4: взрыв чужого блока — визуал+звук у нас; свои
-         armed-блоки в этой точке тоже взрываются (если сервер прислал) */
-      BrixNet.on('c4boom', function (msg) {
         if (!msg) return;
         var x = Number(msg.x), y = Number(msg.y), z = Number(msg.z);
         if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
-        var P = new THREE.Vector3(x, y, z);
-        var matched = false;
-        for (var i = c4s.length - 1; i >= 0; i--) {
-          var e = c4s[i];
-          if (e.grp.position.distanceTo(P) < 2.0) {
-            matched = true;
-            var own = e.own;
-            var idx = c4s.indexOf(e);
-            if (idx >= 0) c4s.splice(idx, 1);
-            scene.remove(e.grp);
-            c4BoomFx(e.grp.position.clone());
-            if (own && BrixNet.mode !== 'server') c4LocalDamage(e.grp.position.clone());
+        var mine = msg.by === BrixNet.id;
+        if (mine && BrixNet.mode !== 'server') return;   // вкладки: свой блок уже есть
+        var nA = msg.n || [0, 1, 0];
+        var e = null;
+        if (mine) {
+          // сервер подтвердил МОЮ бомбу: ищем свой optimistic-блок рядом
+          var best = 9, bi = -1;
+          for (var i = 0; i < c4s.length; i++) {
+            var c = c4s[i];
+            if (!c.own || c.srvId || c.st !== 'armed') continue;
+            var d2 = c.grp.position.distanceToSquared(new THREE.Vector3(x, y, z));
+            if (d2 < best) { best = d2; bi = i; }
+          }
+          if (bi >= 0) {
+            e = c4s[bi];
+            e.grp.position.set(x, y, z);        // снап к серверной точке
+            e.srvId = String(msg.id || '');
+          } else {
+            e = spawnC4(new THREE.Vector3(x, y, z), new THREE.Vector3(), true);
+            e.st = 'armed';
+            orientC4FromNormal(e, new THREE.Vector3(nA[0], nA[1], nA[2]).normalize());
+            e.srvId = String(msg.id || '');
+          }
+        } else {
+          for (var j = 0; j < c4s.length; j++) {
+            if (c4s[j].srvId && c4s[j].srvId === msg.id) return;   // уже есть (снапшот)
+          }
+          e = spawnC4(new THREE.Vector3(x, y, z), new THREE.Vector3(), false);
+          e.st = 'armed';
+          orientC4FromNormal(e, new THREE.Vector3(nA[0], nA[1], nA[2]).normalize());
+          e.srvId = String(msg.id || '');
+        }
+        if (e && msg.ms !== undefined) c4ApplyPhase(e, msg.ms);
+      });
+      /* ✅ v0.4.43 С4: ВЗРЫВАЕТ СЕРВЕР ('c4boom' с id — всем, включая
+         бросавшего). Блок ищем по id, запасной путь — по позиции.
+         Визал+звук у КАЖДОГО; в серверном режиме урон уже нанёс сервер */
+      BrixNet.on('c4boom', function (msg) {
+        if (!msg) return;
+        var P = null;
+        if (msg.id) {
+          for (var i = c4s.length - 1; i >= 0; i--) {
+            if (c4s[i].srvId === msg.id) {
+              P = c4s[i].grp.position.clone();
+              scene.remove(c4s[i].grp);
+              c4s.splice(i, 1);
+              break;
+            }
           }
         }
-        if (!matched) c4BoomFx(P);   // блок поставили до нашего входа
+        if (!P) {
+          var x = Number(msg.x), y = Number(msg.y), z = Number(msg.z);
+          if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return;
+          P = new THREE.Vector3(x, y, z);
+          for (var k = c4s.length - 1; k >= 0; k--) {
+            var e = c4s[k];
+            if (e.grp.position.distanceTo(P) < 2.0) {
+              var own = e.own;
+              c4s.splice(k, 1);
+              scene.remove(e.grp);
+              if (own && BrixNet.mode !== 'server') c4LocalDamage(P.clone());
+            }
+          }
+        }
+        c4BoomFx(P);   // визуал+звук взрыва (сервер уже нанёс урон)
       });
+      /* ✅ v0.4.43 ОБЛОМКИ: взрыв снёс постройки — у всех игроков детали
+         распадаются на 5×5 кусков, падают на землю и растворяются */
+      BrixNet.on('debris', function (msg) {
+        spawnDebris((msg && msg.list) || []);
+      });
+      /* ✅ v0.4.43 ТРУПЫ-ЛУТБОКСЫ: появление/лут/скрытие — всё через
+         BrixCorpses (он сам различает сервер/вкладки/соло) */
+      if (window.BrixCorpses) {
+        BrixNet.on('corpseNew', BrixCorpses.onNet);
+        BrixNet.on('corpseLoot', BrixCorpses.onNet);
+        BrixNet.on('corpseGone', BrixCorpses.onNet);
+        BrixNet.on('corpseDeny', BrixCorpses.onNet);
+      }
     }
 
     function findTreeByHit(hitObj, instanceId) {
@@ -1654,41 +1810,48 @@ window.BrixGameWorld = (function () {
       ds.className = 'hidden';
       ds.style.cssText = 'position:fixed;inset:0;z-index:220;display:grid;' +
         'place-items:center;background:rgba(13,10,8,0.93);';
-      /* ✅ v0.4.29 МЕНЮ СМЕРТИ ТОЧНО КАК НА ФОТО (H1Z1-стиль):
-         слева СВЕРХУ — красная панель с «ВЫ УМЕРЛИ» и статистикой
-         (ПРОЖИЛ / УБИЛ / ОРУЖИЕ / ДИСТАНЦИЯ), в центре — КАРТА МИРА
-         сверху (рельеф, красный череп — место смерти, зелёные точки —
-         живые игроки), внизу — ряд кнопок возрождения (оранжевая
-         «ВОЗРОДИТЬСЯ» как MAIN и тёмная «СЛУЧАЙНОЕ МЕСТО» как
-         RANDOM RESPAWN) */
+      /* ✅ v0.4.44 МЕНЮ СМЕРТИ ПО РЕФЕРЕНСУ (H1Z1 «YOU DIED», фото игрока):
+         ОДНО окно СВЕРХУ со ВСЕМИ подробностями в строчку — ПРОЖИЛ /
+         УБИЛ (ник) / ОРУЖИЕ / ДИСТАНЦИЯ (сколько метров), ниже —
+         КАРТА МИРА ГЛАДКАЯ (та же, что в мини-меню M — не пиксельная!),
+         с зелёными точками игроков и красным черепом на месте смерти,
+         внизу — кнопки возрождения (оранжевая ВОЗРОДИТЬСЯ + тёмная
+         СЛУЧАЙНОЕ МЕСТО) */
       ds.innerHTML =
-        '<div class="brix-death-top"><div class="brix-death-title font-h">' +
-          BrixState.t('death.title') + '</div>' +
-          '<div class="drow" id="brixDthAlive"></div>' +
-          '<div class="drow" id="brixDeathKiller"></div>' +
-          '<div class="drow" id="brixDthWep"></div>' +
-          '<div class="drow" id="brixDthDist"></div>' +
+        '<div class="brix-death-top">' +
+          '<div class="brix-death-title font-h">' + BrixState.t('death.title') + '</div>' +
+          '<div class="brix-death-rows">' +
+            '<span class="drow font-h" id="brixDthAlive"></span>' +
+            '<span class="drow font-h" id="brixDeathKiller"></span>' +
+            '<span class="drow font-h" id="brixDthWep"></span>' +
+            '<span class="drow font-h" id="brixDthDist"></span>' +
+          '</div>' +
         '</div>' +
-        '<canvas id="brixDthMap" width="760" height="440"></canvas>' +
+        '<canvas id="brixDthMap" width="900" height="560"></canvas>' +
         '<div class="brix-death-btns">' +
           '<button class="respawn font-h" id="brixRespawnBtn">' + BrixState.t('death.btn') + '</button>' +
           '<button class="rnd font-h" id="brixRespawnRnd">' + BrixState.t('death.random') + '</button>' +
         '</div>';
       document.body.appendChild(ds);
+      /* одно окно сверху: тёмная плашка во всю ширину сверху */
       var dtop = ds.querySelector('.brix-death-top');
-      if (dtop) dtop.style.cssText = 'position:absolute;top:36px;left:36px;padding:16px 28px 18px;' +
-        'background:rgba(158,22,10,0.93);border:1px solid rgba(255,130,90,0.4);' +
-        'box-shadow:0 14px 50px rgba(0,0,0,.6);';
+      if (dtop) dtop.style.cssText = 'position:absolute;top:0;left:0;right:0;' +
+        'padding:14px 40px 12px;background:rgba(24,14,10,0.92);' +
+        'border-bottom:1px solid rgba(255,130,90,0.4);box-shadow:0 14px 50px rgba(0,0,0,.6);' +
+        'display:flex;align-items:center;gap:26px;flex-wrap:wrap;';
       var dtitle = ds.querySelector('.brix-death-title');
-      if (dtitle) dtitle.style.cssText = 'font-size:32px;font-weight:700;letter-spacing:.2em;' +
-        'text-transform:uppercase;color:#fff;padding-bottom:10px;margin-bottom:8px;' +
-        'border-bottom:1px solid rgba(255,160,130,0.35);text-shadow:0 2px 6px rgba(0,0,0,.55);';
-      var drowCss = 'font:15px/2.0 Consolas,monospace;letter-spacing:.05em;color:#ffd9c9;min-height:1.6em;';
+      if (dtitle) dtitle.style.cssText = 'font-size:24px;font-weight:700;letter-spacing:.2em;' +
+        'text-transform:uppercase;color:#ff6a4e;white-space:nowrap;' +
+        'text-shadow:0 2px 6px rgba(0,0,0,.55);';
+      var drows = ds.querySelector('.brix-death-rows');
+      if (drows) drows.style.cssText = 'display:flex;gap:22px;flex-wrap:wrap;align-items:center;flex:1;';
+      var drowCss = 'font:700 15px/1.4 Consolas,monospace;letter-spacing:.06em;color:#ffd9c9;white-space:nowrap;';
+      ds.querySelectorAll('.drow').forEach(function (el) { el.style.cssText = drowCss; });
       var dkiller = ds.querySelector('#brixDeathKiller');
-      if (dkiller) dkiller.style.cssText = drowCss + 'color:#fff;font-weight:700;';
+      if (dkiller) dkiller.style.cssText = drowCss + 'color:#fff;';
       var dmap = ds.querySelector('#brixDthMap');
-      if (dmap) dmap.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-54%);' +
-        'width:min(760px,72vw);height:auto;background:#0d1812;border:2px solid #6b5a44;' +
+      if (dmap) dmap.style.cssText = 'position:absolute;left:50%;top:54%;transform:translate(-50%,-50%);' +
+        'width:min(880px,78vw);height:auto;background:#0d1812;border:2px solid #6b5a44;' +
         'border-radius:4px;box-shadow:0 20px 70px rgba(0,0,0,.7), inset 0 0 90px rgba(0,0,0,.35);';
       var dbtn = ds.querySelector('.respawn');
       if (dbtn) dbtn.style.cssText = 'min-width:250px;padding:14px 30px;' +
@@ -1774,14 +1937,16 @@ window.BrixGameWorld = (function () {
     }
 
     /* ============================================================
-       ✅ v0.4.29 КАРТА МИРА НА ЭКРАНЕ СМЕРТИ (как на фото):
-       один раз рисуем рельеф по высотам (_getHeight): вода, пляж,
-       трава, камень, снег. Потом поверх — красный череп (место
-       смерти) и зелёные точки (живые игроки). Кэш — рисование
-       рельефа дорогой (~20 тысяч сэмплов), делаем один раз */
+       ✅ v0.4.29 КАРТА МИРА НА ЭКРАНЕ СМЕРТИ (как на фото).
+       ✅ v0.4.44: КАРТА НЕ ПИКСЕЛЬНАЯ, А КАК В МИНИ-МЕНЮ (просьба
+       игрока): берём готовый гладкий рендер BrixMiniMenu.mapImage()
+       (та же карта, что по клавише M — с биомами, hillshade и дорогой);
+       если мини-меню ещё не построило её — рисуем старым способом.
+       Поверх — красный череп (место смерти) и зелёные точки (живые
+       игроки). Кэш — рисование дорогое, делаем один раз */
     var deathPos = null;        // {x, z} — где я умер (для черепа)
     var dthMapCache = null;     // canvas с рельефом
-    var MAP_EXT = 1400;         // половина стороны карты мира в метрах
+    var MAP_EXT = 450;          // ✅ v0.4.44: половина стороны мира = WORLD_HALF (карта как в мини-меню)
 
     function hColor(h) {
       if (h < 2.0) return '#2c5f9e';                       // глубина
@@ -1829,12 +1994,26 @@ window.BrixGameWorld = (function () {
       var c = document.getElementById('brixDthMap');
       if (!c || !c.getContext) return;
       var ctx = c.getContext('2d');
-      if (!dthMapCache) dthMapCache = drawDeathTerrain(c.width, c.height);
-      ctx.clearRect(0, 0, c.width, c.height);
-      ctx.drawImage(dthMapCache, 0, 0);
+      /* ✅ v0.4.44: ГЛАДКАЯ КАРТА из мини-меню (биомы/hillshade/дорога);
+         приводим её к размеру канвы смерти */
+      var mmImg = null;
+      try { mmImg = (window.BrixMiniMenu && BrixMiniMenu.mapImage) ? BrixMiniMenu.mapImage() : null; } catch (eMM) {}
+      /* карта мини-меню КВАДРАТНАЯ — рисуем в центр без искажений,
+         маркеры мапим по тому же прямоугольнику */
+      var offX = 0, side = Math.min(c.width, c.height);
+      if (mmImg) {
+        dthMapCache = null;   // гладкая карта главнее старого кэша
+        ctx.clearRect(0, 0, c.width, c.height);
+        offX = (c.width - side) / 2;
+        ctx.drawImage(mmImg, offX, 0, side, side);
+      } else {
+        if (!dthMapCache) dthMapCache = drawDeathTerrain(c.width, c.height);
+        ctx.clearRect(0, 0, c.width, c.height);
+        ctx.drawImage(dthMapCache, 0, 0);
+      }
       var w = c.width, h = c.height;
-      function mx(x) { return (x + MAP_EXT) / (2 * MAP_EXT) * w; }
-      function mz(z) { return (z + MAP_EXT) / (2 * MAP_EXT) * h; }
+      function mx(x) { return offX + (x + MAP_EXT) / (2 * MAP_EXT) * side; }
+      function mz(z) { return (z + MAP_EXT) / (2 * MAP_EXT) * side; }
       /* живые игроки — зелёные точки (как на фото) */
       try {
         for (var rk in remotes) {
@@ -1870,6 +2049,70 @@ window.BrixGameWorld = (function () {
       ctx.strokeRect(0, 0, w, h);
     }
 
+    /* ============================================================
+       ✅ v0.4.43 ТРУП-ЛУТБОКС: при смерти ВЕСЬ инвентарь уходит в труп.
+       СЕРВЕРНЫЙ РЕЖИМ: шлём 'corpse' {x,y,z, inv} — сервер создаёт
+       труп, рассылает всем 'corpseNew', сохраняет в world-objs.json
+       (новые игроки его видят). ВКЛАДКИ: 'corpseNew' в BroadcastChannel.
+       СОЛО: локальный труп. После респауна можно вернуться и забрать
+       свои вещи (F). Инвентарь очищается — двойных вещей нет
+       ============================================================ */
+    function collectInvMap() {
+      var m = {};
+      for (var i = 0; i < inventory.slots.length; i++) {
+        var s = inventory.slots[i];
+        if (s && s.item && s.count > 0) m[s.item.id] = (m[s.item.id] || 0) + s.count;
+      }
+      return m;
+    }
+
+    function dropCorpseOnDeath() {
+      var invMap = collectInvMap();
+      var px = camera.position.x, pz = camera.position.z;
+      var py = camera.position.y - 1.7;              // примерный уровень земли
+      var rec = null;
+      /* ✅ v0.4.44 ПУСТОЙ ТРУП НЕ ПОЯВЛЯЕТСЯ (просьба игрока «трупы пустые
+         сразу исчезают… пустой труп не падает»): если с собой ничего не было —
+         тело просто исчезает, никаких пустых трупов в мире */
+      var hasLoot = Object.keys(invMap).some(function (k) { return (invMap[k] | 0) > 0; });
+      if (!hasLoot) {
+        for (var i0 = 0; i0 < inventory.slots.length; i0++) inventory.slots[i0] = null;
+        inventory.renderAll();
+        if (inventory._notifySelect) inventory._notifySelect();
+        return;
+      }
+      if (BrixNet.mode === 'server') {
+        BrixNet.send({ t: 'corpse', x: Math.round(px * 10) / 10,
+          y: Math.round(py * 10) / 10, z: Math.round(pz * 10) / 10, inv: invMap });
+      } else if (BrixNet.mode === 'tabs') {
+        rec = { t: 'corpseNew', id: 'r' + Math.random().toString(36).slice(2, 8),
+          x: Math.round(px * 10) / 10, y: Math.round(py * 10) / 10,
+          z: Math.round(pz * 10) / 10, n: BrixNet.NAME, c: BrixNet.COLOR,
+          inv: invMap, pid: BrixNet.id };
+        BrixNet.send(rec);                           // другим вкладкам
+        if (window.BrixCorpses) BrixCorpses.onNet(rec);   // себе сразу
+      } else if (window.BrixCorpses) {
+        rec = { t: 'corpseNew', id: 'r' + Math.random().toString(36).slice(2, 8),
+          x: Math.round(px * 10) / 10, y: Math.round(py * 10) / 10,
+          z: Math.round(pz * 10) / 10, n: BrixState.t('corpse.self'),
+          c: '#b0722f', inv: invMap };
+        BrixCorpses.onNet(rec);
+      }
+      // опустошаем инвентарь: всё осталось в трупе (предмет добавится при луте)
+      for (var i = 0; i < inventory.slots.length; i++) inventory.slots[i] = null;
+      inventory.renderAll();
+      if (inventory._notifySelect) inventory._notifySelect();
+    }
+
+    /** F у трупа: открыть лут-меню (локально сразу, сервер уточнит) */
+    function openCorpse(id) {
+      if (!window.BrixCorpses) return;
+      BrixCorpses.loot(id);                          // меню мгновенно
+      if (BrixNet.mode === 'server') {
+        BrixNet.send({ t: 'corpseOpen', id: id });   // сервер пришлёт актуальный лут
+      }
+    }
+
     function die(killerId, info) {
       if (dead) return;
       dead = true;
@@ -1889,10 +2132,12 @@ window.BrixGameWorld = (function () {
         /* ✅ v0.4.28: статистика как в Rust — выжил / убил / оружие / дистанция */
         if (combatHud.aliveEl) combatHud.aliveEl.textContent =
           BrixState.t('death.alive', { t: fmtAlive(Date.now() - aliveSince) });
-        /* ✅ v0.4.34: замёрз насмерть — убитого нет, показываем «Ты замёрз» */
+        /* ✅ v0.4.34: замёрз насмерть — убитого нет, показываем «Ты замёрз»
+           ✅ v0.4.44: разбился насмерть (падение с высоты) — своя строка */
         if (combatHud.killerEl) combatHud.killerEl.textContent = nm
           ? BrixState.t('death.killer', { n: nm })
-          : (info && info.cold ? BrixState.t('death.frozen') : '');
+          : (info && info.cold ? BrixState.t('death.frozen')
+            : (info && info.fall ? BrixState.t('death.fall') : ''));
         var w = info && info.w ? String(info.w) : '';
         if (w && nm) {
           /* ✅ v0.4.40: «В ГОЛОВУ» в меню смерти — сервер присылает hs в phit
@@ -1912,6 +2157,11 @@ window.BrixGameWorld = (function () {
       }
       // другие видят мою смерть (вкладки/серо-режим: сообщаем сами)
       BrixNet.send({ t: 'pdeath', tid: BrixNet.id, by: deathKiller });
+      /* ✅ v0.4.43: ВЕСЬ инвентарь уходит в ТРУП-ЛУТБОКС (синхрон +
+         сохранение на сервере), свой инвентарь опустошаем */
+      try { dropCorpseOnDeath(); } catch (eCorpse) {
+        console.warn('[corpse] не создал труп:', eCorpse && eCorpse.message);
+      }
       setMyHp(0);
     }
 
@@ -1937,6 +2187,16 @@ window.BrixGameWorld = (function () {
         controls.enabled = true;
       }
       aliveSince = Date.now();   // время выживания — заново
+      /* ✅ v0.4.44: после смерти выдаём СТАРТОВЫЙ НАБОР — каменный топор и
+         каменная кирка (просьба игрока). Весь инвентарь остался в трупе */
+      try {
+        inventory.slots[0] = { item: BrixItems.stoneAxe, count: 1 };
+        inventory.slots[1] = { item: BrixItems.stonePickaxe, count: 1 };
+        inventory.renderAll();
+        if (inventory._notifySelect) inventory._notifySelect();
+      } catch (eKit) {}
+      /* ✅ v0.4.43: подсказка — вещи остались в трупе, можно вернуть */
+      try { if (window.BrixHud) BrixHud.toast(BrixState.t('death.loot'), 6); } catch (eT2) {}
       if (window.menuAudio) menuAudio.click();
     }
 
@@ -2474,7 +2734,15 @@ window.BrixGameWorld = (function () {
        у бросавшего; в мультиплеере урон по постройкам/игрокам считает
        СЕРВЕР (case 'c4boom' в server.js), остальным блок прилетает
        сообщением 'c4placed' (тыки синхронно у всех) */
-    var C4_BEEPS = 15;
+    /* ✅ v0.4.44 ФЬЮЗ 8 СЕКУНД (просьба игрока: «взрывается за 3 с, надо 8 с»):
+       раньше тыков было 15 (сумма 11.24 с), но ГЛАВНЫЙ БАГ был в failsafe:
+       свой блок в сервер-режиме взрывался локально через
+       c4Interval(последний) + 3.0 = 3.44 с — таймер отсчитывался не от
+       конца тыков, а от прилипа. Теперь тыков 12 и полный цикл РОВНО 8 с,
+       а failsafe срабатывает на 3 с ПОСЛЕ конца полного фьюза.
+       Формула общая с server.js (C4_FUSE_MS = 8015): сумма 12 интервалов
+       12×0.735 − 0.02×(0+…+11) = 7.5 с + последний 0.515 = 8.015 с */
+    var C4_BEEPS = 12;
     var C4_BUILD_DMG = 400;
     var C4_PLAYER_DMG = 250;
     var C4_BUILD_R = 7;        // радиус урона постройкам, м (горизонталь)
@@ -2489,14 +2757,31 @@ window.BrixGameWorld = (function () {
     var c4TargetsCache = null, c4TargetsT = 0;
     var c4fxList = [];         // визуальные эффекты взрывов {t, dur, tick, done}
 
-    /** интервал между тыками: 1.0 с → 0.44 с (быстрее с каждым тыком) */
-    function c4Interval(i) { return 1.0 - 0.04 * i; }
-    /** полный фьюз = сумма 15 интервалов = 10.8 с (детерминирован —
+    /** интервал между тыками: 0.735 с → 0.515 с (быстрее с каждым тыком);
+        ✅ v0.4.44: 12 тыков, полный цикл РОВНО 8 с (см. C4_BEEPS выше) */
+    function c4Interval(i) { return 0.735 - 0.02 * i; }
+    /** полный фьюз = сумма 12 интервалов = 7.5 с (детерминирован —
         такой же порядок у всех клиентов и у failsafe чужих блоков) */
     function c4Fuse() {
       var s = 0;
       for (var i = 0; i < C4_BEEPS; i++) s += c4Interval(i);
       return s;
+    }
+    /** ✅ v0.4.44: ПОЛНОЕ время от прилипа до взрыва = фьюз + последний
+        интервал = 8.015 с. РОВНО ТАКЖЕ считает сервер (C4_FUSE_MS) */
+    function c4TotalFuse() { return c4Fuse() + c4Interval(C4_BEEPS - 1); }
+    /** ✅ v0.4.43: выставить фазу тыков по ОСТАТКУ фьюза (мс) от сервера:
+        зашёл после постановки / привязал свою бомбу к серверному id —
+        слышишь тыки с правильного места, а взрыв всё равно решает сервер */
+    function c4ApplyPhase(e, msLeft) {
+      if (!e) return;
+      var total = c4TotalFuse();
+      var el = Math.max(0, total - Math.max(0, Number(msLeft) || 0) / 1000);
+      var acc = 0, bi = 0;
+      while (bi < C4_BEEPS && acc + c4Interval(bi) <= el) { acc += c4Interval(bi); bi++; }
+      e.beepI = bi;
+      e.beepT = Math.max(0, el - acc);
+      e.fuseT = Math.max(0, el - c4Fuse());
     }
     /** звук тыка №i (1..15): тише и «писклявее» с каждым */
     function c4BeepSound(i) {
@@ -2554,8 +2839,14 @@ window.BrixGameWorld = (function () {
       grp.add(lamp);
       grp.position.copy(pos);
       scene.add(grp);
+      /* ✅ v0.4.50: home — точка БРОСКА/постановки. Страховка «блок далеко»
+         раньше мерилась от ЦЕНТРА КАРТЫ (cur.length() > 135 м), а карта
+         900 м и горы начинаются ~250 м от центра — в горах/на холмах блок
+         удалялся в первый же кадр полёта («С4 пропадает»). Теперь меряем
+         от e.home (см. tickC4) */
       c4s.push({ grp: grp, lamp: lamp, vel: vel, st: 'fly', own: !!own,
-        t: 0, beepI: 0, beepT: 0, fuseT: 0 });
+        t: 0, beepI: 0, beepT: 0, fuseT: 0, home: pos.clone(),
+        srvId: null, srvMs: 0 });   // ✅ v0.4.43: серверный id/остаток фьюза
       return c4s[c4s.length - 1];
     }
 
@@ -2568,6 +2859,61 @@ window.BrixGameWorld = (function () {
       var q = new THREE.Quaternion().setFromRotationMatrix(
         new THREE.Matrix4().makeBasis(x, y, n.clone().normalize()));
       e.grp.quaternion.copy(q);
+    }
+
+    /* ============================================================
+       ✅ v0.4.46 ШПРИЦ (просьба игрока: «добавь шприц, он восстанавливает
+       46 хп...»; крафтится и падает с военных ящиков).
+       ✅ v0.4.49 ЛКМ — УКОЛ: СВОЯ процедурная анимация на нашем риге
+       (CL.syringe в firstperson.js — правая вдавливает иглу в подставленное
+       предплечье левой, поршень продавливается, шприц жёстко в кисти),
+       на конец продавливания (SYR_HEAL_T 3.45 с) +46 ХП и шприц
+       РАСХОДУЕТСЯ (снят со слота сразу). В серверном режиме хп
+       подтверждает сервер ('heal' → p.hp + 46, cap 100) — полоски у
+       других игроков тоже обновятся (phit kind 'heal')
+       ============================================================ */
+    var SYR_HEAL = 46;
+    var SYR_CD = 6.2;       // кулдаун чуть длиннее клипа
+    var syrCd = 0;
+    function useSyringe() {
+      if (syrCd > 0) return;
+      var s = inventory.slots[inventory.activeSlot];
+      if (!s || !s.item || s.item.tool !== 'syringe') return;
+      if (myHp >= PLAYER_MAX_HP - 0.5) {
+        try { if (window.BrixHud) BrixHud.toast(BrixState.data.lang === 'en'
+          ? 'Health is already full' : 'Здоровье уже полное', 3); } catch (eT) {}
+        return;
+      }
+      syrCd = SYR_CD;
+      inventory.removeCount(inventory.activeSlot, 1);   // шприц потрачен
+      hands.triggerSwing('syringe');                    // наши руки: клип укола
+      if (hands.playSyringe) hands.playSyringe();       // модель: записанный клип
+      BrixSfx.play('chop2', { volume: 0.2, rate: 1.7 });
+      /* ✅ v0.4.50 ЗВУК «ШПРИЦ ВОНТИЛСЯ В РУКУ»: на момент входа иглы в
+         предплечье (0.44 клипа ≈ 2.5 с — SYR_NEEDLE_T) играет звук жидкости
+         (assets/sfx/syringe/inject.mp3). +46 ХП по-прежнему на продавливании
+         поршня (SYR_HEAL_T 3.45 с, setTimeout ниже) */
+      setTimeout(function () {
+        if (cancelled || BrixGame.state.phase !== 'playing') return;
+        if (dead) return;
+        BrixSfx.play('syrSquirt', { volume: 0.8, jitter: 0.05 });
+      }, Math.round((window.BrixFirstPerson && BrixFirstPerson.SYR_NEEDLE_T ||
+        2.5) * 1000));
+      /* укол — точно на «продавливание» в клипе модели */
+      setTimeout(function () {
+        if (cancelled || BrixGame.state.phase !== 'playing') return;
+        if (dead) return;
+        setMyHp(Math.min(PLAYER_MAX_HP, myHp + SYR_HEAL));
+        BrixSfx.play('chop1', { volume: 0.22, rate: 1.9 });
+        try { if (window.BrixHud) BrixHud.toast(
+          BrixState.data.lang === 'en' ? '+46 HP' : '+46 ХП', 2.5); } catch (eT2) {}
+        if (BrixNet.mode === 'server') {
+          BrixNet.send({ t: 'heal', n: SYR_HEAL });   // сервер подтвердит и разошлёт
+        } else if (BrixNet.mode === 'tabs') {
+          BrixNet.send({ t: 'phit', tid: BrixNet.id, hp: Math.round(myHp),
+            kind: 'heal', by: '' });
+        }
+      }, Math.round((window.BrixFirstPerson && BrixFirstPerson.SYR_HEAL_T || 3.45) * 1000));
     }
 
     /** бросок С4 (ЛКМ с блоком в руках): убрать предмет, жест, физика */
@@ -2739,7 +3085,14 @@ window.BrixGameWorld = (function () {
             }
           } else {
             cur.copy(np);
-            if (cur.y < -60 || cur.length() > C4_RANGE_MAX * 3) {
+            /* ✅ v0.4.50 ФИКС «С4 ПРОПАДАЕТ В ГОРАХ/ХОЛМАХ»: страховка была
+               cur.length() > C4_RANGE_MAX*3 — дистанция от ЦЕНТРА КАРТЫ,
+               а не от бросавшего. Карта 900 м: за спавн-плато (~135 м от
+               центра, там как раз холмы и горы) блок удалялся в первый же
+               кадр, пока летит по дуге вверх. Теперь радиус — от ТОЧКИ
+               БРОСКА (e.home), падение в море — ниже e.home.y − 60 */
+            if (cur.y < e.home.y - 60 ||
+                cur.distanceTo(e.home) > C4_RANGE_MAX * 3) {
               c4s.splice(i, 1);
               scene.remove(e.grp);
             }
@@ -2756,14 +3109,130 @@ window.BrixGameWorld = (function () {
             })(e.lamp);
           }
           if (e.own) {
-            // мой блок: после 15-го тыка (через его интервал) — ВЗРЫВ
-            if (e.beepI >= C4_BEEPS) {
+            if (BrixNet.mode === 'server' && e.srvId) {
+              /* ✅ v0.4.43: С4 ТИКАЕТ В СЕРВЕРЕ — свой блок НЕ взрываем сами,
+                 ждём 'c4boom' с серверным id. Failsafe: сервер молчит
+                 дольше 3 с ПОСЛЕ КОНЦА ПОЛНОГО ФЬЮЗА — взрываем сами и шлём
+                 'c4boom' (совместимость со старым сервером).
+                 ✅ v0.4.44 ФИКС «ВЗРЫВ ЗА 3 СЕКУНДЫ»: раньше сравнение было
+                 fuseT >= c4Interval(последний) + 3.0 = 3.44 с — fuseT идёт
+                 от ПРИЛИПА, а не от конца тыков, поэтому свой блок
+                 взрывался в 3.44 с, задолго до сервера. Теперь
+                 c4TotalFuse() + 3.0 = 11 с (failsafe, не ранний подрыв) */
+              e.fuseT += dt;
+              if (e.fuseT >= c4TotalFuse() + 3.0) explodeC4(e);
+            } else if (e.beepI >= C4_BEEPS) {
+              // соло/вкладки (или сервер ещё не подтвердил): как было
               e.fuseT += dt;
               if (e.fuseT >= c4Interval(C4_BEEPS - 1)) explodeC4(e);
             }
-          } else if (e.t > c4Fuse() + 1.5) {
+          } else if (BrixNet.mode === 'server' && e.srvId) {
+            /* ✅ v0.4.43: чужой блок — взрыв пришлёт СЕРВЕР ('c4boom' с id);
+               страховка-визуал только если сервер молчит очень долго */
+            if (e.t > c4TotalFuse() + 4.0) explodeC4(e);
+          } else if (e.t > c4TotalFuse() + 1.5) {
             // чужой блок: бросавший не прислал взрыв (вышел) — failsafe
             explodeC4(e);
+          }
+        }
+      }
+    }
+
+    /* ============================================================
+       ✅ v0.4.43 ОБЛОМКИ: что взрыв С4 снёс — НЕ исчезает молча.
+       Сервер рассылает 'debris' {list:[{x,y,z,ty,sd}]} и у ВСЕХ игроков
+       разрушенная деталь распадается на решётку 5×5 кусков: куски
+       разлетаются с физикой (гравитация, отскок), падают на землю,
+       лежат ~5.5 с и за 1.5 с «растворяются». Разлёт детерминирован
+       сидом sd — у всех игроков выглядит одинаково. Куски чисто
+       визуальные: на игру не влияют, сервер их не считает */
+    var DEBRIS_G = 18;             // гравитация кусков, м/с²
+    var DEBRIS_LIFE = 7.0;         // полное время жизни куска, с
+    var DEBRIS_MAX = 280;          // жёсткий лимит кусков на экране
+    var debris = [];               // {m, vx, vy, vz, rv, t, landed, bounced}
+    var debrisGeo = null, debrisMats = null;
+
+    /** детерминированный ГПСЧ (одинаковый разлёт у всех клиентов) */
+    function debrisRng(seed) {
+      var a = (seed | 0) || 1;
+      return function () {
+        a |= 0; a = a + 0x6D2B79F5 | 0;
+        var t = Math.imul(a ^ a >>> 15, 1 | a);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+
+    function spawnDebris(list) {
+      if (!scene || !Array.isArray(list) || !list.length) return;
+      if (!debrisGeo) {
+        debrisGeo = new THREE.BoxGeometry(0.34, 0.20, 0.30);
+        debrisMats = [
+          new THREE.MeshStandardMaterial({ color: 0x8a6b4a, roughness: 0.95 }),   // дерево
+          new THREE.MeshStandardMaterial({ color: 0x555a5e, roughness: 0.7, metalness: 0.5 }) // металл (сундук/дверь)
+        ];
+      }
+      var total = 0;
+      debris.forEach(function (d) { total++; });
+      list.forEach(function (p) {
+        if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.z)) return;
+        var rng = debrisRng(p.sd);
+        var metal = (p.ty === 'ch' || p.ty === 'dr') ? 1 : 0;
+        var N = 5, span = 2.6;                       // решётка 5×5 в площади детали
+        for (var i = 0; i < N; i++) {
+          for (var j = 0; j < N; j++) {
+            if (total >= DEBRIS_MAX) return;
+            var m = new THREE.Mesh(debrisGeo, debrisMats[metal]);
+            m.position.set(
+              p.x + (i / (N - 1) - 0.5) * span + (rng() - 0.5) * 0.12,
+              (Number.isFinite(p.y) ? p.y : 0) + rng() * 0.5,
+              p.z + (j / (N - 1) - 0.5) * span + (rng() - 0.5) * 0.12);
+            m.rotation.set(rng() * Math.PI, rng() * Math.PI, rng() * Math.PI);
+            scene.add(m);
+            debris.push({ m: m,
+              vx: (rng() - 0.5) * 5.2, vy: 2.5 + rng() * 4.5, vz: (rng() - 0.5) * 5.2,
+              rv: (rng() - 0.5) * 7, t: 0, landed: false, bounced: false });
+            total++;
+          }
+        }
+      });
+    }
+
+    function tickDebris(dt) {
+      for (var i = debris.length - 1; i >= 0; i--) {
+        var d = debris[i];
+        var m = d.m;
+        d.t += dt;
+        if (!d.landed) {
+          d.vy -= DEBRIS_G * dt;
+          m.position.x += d.vx * dt;
+          m.position.y += d.vy * dt;
+          m.position.z += d.vz * dt;
+          m.rotation.x += d.rv * dt;
+          m.rotation.z += d.rv * 0.7 * dt;
+          var gy = m.position.y - 1;
+          try {
+            if (window.BrixTerrain && BrixTerrain.heightAt) {
+              gy = BrixTerrain.heightAt(m.position.x, m.position.z);
+            }
+          } catch (eGy) { gy = m.position.y - 1; }
+          if (m.position.y <= gy + 0.10) {
+            if (!d.bounced && d.vy < -3.2) {
+              // одиночный мягкий отскок
+              d.vy = -d.vy * 0.22; d.vx *= 0.5; d.vz *= 0.5; d.bounced = true;
+            } else {
+              d.landed = true;
+              m.position.y = gy + 0.10;
+              m.rotation.x = 0; m.rotation.z = 0;
+            }
+          }
+        }
+        if (d.t > DEBRIS_LIFE - 1.5) {
+          var k = Math.max(0, (DEBRIS_LIFE - d.t) / 1.5);
+          m.scale.setScalar(Math.max(0.001, k));
+          if (d.t >= DEBRIS_LIFE) {
+            scene.remove(m);
+            debris.splice(i, 1);
           }
         }
       }
@@ -2808,8 +3277,11 @@ window.BrixGameWorld = (function () {
           }
         }
       }
+      if (syrCd > 0) syrCd -= dt;   // ✅ v0.4.46: кулдаун шприца
       tickTracers(dt);
       tickC4(dt);          // ✅ v0.4.41: полёт/тыки/взрывы С4
+      tickDebris(dt);      // ✅ v0.4.43: обломки разрушенных построек
+      if (window.BrixCorpses) BrixCorpses.tick(dt);   // ✅ v0.4.43: пульс колец трупов
       updateCrosshair();
     }
 
@@ -2838,6 +3310,8 @@ window.BrixGameWorld = (function () {
         // ✅ v0.4.41: С4 в руках — БРОСОК (физика, прилип, 15 тыков, взрыв)
         mouseDown = true;
         var c4Sel = inventory.slots[inventory.activeSlot];
+        /* ✅ v0.4.46: ШПРИЦ в руках — УКОЛ (+46 хп, клип из GLB) */
+        if (c4Sel && c4Sel.item && c4Sel.item.tool === 'syringe') { useSyringe(); return; }
         if (c4Sel && c4Sel.item && c4Sel.item.tool === 'c4') { throwC4(); return; }
         if (revSlot() || sgSlot() || rifleSlot() || tpSlot() || rv3xSlot()) tryShoot();
         else hitWithTool();
@@ -2891,6 +3365,9 @@ window.BrixGameWorld = (function () {
         terrain.receiveShadow = quality !== 'low';
         scene.add(terrain);
         disposables.push(terrainGeo, terrainMat);
+        /* ✅ v0.4.44: меш рельефа доступен corpse-лучу (лут трупа через
+           рельеф запрещён — corpses.js aimed()) */
+        window.__brixTerrainMesh = terrain;
 
         /* ✅ v0.4.42 ТЕКСТУРЫ БИОМОВ + КРАСИВЫЕ ПЕРЕХОДЫ: в материал
            террейна внедряется сплат-шейдер (terrainlook.js) — по вершинным
@@ -2933,7 +3410,10 @@ window.BrixGameWorld = (function () {
         if (window.BrixRoad) {
           try {
             var road = BrixRoad.build(scene, T);
-            disposables.push(road.dispose);
+            /* ✅ v0.4.44 ФИКС: раньше пушлась САМА функция road.dispose —
+               stop() звал d.dispose() у функции и падал «d.dispose is not
+               a function» при каждом выходе в меню (обрывая уборку мира) */
+            disposables.push({ dispose: road.dispose });
             console.log('[BrixWorld] грунтовая дорога построена: точек ' + BrixRoad.points().length);
           } catch (eRoad) {
             console.warn('[BrixWorld] дорога не построилась (не критично):', eRoad && eRoad.message);
@@ -2990,16 +3470,26 @@ window.BrixGameWorld = (function () {
             var arr = decor.ores[msg.ty];
             if (!arr) return;
             var rec2 = arr[msg.i];
-            if (!rec2 || rec2.state !== 'alive') return;
+            /* ✅ v0.4.45 ФИКС «хп руды синхронизируется, а ЛОМАНИЕ нет»:
+               раньше стоял жёсткий guard «state !== 'alive'» — событие удара,
+               пришедшее, пока жила трясётся (state 'shake', 0.3 с), молча
+               отбрасывалось. Финальный удар (d=1, «жила рассыпалась»),
+               пришедший в этот момент (лаг-бёрст, микрофриз кадра — shakeT
+               замирает, событие не применяется), ТЕРЯЛСЯ НАВСЕГДА: у других
+               игроков жила оставалась стоять, хотя хп/запас сходились.
+               Теперь блокируем только уже убранную жилу ('gone'), удар
+               применяется и в 'shake' — как у деревьев выше */
+            if (!rec2 || rec2.state === 'gone') return;
             if (msg.l !== undefined && msg.l !== null) rec2.left = msg.l;
             else if (msg.y !== undefined) rec2.left = Math.max(0, (rec2.left || 0) - msg.y);
             var broke = msg.d !== undefined ? msg.d : (rec2.left <= 0 ? 1 : 0);
             if (broke) {
+              // рассыпание всегда побеждает: убираем меш, гасим коллайдер
               decor.hideOre(rec2);
               BrixSfx.play('stoneBreak', { volume: 0.7 });
             } else {
               rec2.shakeT = 0.3;
-              rec2.state = 'shake';
+              if (rec2.state === 'alive') rec2.state = 'shake';
             }
           }
         }
@@ -3040,7 +3530,10 @@ window.BrixGameWorld = (function () {
               var v = arr2[idx3];
               if (v === undefined) return;
               rec3.left = v;
-              if (v <= 0 && rec3.state === 'alive') decor.hideOre(rec3);
+              /* ✅ v0.4.45: прятать выработанную жилу в ЛЮБОМ состоянии
+                 (кроме уже убранной) — раньше условие «state === 'alive'»
+                 могло пропустить жилу в 'shake' и она висела навсегда */
+              if (v <= 0 && rec3.state !== 'gone') decor.hideOre(rec3);
             });
           });
         }
@@ -3067,7 +3560,102 @@ window.BrixGameWorld = (function () {
             ores: msg.or });
         }
 
+        /* ============================================================
+           ✅ v0.4.46 СОХРАНЕНИЕ ИГРОКА («вышел — зашёл — всё на месте»).
+           Сервер (server.js 0.4.46) хранит по BRIX-ID: позицию (ноги),
+           поворот, ХП, ВЕСЬ инвентарь и выбранный слот хотбара. Клиент:
+           • шлёт 'psave' раз в 3 с и при выходе со страницы;
+           • welcome.psave — восстанавливает всё сразу после спавна
+             (телепорт на сохранённое место, вещи в слоты, свой слот).
+           При СМЕРТИ сервер стирает сохранение (pdeath): весь инвентарь
+           уходит в труп-лутбокс — задвоение вещей невозможно
+           ============================================================ */
+        var savedP = null;        // psave из welcome (ждёт спавна)
+        var saveRestored = false; // восстановили один раз
+        function stashPlayerSave(sv) {
+          if (!sv || saveRestored) return;
+          savedP = sv;
+          try { applyPlayerSave(); } catch (e) {}   // мир уже готов — применить сразу
+        }
+        function applyPlayerSave() {
+          if (!savedP || saveRestored || !spawnPoint) return;
+          var sv = savedP;
+          savedP = null;
+          saveRestored = true;
+          try {
+            /* --- позиция и поворот (только серверный режим) --- */
+            if (BrixNet.mode === 'server' &&
+                typeof sv.x === 'number' && typeof sv.z === 'number' &&
+                isFinite(sv.x) && isFinite(sv.z)) {
+              controls.spawnAt(sv.x, sv.z, sv.yaw || controls.yaw);
+              controls.enabled = true;
+              /* дом мог стоять НАД рельефом (или игрок был на 2 этаже):
+                 если сохранённые ноги ВЫШЕ земли — ставим на сохранённую
+                 высоту (пол не сохранился — игрок честно упадёт) */
+              if (typeof sv.y === 'number' && isFinite(sv.y)) {
+                var feetNow = controls.position.y - controls.eyeH;
+                if (sv.y > feetNow + 0.4) {
+                  controls.position.y = sv.y + controls.eyeH;
+                  controls._fallPeak = controls.position.y;
+                }
+              }
+            }
+            /* --- инвентарь + выбранный слот хотбара --- */
+            if (Array.isArray(sv.inv) && window.BrixItems) {
+              var I = inventory;
+              I.slots = new Array(I.slots.length).fill(null);
+              for (var i = 0; i < Math.min(sv.inv.length, I.slots.length); i++) {
+                var e = sv.inv[i];
+                var def = e && BrixItems[e.id];
+                if (!def) continue;
+                var slot = { item: def, count: def.stackable
+                  ? Math.max(1, Math.min(def.stack || 999, Math.floor(Number(e.n) || 1)))
+                  : 1 };
+                /* обойма возвращается вместе с оружием (1–30/6/2 по типу) */
+                var magMax = { revolver: 6, shotgun: 2, rifle: 30, smg: 30, rev3x: 6 }[def.tool];
+                if (magMax) slot.mag = Math.max(0, Math.min(magMax, Math.floor(Number(e.mag) || 0)));
+                I.slots[i] = slot;
+              }
+              I.renderAll();
+              I.select(Math.max(0, Math.min(5, Math.floor(Number(sv.hot) || 0))));
+              if (I._notifySelect) I._notifySelect();
+            }
+            /* --- здоровье (сервер уже восстановил своё p.hp) --- */
+            if (typeof sv.hp === 'number' && isFinite(sv.hp) && sv.hp > 0) {
+              setMyHp(Math.min(PLAYER_MAX_HP, sv.hp));
+            }
+            try { if (window.BrixHud) BrixHud.toast(
+              'Место и вещи сохранены — ты вернулся туда, где вышел', 5); } catch (eT) {}
+            console.log('[psave] сохранение игрока применено (x=' + sv.x + ' z=' + sv.z +
+              ' предметов ' + (sv.inv ? sv.inv.length : 0) + ')');
+          } catch (eApply) { console.warn('[psave] не применил сохранение:', eApply); }
+        }
+        function sendPlayerSave() {
+          if (BrixGame.state.phase !== 'playing' || BrixNet.mode !== 'server') return;
+          if (dead || !controls || !inventory) return;
+          try {
+            var inv = [];
+            for (var i = 0; i < inventory.slots.length; i++) {
+              var s2 = inventory.slots[i];
+              if (s2 && s2.item) inv.push({ id: s2.item.id, n: s2.count, mag: s2.mag || 0 });
+            }
+            BrixNet.send({ t: 'psave',
+              x: Math.round(controls.position.x * 100) / 100,
+              y: Math.round((controls.position.y - controls.eyeH) * 100) / 100,
+              z: Math.round(controls.position.z * 100) / 100,
+              yaw: Math.round(controls.yaw * 100) / 100,
+              hp: Math.round(myHp), hot: inventory.activeSlot, inv: inv });
+          } catch (eS) {}
+        }
+        /* раз в 3 с и при закрытии/скрытии страницы — позиция и вещи доедут */
+        setInterval(sendPlayerSave, 3000);
+        window.addEventListener('pagehide', function () { try { sendPlayerSave(); } catch (e) {} });
+        window.addEventListener('beforeunload', function () { try { sendPlayerSave(); } catch (e) {} });
+
         BrixNet.on('welcome', function (msg) {
+          /* ✅ v0.4.46: СОХРАНЕНИЕ ИГРОКА из welcome — применить сразу
+             (если мир уже построен) или после спавна */
+          if (msg.psave) stashPlayerSave(msg.psave);
           // РОСТЕР: создаём ВСЕХ игроков, которые уже были в мире
           (msg.players || []).forEach(function (p) {
             var rp = ensureRemote(p.id, p.n);
@@ -3261,14 +3849,23 @@ window.BrixGameWorld = (function () {
             hintEl.style.display = 'block';
             hintEl.textContent = '[F] — ' + BrixState.t('hint.openChest');
           } else {
-            var pick = BrixProps.nearestPickup(controls.position, 3, fwdH);
-            if (pick) {
+            /* ✅ v0.4.43: подсказка у трупа — приоритет над ящиками */
+            var corpNear = (window.BrixCorpses)
+              ? BrixCorpses.nearest(controls.position, 3.2) : null;
+            if (corpNear) {
+              var ce = BrixCorpses.get(corpNear);
               hintEl.style.display = 'block';
-              hintEl.textContent = pick.kind === 'cb'
-                ? '[F] — ' + BrixState.t('hint.openCrate')
-                : '[F] — ' + BrixState.t('hint.pickup', { item: BrixState.t('item.' + pick.item) });
+              hintEl.textContent = '[F] — ' + BrixState.t('hint.corpse', { n: ce ? ce.n : '' });
             } else {
-              hintEl.style.display = 'none';
+              var pick = BrixProps.nearestPickup(controls.position, 3, fwdH);
+              if (pick) {
+                hintEl.style.display = 'block';
+                hintEl.textContent = pick.kind === 'cb'
+                  ? '[F] — ' + BrixState.t('hint.openCrate')
+                  : '[F] — ' + BrixState.t('hint.pickup', { item: BrixState.t('item.' + pick.item) });
+              } else {
+                hintEl.style.display = 'none';
+              }
             }
           }
         }, 250);
@@ -3345,12 +3942,12 @@ window.BrixGameWorld = (function () {
         else renderer.compile(scene, camera);
         if (cancelled) return;
 
-        /* 6 — точка спавна и лагерь */
+        /* 6 — точка спавна
+           ✅ v0.4.44: ЛАГЕРЬ НА СПАВНЕ УБРАН (просьба игрока: «убери на острове
+           какой-то костер и кубики») — на спавне больше ничего не строится */
         setStage('load.step.spawn', 96);
         var spawn = await BrixWorld.findSpawn();
         if (cancelled) return;
-        var camp = BrixWorld.buildSpawnCamp(scene, spawn);
-        disposables.push(camp);
         setStage('load.step.spawn', 100);
         await nextFrame();
         if (cancelled) return;
@@ -3365,6 +3962,9 @@ window.BrixGameWorld = (function () {
         spawnPoint = { x: spawn.x, z: spawn.z, yaw: yaw };
         buildCombatHud();
         setMyHp(PLAYER_MAX_HP);
+        /* ✅ v0.4.46: если сохранение игрока пришло РАНЬШЕ спавна —
+           применяем сейчас (телепорт на место, вещи, слот хотбара) */
+        try { applyPlayerSave(); } catch (ePs) {}
 
         /* ✅ v0.4.3: МИНИ-МЕНЮ (клавиша M). Игра при открытом меню
            НЕ выключается на сервере: рендер и сеть живут, управление
@@ -3444,6 +4044,10 @@ window.BrixGameWorld = (function () {
           // ✅ v0.4.36: у револьвера-карабина в оптике ещё медленнее —
           // на 3× зуме иначе наводка «дёргается»
           controls.aimMul = aiming ? (rv3xSlot() ? RV3X_AIM_MUL : 0.55) : 1;
+          // ✅ v0.4.45 ЛЕСТНИЦА-СТУПЕНИ: прежняя «зона лестницы» (W — лезть
+          // на месте, гравитация off) УДАЛЕНА — ступени теперь настоящие:
+          // floorAt держит игрока на каждой ступеньке, коллайдеры боксов
+          // не пускают сквозь марш. Просто иди по лестнице как по земле
           controls.update(camera, dt);
           if (toolCooldown > 0) toolCooldown = Math.max(0, toolCooldown - dt);
           tickCombat(dt);
@@ -3559,7 +4163,7 @@ window.BrixGameWorld = (function () {
           lights.tick(controls.position);
           sky.tick(camera);
           water.tick(tt);
-          camp.tick(tt);
+          /* ✅ v0.4.44: лагерь на спавне убран (костер/кубики) — camp.tick больше нет */
 
           /* ✅ v0.4.37: рендерим только при живом WebGL-контексте.
              Пока драйвер перезагружается (context lost) — кадр просто
@@ -3636,6 +4240,8 @@ window.BrixGameWorld = (function () {
       if (window.BrixAdmin) BrixAdmin.shutdown();
       // ✅ v0.4.25: крафт-панель (Q) закрывается вместе с миром
       if (window.BrixCraft) BrixCraft.shutdown();
+      // ✅ v0.4.44: меню печки закрывается вместе с миром
+      if (window.BrixFurnace) BrixFurnace.shutdown();
       // ✅ v0.4.6: система строительства выключается вместе с миром
       if (window.BrixBuilding) BrixBuilding.shutdown();
       window.removeEventListener('resize', onResize);

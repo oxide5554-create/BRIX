@@ -641,6 +641,16 @@ window.BrixMiniMenu = (function () {
     isOpen: isOpen,
     /** мини-меню ИЛИ карта открыты — управление стоит, сеть живёт */
     isAnyOpen: isAnyOpen,
+    /* ✅ v0.4.44: ГОТОВАЯ КАРТА МИРА (гладкая, как в мини-меню) —
+       меню смерти рисует её вместо своей пиксельной */
+    mapImage: function () {
+      if (!mapImage && !mapBuilding) {
+        mapBuilding = true;
+        mapImage = buildMapImage();
+        mapBuilding = false;
+      }
+      return mapImage;
+    },
     /** полный сброс при выходе из мира (gameworld.stop) */
     shutdown: function () {
       cancelQuit();

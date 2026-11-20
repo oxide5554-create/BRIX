@@ -372,6 +372,19 @@ window.BrixNet = (function () {
         delete seen[msg.id];
         if (handlers.leave) handlers.leave(msg.id);
         break;
+      default:
+        /* ✅ v0.4.43 ГЕНЕРИЧЕСКАЯ ДОСТАВКА — ГЛАВНЫЙ ФИКС С4. События,
+           которых нет в этом switch (c4placed/c4boom — v0.4.41), раньше
+           ТЕРЯЛИСЬ МОЛЧА: обработчики регистрировались через
+           BrixNet.on('c4placed', ...), но switch не знал таких имён —
+           чужие игроки ВООБЩЕ не видели блок и не слышали тыков/взрыва,
+           у всех фьюз жил только в голове бросавшего. Теперь любой тип,
+           которого нет в switch, уходит в обработчик с тем же именем
+           (c4placed/c4boom/debris/corpseNew/corpseLoot/corpseGone/
+           corpseDeny и все будущие) — новые события сервера доезжают
+           без правки net.js */
+        if (typeof handlers[msg.t] === 'function') handlers[msg.t](msg);
+        break;
     }
   }
 
@@ -574,11 +587,13 @@ window.BrixNet = (function () {
      ✅ v0.4.12: px/pz — ТОЧКА ПРИЦЕЛА (мировые координаты). Сервер
      привязывает постройку к клетке под лучом сам — расхождение
      координат клиент/сервер («старые фундаменты») больше не мешает */
-  function sendBplace(ty, gx, gz, e, top, tid, px, pz) {
+  function sendBplace(ty, gx, gz, e, top, tid, px, pz, lv) {
     if (mode === 'off') return;
     var m = { t: 'bplace', ty: ty, gx: gx, gz: gz };
     if (e !== undefined && e !== null) m.e = e;
     if (top !== undefined && top !== null) m.top = top;
+    /* ✅ v0.4.44: уровень детали (стена/потолок 2 этажа) */
+    if (lv) m.lv = 1;
     if (tid) m.tid = tid;
     if (typeof px === 'number' && isFinite(px)) m.px = Math.round(px * 100) / 100;
     if (typeof pz === 'number' && isFinite(pz)) m.pz = Math.round(pz * 100) / 100;
@@ -622,6 +637,33 @@ window.BrixNet = (function () {
     if (mode === 'off') return;
     send({ t: 'chestanim', id: id, open: open ? 1 : 0 });
   }
+  /* ============================================================
+     ✅ v0.4.44 ПЕЧКА: постановка (fuplace), вкл/выкл (futog),
+     положить (fuput — только wood/sulfur/iron), взять (futake).
+     Состояние едет от сервера всем как 'fust'
+     ============================================================ */
+  function sendFuPlace(x, z, y, rot, tid) {
+    if (mode === 'off') return;
+    var m = { t: 'fuplace', x: Math.round(x * 100) / 100,
+      z: Math.round(z * 100) / 100, y: Math.round(y * 100) / 100,
+      rot: Math.round(rot * 100) / 100 };
+    if (tid) m.tid = tid;
+    send(m);
+  }
+  function sendFuTog(id) {
+    if (mode === 'off') return;
+    send({ t: 'futog', id: id });
+  }
+  function sendFuPut(id, item, amt) {
+    if (mode === 'off') return;
+    send({ t: 'fuput', id: id, item: item, amt: Math.max(1, Math.floor(amt || 1)) });
+  }
+  function sendFuTake(id, item, amt, tid) {
+    if (mode === 'off') return;
+    var m = { t: 'futake', id: id, item: item, amt: amt };
+    if (tid) m.tid = tid;
+    send(m);
+  }
   function sendRespawn() {
     if (mode === 'off') return;
     send({ t: 'prespawn' });
@@ -663,6 +705,11 @@ window.BrixNet = (function () {
     sendChestPut: sendChestPut,
     sendChestTake: sendChestTake,
     sendChestAnim: sendChestAnim,
+    /* ✅ v0.4.44: печка */
+    sendFuPlace: sendFuPlace,
+    sendFuTog: sendFuTog,
+    sendFuPut: sendFuPut,
+    sendFuTake: sendFuTake,
     sendSocial: sendSocial,
     sendWorldTo: sendWorldTo,
     setStatusEl: setStatusEl,

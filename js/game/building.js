@@ -93,10 +93,21 @@ window.BrixBuilding = (function () {
     /* ✅ v0.4.22 сундук-хранилище: содержимое живёт на сервере */
     { id: 'ch', name: 'Сундук', nameEn: 'Chest',
       desc: 'Хранилище: положи ресурсы — они сохранятся на сервере даже после выхода. Ставится на землю и на фундамент. F — открыть',
-      descEn: 'Storage: put resources in — the server keeps them after you leave. Place on ground or foundation. F to open' }
+      descEn: 'Storage: put resources in — the server keeps them after you leave. Place on ground or foundation. F to open' },
+    /* ✅ v0.4.44 ЛЕСТНИЦА на 2 этаж: клетка фундамента БЕЗ потолка
+       (проём). 250 хп, по ней ЗАЛЕЗАЮТ (W в зоне лестницы) */
+    { id: 'ld', name: 'Лестница', nameEn: 'Ladder',
+      desc: 'Ступени с площадкой на клетку фундамента (как на фото): просто ИДИ наверх — на 2 этаж. Ставится в клетку БЕЗ потолка. 250 хп. Потолок в клетке лестницы ставить нельзя',
+      descEn: 'Photo-style wooden stairs with a landing: just WALK up to the 2nd floor. Needs a cell without a ceiling. 250 hp. No ceiling allowed in that cell' },
+    /* ✅ v0.4.44 ПЕЧКА: плавит серу (4 с/шт → плавленая сера) и железо
+       (6 с/шт → метал фрагмент) за дерево. F — меню печки, состояние
+       живёт на сервере */
+    { id: 'fu', name: 'Печка', nameEn: 'Furnace',
+      desc: 'Плавит серу (4 с за штуку → плавленая сера) и железо (6 с → метал фрагмент) ЗА ДЕРЕВО. F — меню печки. Ставится как сундук',
+      descEn: 'Smelts sulfur (4 s per ore → molten sulfur) and iron (6 s → metal fragments) using WOOD. F opens it. Places like a chest' }
   ];
-  // углы деталей на колесе (экранные, 0° = вправо): 7 сегментов по кругу
-  var PIECE_ANGLES = [0, 51, 103, 154, 206, 257, 309];
+  // углы деталей на колесе (экранные, 0° = вправо): 9 сегментов по кругу
+  var PIECE_ANGLES = [0, 40, 80, 120, 160, 200, 240, 280, 320];
   var EDGE_TY = { w: 1, wi: 1, dw: 1, dr: 1 };   // краевые детали (на край фундамента)
 
   function L(ru, en) {
@@ -295,8 +306,9 @@ window.BrixBuilding = (function () {
       _controls = null, _getPos = null, _quality = 'medium';
   var inited = false;
 
-  var cellRecs = new Map();   // 'gx,gz' -> {f:{rec,group,deck}|null, c:{rec,group}|null}
+  var cellRecs = new Map();   // 'gx,gz' -> {f:{rec,group,deck}|null, c:{...}, c1:{...}, ld:{...}|null}
   var edgeRecs = new Map();   // 'gx,gz,e' (канонический) -> {rec, group}
+  // ✅ v0.4.44: краевые ключи с уровнем — 'gx,gz,e' (этаж 0) и 'gx,gz,e,1' (2 этаж)
   var fTop = new Map();       // 'gx,gz' -> высота палубы (магнит + серверная проверка)
   var rayTargets = [];        // палубы и стены — для луча призрака
   var wallBoxes = [];         // AABB стен (мутируем на месте; ссылку держит controls)
@@ -318,14 +330,18 @@ window.BrixBuilding = (function () {
   var hitGroups = [];         // THREE.Group каждой живой детали
   var pieceById = new Map();  // id -> entry { rec, group, ... }
   var pieceHp = new Map();    // id -> остаток хп (сервер шлёт 'bhp', соло — localHit)
-  var BUILD_MAX_HP = { f: 350, w: 300, wi: 300, dw: 300, c: 300, dr: 300, ch: 25 };
-  /* ✅ v0.4.40 БУЛАВА по постройкам: 2 хп за удар (просьба игрока) —
-     тот же урон и на сервере (server.js BUILD_DMG.mace)
+  var BUILD_MAX_HP = { f: 350, w: 300, wi: 300, dw: 300, c: 300, dr: 300, ch: 25,
+    /* ✅ v0.4.44: лестница 250 хп (просьба игрока), печка — как постройки */
+    ld: 250, fu: 300 };
+  /* ✅ v0.4.40 БУЛАВА по постройкам — тот же урон и на сервере
+     (server.js BUILD_DMG.mace).
+     ✅ v0.4.44: булава теперь ПО-НАСТОЯЩЕМУ ломает постройки (просьба
+     игрока) — 30 хп за удар (стена/потолок 300 — 10 ударов, сундук — 1)
      ✅ v0.4.41 С4 по постройкам: 400 хп ЗА ВЗРЫВ (каждая постройка в
      радиусе). Только СОЛО/вкладки: в серверном режиме урон считает
      server.js в case 'c4boom' — туда BUILD_DMG.c4 НЕ добавляем, чтобы
      подделанный bhit не ломал стены одним ударом */
-  var BUILD_DMG = { axe: 0.2, pickaxe: 0.25, ironPickaxe: 0.5, ironAxe: 1 / 3, mace: 2,
+  var BUILD_DMG = { axe: 0.2, pickaxe: 0.25, ironPickaxe: 0.5, ironAxe: 1 / 3, mace: 30,
     c4: 400 };
   function buildMaxHp(ty) { return BUILD_MAX_HP[ty] || 300; }
 
@@ -336,6 +352,8 @@ window.BrixBuilding = (function () {
   var myName = 'Строитель';
 
   /* ---------- публичное: пол под ногами (фундамент/потолок) ---------- */
+  /* ✅ v0.4.44: + потолок 2 ЭТАЖА (cell.c1) — ходьба по перекрытию
+     2 этажа работает так же, как по потолку 1 этажа */
   function floorAt(x, z, feetY) {
     var best = null;
     cellRecs.forEach(function (cell) {
@@ -352,6 +370,24 @@ window.BrixBuilding = (function () {
         if (Math.abs(x - cx2) <= CELL / 2 && Math.abs(z - cz2) <= CELL / 2 &&
             ct <= feetY + STEP_UP && (best === null || ct > best)) {
           best = ct;
+        }
+      }
+      if (cell.c1) {
+        var cx3 = cell.c1.rec.gx * CELL, cz3 = cell.c1.rec.gz * CELL;
+        var ct1 = cell.c1.rec.top + CEIL_T;
+        if (Math.abs(x - cx3) <= CELL / 2 && Math.abs(z - cz3) <= CELL / 2 &&
+            ct1 <= feetY + STEP_UP && (best === null || ct1 > best)) {
+          best = ct1;
+        }
+      }
+      /* ✅ v0.4.45 ЛЕСТНИЦА-СТУПЕНИ: ходьба ПО СТУПЕНЯМ — floorAt держит
+         игрока на ступеньке/площадке (подъёмы 0.324/0.27 < STEP_UP 0.55,
+         спуски < FALL_GRAB 0.55 — заходит и спускается БЕЗ прыжков).
+         «Жать W на месте» больше не нужно — лестница как на фото */
+      if (cell.ld) {
+        var st = stairH(cell.ld.rec, x, z);
+        if (st !== null && st <= feetY + STEP_UP && (best === null || st > best)) {
+          best = st;
         }
       }
     });
@@ -614,6 +650,240 @@ window.BrixBuilding = (function () {
     return { group: g, lidPivot: lidPivot, lid: lid };
   }
 
+  /* ============================================================
+     ✅ v0.4.45 ЛЕСТНИЦА КАК НА ФОТО (ty 'ld', 250 хп) — ДЕРЕВЯННЫЕ
+     СТУПЕНИ С ПЛОЩАДКОЙ (как в Rust): в клетку фундамента 3×3 м,
+     ПОДЪЁМ НА 2 ЭТАЖ (3.24 м = палуба + стена + плита потолка).
+     ДВА МАРША С ПОВОРОТОМ на задней площадке: нижний марш слева
+     (6 ступеней по 0.27 м), площадка сзади на 1.62 м,
+     верхний марш справа (6 ступеней по 0.27 м).
+     ✅ ПОДБОР ВЫСОТЫ СТУПЕНИ (тест v0.4.45-stairwalk): круг игрока
+     (радиус 0.35) на подъёме достаёт до СЛЕДУЮЩЕЙ ступени, её верх
+     должен быть в пределах шага STEP_UP 0.55 от ног: 2×0.27 = 0.54
+     ≤ 0.55 — заходит; при 0.324 вторая ступень (0.65) УЖЕ «стена» —
+     в лестницу нельзя было вступить. 0.27 — как настоящие ступени
+     КОЛЛАЙДЕР: каждая ступень — бокс (ходьба по STEP_UP 0.55),
+     площадка тонкая — ПОД ней и ПОД верхним маршем можно пройти.
+     Просто ИДИ по ступеням — «жать W на месте» больше не нужно
+     ============================================================ */
+  var LDR = {
+    LO_X0: -1.35, LO_X1: -0.05,     // нижний марш — левая половина клетки
+    UP_X0: 0.05, UP_X1: 1.35,       // верхний марш — правая половина
+    Z_F: 1.35, Z_B: -0.15,          // марши между передом и задом клетки
+    LO_N: 6, LO_RISE: 0.27, LO_RUN: 0.25,   // нижний марш: 6×0.27 = 1.62
+    UP_N: 6, UP_RISE: 0.27, UP_RUN: 0.25,   // верхний марш: 6×0.27 = 1.62
+    MID: 1.62,                      // высота площадки (низ верхнего марша)
+    TOP: 3.24,                      // верх лестницы = верх потолка соседей
+    FL_W: 1.3                       // ширина марша
+  };
+
+  var _ladderGeo = null;
+  function ladderGeo() {
+    if (_ladderGeo) return _ladderGeo;
+    _ladderGeo = {
+      riserL: new THREE.BoxGeometry(LDR.FL_W, LDR.LO_RISE, LDR.LO_RUN),
+      riserU: new THREE.BoxGeometry(LDR.FL_W, LDR.UP_RISE, LDR.UP_RUN),
+      treadL: new THREE.BoxGeometry(LDR.FL_W + 0.08, 0.055, LDR.LO_RUN + 0.05),
+      treadU: new THREE.BoxGeometry(LDR.FL_W + 0.08, 0.055, LDR.UP_RUN + 0.05),
+      landing: new THREE.BoxGeometry(2.7, 0.12, 1.2),
+      post: new THREE.BoxGeometry(0.14, 1.5, 0.14)
+    };
+    _disposables.push({ dispose: function () {
+      if (!_ladderGeo) return;
+      for (var k in _ladderGeo) {
+        if (_ladderGeo[k] && _ladderGeo[k].dispose) _ladderGeo[k].dispose();
+      }
+      _ladderGeo = null;
+    } });
+    return _ladderGeo;
+  }
+
+  function buildLadderGroup(rec) {
+    var G = ladderGeo();
+    var g = new THREE.Group();
+    var first = null;
+    function box(geo, mat, x, y, z) {
+      var m = shadow(new THREE.Mesh(geo, mat));
+      m.position.set(x, y, z);
+      m.userData.bid = rec.id;
+      g.add(m);
+      if (!first) first = m;
+      return m;
+    }
+    var k, j, y, zc;
+    // нижний марш: 6 сплошных ступеней (подъём слева, от переднего края вглубь)
+    for (k = 0; k < LDR.LO_N; k++) {
+      y = LDR.LO_RISE * (k + 1);
+      zc = LDR.Z_F - LDR.LO_RUN * k - LDR.LO_RUN / 2;
+      box(G.riserL, _mat.beam, -0.7, y - LDR.LO_RISE / 2, zc);
+      box(G.treadL, _mat.deck, -0.7, y + 0.0275, zc);   // плашка с напуском
+    }
+    // задняя площадка на 1.62 м + 4 стойки к палубе
+    box(G.landing, _mat.deck, 0, LDR.MID - 0.06, -0.75);
+    var px = [-1.25, 1.25], pz = [-1.25, -0.25];
+    for (k = 0; k < 2; k++) {
+      for (j = 0; j < 2; j++) {
+        box(G.post, _mat.beam, px[k], LDR.MID / 2 - 0.06, pz[j]);
+      }
+    }
+    // верхний марш: 6 ступеней справа (от площадки вперёд, к переднему краю)
+    for (j = 0; j < LDR.UP_N; j++) {
+      y = LDR.MID + LDR.UP_RISE * (j + 1);
+      zc = LDR.Z_B + LDR.UP_RUN * j + LDR.UP_RUN / 2;
+      box(G.riserU, _mat.beam, 0.7, y - LDR.UP_RISE / 2, zc);
+      box(G.treadU, _mat.deck, 0.7, y + 0.0275, zc);
+    }
+    g.position.set(rec.gx * CELL, rec.top, rec.gz * CELL);
+    return { group: g, slab: first };
+  }
+
+  /* ✅ v0.4.45 высота СТУПЕНЬКИ лестницы под точкой (x, z) — null мимо.
+     Используется в floorAt (ходьба) и в rebuildAux (коллайдеры) */
+  function stairH(rec, x, z) {
+    var lx = x - rec.gx * CELL, lz = z - rec.gz * CELL;
+    if (lx < -1.5 || lx > 1.5 || lz < -1.5 || lz > 1.5) return null;
+    var k, j;
+    if (lx >= LDR.LO_X0 && lx <= LDR.LO_X1 && lz >= LDR.Z_B && lz <= LDR.Z_F) {
+      k = Math.floor((LDR.Z_F - lz) / LDR.LO_RUN);
+      if (k < 0) k = 0; if (k > LDR.LO_N - 1) k = LDR.LO_N - 1;
+      return rec.top + LDR.LO_RISE * (k + 1);
+    }
+    if (lz >= -1.35 && lz < LDR.Z_B) return rec.top + LDR.MID;   // площадка
+    if (lx >= LDR.UP_X0 && lx <= LDR.UP_X1 && lz >= LDR.Z_B && lz <= LDR.Z_F) {
+      j = Math.floor((lz - LDR.Z_B) / LDR.UP_RUN);
+      if (j < 0) j = 0; if (j > LDR.UP_N - 1) j = LDR.UP_N - 1;
+      return rec.top + LDR.MID + LDR.UP_RISE * (j + 1);
+    }
+    return null;
+  }
+
+  /* ============================================================
+     ✅ v0.4.44 ПЕЧКА (ty 'fu'): ОДИН МЕШ с хорошей текстурой (просьба
+     игрока «модель печки не из кубиков, а прям 1 меш») — вращаемая
+     каменная печь-купол (LatheGeometry по профилю: широкое основание,
+     талия, купол, устье вырезано НЕ надо — устье рисуется текстурой
+     с ИЗЛУЧАЕМЫМ огнём). Текстура — canvas 512×512: каменная кладка
+     (ряды камней, швы, подпалины у устья). Материал один (emissive
+     огня включается, когда печка ВКЛ — свечение устья изнутри)
+     ============================================================ */
+  var _furnaceTex = null, _furnaceGeo = null, _furnaceMat = null;
+  function furnaceTex() {
+    if (_furnaceTex) return _furnaceTex;
+    var cv = document.createElement('canvas');
+    cv.width = 512; cv.height = 512;
+    var ctx = cv.getContext('2d');
+    // база: тёмный камень с градиентом
+    var gr = ctx.createLinearGradient(0, 0, 0, 512);
+    gr.addColorStop(0, '#6e675e');
+    gr.addColorStop(0.55, '#5d564d');
+    gr.addColorStop(1, '#4a443c');
+    ctx.fillStyle = gr;
+    ctx.fillRect(0, 0, 512, 512);
+    // попиксельный шум камня
+    var N = window.BrixNoise;
+    for (var y = 0; y < 512; y += 2) {
+      for (var x = 0; x < 512; x += 2) {
+        var v = N ? (N.fbm(x * 0.045, y * 0.045, 3) - 0.5) * 0.30 : (Math.random() - 0.5) * 0.18;
+        ctx.fillStyle = 'rgba(' + (v > 0 ? '255,244,224' : '12,10,8') + ',' +
+          Math.min(0.35, Math.abs(v)).toFixed(3) + ')';
+        ctx.fillRect(x, y, 2, 2);
+      }
+    }
+    // кладка: 5 рядов камней с тёмными швами и бликами
+    var rows = 5;
+    for (var r = 0; r < rows; r++) {
+      var ry = 30 + r * 92;
+      var cols = 6;
+      for (var c = 0; c < cols; c++) {
+        var rx = ((c + (r % 2) * 0.5) * 512 / cols) % 512;
+        var rw = 512 / cols - 10;
+        var rh = 78;
+        // камень: слегка неровный эллипс-прямоугольник
+        ctx.fillStyle = 'rgba(28,24,20,0.55)';          // шов
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(rx - 4, ry - 4, rw + 8, rh + 8, 16); else ctx.rect(rx - 4, ry - 4, rw + 8, rh + 8);
+        ctx.fill();
+        var tone = 0.9 + (N ? N.fbm(r * 3.1 + c * 7.7, r * 5.3, 2) - 0.5 : (Math.random() - 0.5)) * 0.5;
+        ctx.fillStyle = 'rgba(' +
+          Math.round(150 * tone) + ',' + Math.round(140 * tone) + ',' + Math.round(124 * tone) + ',0.9)';
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(rx, ry, rw, rh, 14); else ctx.rect(rx, ry, rw, rh);
+        ctx.fill();
+        // блик сверху камня
+        ctx.fillStyle = 'rgba(255,240,214,0.16)';
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(rx + 6, ry + 6, rw - 12, 14, 8); else ctx.rect(rx + 6, ry + 6, rw - 12, 14);
+        ctx.fill();
+      }
+    }
+    // подпалины вокруг устья (устье — в нижней части текстуры по V)
+    var sc = ctx.createRadialGradient(256, 430, 30, 256, 430, 190);
+    sc.addColorStop(0, 'rgba(24,14,8,0.85)');
+    sc.addColorStop(1, 'rgba(24,14,8,0)');
+    ctx.fillStyle = sc;
+    ctx.fillRect(0, 240, 512, 272);
+    _furnaceTex = new THREE.CanvasTexture(cv);
+    _furnaceTex.wrapS = _furnaceTex.wrapT = THREE.RepeatWrapping;
+    _disposables.push({ dispose: function () {
+      if (_furnaceTex) { _furnaceTex.dispose(); _furnaceTex = null; }
+    } });
+    return _furnaceTex;
+  }
+
+  function furnaceGeo() {
+    if (_furnaceGeo) return _furnaceGeo;
+    /* профиль печи: от подошвы вверх — широкий низ, талия, купол;
+       точка = (радиус, высота). Один меш, высота 1.35 м */
+    var pts = [
+      new THREE.Vector2(0.001, 0.00),
+      new THREE.Vector2(0.62, 0.00),
+      new THREE.Vector2(0.66, 0.10),
+      new THREE.Vector2(0.60, 0.22),
+      new THREE.Vector2(0.50, 0.42),
+      new THREE.Vector2(0.47, 0.62),
+      new THREE.Vector2(0.50, 0.84),
+      new THREE.Vector2(0.47, 1.04),
+      new THREE.Vector2(0.34, 1.22),
+      new THREE.Vector2(0.14, 1.32),
+      new THREE.Vector2(0.001, 1.35)
+    ];
+    _furnaceGeo = new THREE.LatheGeometry(pts, 30);
+    _furnaceGeo.computeVertexNormals();
+    _disposables.push({ dispose: function () {
+      if (_furnaceGeo) { _furnaceGeo.dispose(); _furnaceGeo = null; }
+      if (_furnaceMat) { _furnaceMat.dispose(); _furnaceMat = null; }
+    } });
+    return _furnaceGeo;
+  }
+
+  function furnaceMat() {
+    if (_furnaceMat) return _furnaceMat;
+    _furnaceMat = new THREE.MeshStandardMaterial({
+      map: furnaceTex(),
+      roughness: 0.94,
+      metalness: 0.04,
+      emissive: new THREE.Color(0xd8541e),
+      emissiveIntensity: 0        // включается, когда печка горит (tick)
+    });
+    return _furnaceMat;
+  }
+
+  function buildFurnaceGroup(rec) {
+    var g = new THREE.Group();
+    var mesh = shadow(new THREE.Mesh(furnaceGeo(), furnaceMat().clone()));
+    mesh.userData.bid = rec.id;
+    mesh.userData.bfu = rec.id;
+    mesh.position.y = 0.02;
+    g.add(mesh);
+    // огонь-светлячок: точечный свет внутри устья (виден при горении)
+    var fire = new THREE.PointLight(0xe08030, 0, 7, 2);
+    fire.position.set(0, 0.5, 0);
+    g.add(fire);
+    g.position.set(rec.x, rec.y || 0, rec.z);
+    if (rec.rot) g.rotation.y = rec.rot;
+    return { group: g, slab: mesh, fire: fire, body: mesh };
+  }
+
   /* ---------- реестр: применение/удаление записи ---------- */
   var solidMeshes = [];       // ✅ v0.4.10: доп. меши окон/дверей — для пуль
   var doorEntries = new Map(); // ✅ v0.4.10: id двери -> entry (анимация/луч F)
@@ -658,6 +928,8 @@ window.BrixBuilding = (function () {
     }
     edgeRecs.forEach(function (entry) {
       var r = entry.rec;
+      /* ✅ v0.4.44: стены 2 этажа (lv1) дают точно такие же боксы, только
+         база — верх потолка 1 этажа (r.top уже считает от него) */
       var X0 = r.gx * CELL, Z0 = r.gz * CELL, half = CELL / 2, t2 = WALL_T / 2;
       if (r.e === 0 || r.e === 2) {
         // ✅ v0.4.7 ИСПРАВЛЕНИЕ v0.4.6: коллайдер был в ЦЕНТРЕ клетки,
@@ -721,6 +993,48 @@ window.BrixBuilding = (function () {
           minZ: cz2 - h3, maxZ: cz2 + h3,
           minY: r3.top, maxY: r3.top + CEIL_T, active: true });
       }
+      /* ✅ v0.4.44: потолок 2 этажа — та же сплошная плита выше */
+      if (cell.c1) {
+        var r4 = cell.c1.rec, cx4 = r4.gx * CELL, cz4 = r4.gz * CELL, h4 = CELL / 2;
+        wallBoxes.push({ minX: cx4 - h4, maxX: cx4 + h4,
+          minZ: cz4 - h4, maxZ: cz4 + h4,
+          minY: r4.top, maxY: r4.top + CEIL_T, active: true });
+      }
+      /* ✅ v0.4.45 ЛЕСТНИЦА-СТУПЕНИ: коллайдеры ступеней и площадки.
+         Нижний марш — СПЛОШНЫЙ от палубы (боками не пролезть), верхний
+         марш — от площадки (ПОД ним свободно пройти), площадка — тонкая
+         плита (ПОД ней стойки и проход). Каждый подъём 0.324/0.27 <
+         STEP_UP — игрок заходит сверху, как на настоящую лестницу
+         ✅ v0.4.46 «ПОД ЛЕСТНИЦЕЙ ПРОХОД ТОЛЬКО В ПРИСЕДЕ»: у площадки
+         и верхнего марша низ на 1.5/1.62 м — стоя (голова 1.82 м) об
+         них УДАРЯЕШЬСЯ ГОЛОВОЙ. Такие боксы помечены headBlock: стоя —
+         стена, в приседе (голова 1.17 м) — проход (см. controls.js) */
+      if (cell.ld) {
+        var lr = cell.ld.rec, sx = lr.gx * CELL, sz = lr.gz * CELL, sy = lr.top;
+        for (var lk = 0; lk < LDR.LO_N; lk++) {
+          wallBoxes.push({ minX: sx + LDR.LO_X0, maxX: sx + LDR.LO_X1,
+            minZ: sz + LDR.Z_F - LDR.LO_RUN * (lk + 1), maxZ: sz + LDR.Z_F - LDR.LO_RUN * lk,
+            minY: sy, maxY: sy + LDR.LO_RISE * (lk + 1), active: true });
+        }
+        wallBoxes.push({ minX: sx - 1.35, maxX: sx + 1.35,
+          minZ: sz - 1.35, maxZ: sz + LDR.Z_B,
+          minY: sy + LDR.MID - 0.12, maxY: sy + LDR.MID, active: true,
+          headBlock: true });   /* ✅ v0.4.46: под площадкой — только присед */
+        var pxx = [-1.25, 1.25], pzz = [-1.25, -0.25];
+        for (var lp = 0; lp < 2; lp++) {
+          for (var lq = 0; lq < 2; lq++) {
+            wallBoxes.push({ minX: sx + pxx[lp] - 0.07, maxX: sx + pxx[lp] + 0.07,
+              minZ: sz + pzz[lq] - 0.07, maxZ: sz + pzz[lq] + 0.07,
+              minY: sy, maxY: sy + LDR.MID - 0.12, active: true });
+          }
+        }
+        for (var lj = 0; lj < LDR.UP_N; lj++) {
+          wallBoxes.push({ minX: sx + LDR.UP_X0, maxX: sx + LDR.UP_X1,
+            minZ: sz + LDR.Z_B + LDR.UP_RUN * lj, maxZ: sz + LDR.Z_B + LDR.UP_RUN * (lj + 1),
+            minY: sy + LDR.MID, maxY: sy + LDR.MID + LDR.UP_RISE * (lj + 1), active: true,
+            headBlock: true });  /* ✅ v0.4.46: под верхним маршем — присед */
+        }
+      }
     });
   }
 
@@ -732,14 +1046,21 @@ window.BrixBuilding = (function () {
   function applyRecord(b, opts) {
     opts = opts || {};
     if (!b || !inited) return null;
-    /* ✅ v0.4.22 СУНДУК — свободная постройка, свой реестр (не на сетке) */
+    /* ✅ v0.4.22 СУНДУК / ✅ v0.4.44 ПЕЧКА — свободные постройки,
+       свой реестр (не на сетке) */
     if (b.ty === 'ch') return applyChest(b, opts);
+    if (b.ty === 'fu') return applyFurnace(b, opts);
     var cellKey = key(b.gx, b.gz);
     var canon, ekey;
 
+    /* ✅ v0.4.44: ключ края С УРОВНЕМ ('gx,gz,e' этаж 0 / 'gx,gz,e,1' — 2 этаж) */
+    function edgeKeyLocal(gx2, gz2, e2, lv2) {
+      return key(gx2, gz2) + ',' + e2 + (lv2 === 1 ? ',1' : '');
+    }
+
     if (EDGE_TY[b.ty]) {
       canon = canonicalEdge(b.gx, b.gz, b.e);
-      ekey = key(canon.gx, canon.gz) + ',' + canon.e;
+      ekey = edgeKeyLocal(canon.gx, canon.gz, canon.e, b.lv === 1 ? 1 : 0);
       var ex = edgeRecs.get(ekey);
       if (ex) {
         if (ex.rec.id === b.id) {
@@ -770,9 +1091,13 @@ window.BrixBuilding = (function () {
         }
       }
     } else {
-      if (!cellRecs.has(cellKey)) cellRecs.set(cellKey, { f: null, c: null });
+      if (!cellRecs.has(cellKey)) cellRecs.set(cellKey, { f: null, c: null, c1: null, ld: null });
       var cell = cellRecs.get(cellKey);
-      var slot = b.ty === 'f' ? 'f' : 'c';
+      /* ✅ v0.4.44: слот клетки по типу/уровню:
+         f — фундамент, c — потолок 1 этажа, c1 — потолок 2 этажа, ld — лестница */
+      var slot = b.ty === 'f' ? 'f'
+        : b.ty === 'c' ? (b.lv === 1 ? 'c1' : 'c')
+        : b.ty === 'ld' ? 'ld' : 'c';
       if (cell[slot]) {
         if (cell[slot].rec.id === b.id) return cell[slot].rec;   // эхо
         // ключ тот же, id новый (локальная → серверная): переставляем id
@@ -836,8 +1161,27 @@ window.BrixBuilding = (function () {
     } else if (b.ty === 'c') {
       built = buildCeilingGroup(b);
       entry.group = built.group; entry.slab = built.slab;
+      /* ✅ v0.4.44: потолок в ЛУЧ призрака/прицела — сундук/печку можно
+         ставить НА потолок, а потолок 2 этажа — достраивать по потолку; и
+         userData.bcell — план сундука берёт высоту из записи клетки */
+      built.slab.userData.bcell = cellKey;
+      /* ✅ v0.4.45 ОКНО НА ПОТОЛОК: маркер «это ПЛИТА ПЕРЕКРЫТИЯ» на всех
+         мешах потолка — план окна отличает попадание в потолок от попадания
+         в палубу фундамента (у палубы bcell тоже есть!) */
+      built.group.traverse(function (oo) {
+        if (oo.isMesh && !oo.userData.bceil) oo.userData.bceil = 1;
+      });
+      rayTargets.push(built.slab);
       var cellC = cellRecs.get(cellKey);
-      cellC.c = entry;
+      if (b.lv === 1) cellC.c1 = entry;
+      else cellC.c = entry;
+    } else if (b.ty === 'ld') {
+      /* ✅ v0.4.44 ЛЕСТНИЦА в клетке фундамента без потолка */
+      built = buildLadderGroup(b);
+      entry.group = built.group; entry.slab = built.slab;
+      rayTargets.push(built.slab);
+      var cellL = cellRecs.get(cellKey);
+      cellL.ld = entry;
     } else {
       return null;
     }
@@ -875,7 +1219,8 @@ window.BrixBuilding = (function () {
 
   function removeRecord(rec) {
     if (!rec) return;
-    /* ✅ v0.4.22: сундук — свой реестр, в сеточные индексы не входит */
+    /* ✅ v0.4.22: сундук; ✅ v0.4.44: печка — свой реестр, в сеточные
+       индексы не входят */
     if (rec.ty === 'ch') {
       var cen = chestRecs.get(rec.id);
       if (cen && _scene) _scene.remove(cen.group);
@@ -886,16 +1231,29 @@ window.BrixBuilding = (function () {
       pieceById.delete(rec.id); pieceHp.delete(rec.id);
       return;
     }
+    if (rec.ty === 'fu') {
+      var fen = furnaceRecs.get(rec.id);
+      if (fen && _scene) _scene.remove(fen.group);
+      furnaceRecs.delete(rec.id);
+      var fgi = hitGroups.indexOf(fen && fen.group);
+      if (fgi >= 0) hitGroups.splice(fgi, 1);
+      pieceById.delete(rec.id); pieceHp.delete(rec.id);
+      return;
+    }
     var cellKey = key(rec.gx, rec.gz);
     if (EDGE_TY[rec.ty]) {
       var canon = canonicalEdge(rec.gx, rec.gz, rec.e);
-      var ekey = key(canon.gx, canon.gz) + ',' + canon.e;
+      /* ✅ v0.4.44: ключ края с уровнем */
+      var ekey = key(canon.gx, canon.gz) + ',' + canon.e + (rec.lv === 1 ? ',1' : '');
       var en = edgeRecs.get(ekey);
       if (en && en.rec.id === rec.id) { destroyEntry(en); edgeRecs.delete(ekey); }
     } else {
       var cell = cellRecs.get(cellKey);
       if (cell) {
-        var slot = rec.ty === 'f' ? 'f' : 'c';
+        /* ✅ v0.4.44: слот по типу/уровню (потолок 2 этажа — c1, лестница — ld) */
+        var slot = rec.ty === 'f' ? 'f'
+          : rec.ty === 'c' ? (rec.lv === 1 ? 'c1' : 'c')
+          : rec.ty === 'ld' ? 'ld' : 'c';
         if (cell[slot] && cell[slot].rec.id === rec.id) {
           destroyEntry(cell[slot]);
           cell[slot] = null;
@@ -911,10 +1269,15 @@ window.BrixBuilding = (function () {
     cellRecs.forEach(function (cell) {
       if (cell.f) out.push(cell.f.rec);
       if (cell.c) out.push(cell.c.rec);
+      /* ✅ v0.4.44: потолок 2 этажа и лестница — тоже в бэкап/добор */
+      if (cell.c1) out.push(cell.c1.rec);
+      if (cell.ld) out.push(cell.ld.rec);
     });
     edgeRecs.forEach(function (en) { out.push(en.rec); });
     /* ✅ v0.4.22: сундуки тоже едут в бэкап localStorage (с их содержимым) */
     chestRecs.forEach(function (en) { out.push(en.rec); });
+    /* ✅ v0.4.44: печки — тоже (с содержимым и флагом вкл/выкл) */
+    furnaceRecs.forEach(function (en) { out.push(en.rec); });
     return out;
   }
 
@@ -926,7 +1289,7 @@ window.BrixBuilding = (function () {
      ============================================================ */
   function pieceWorldPos(rec) {
     var half = CELL / 2;
-    if (rec.ty === 'ch') return new THREE.Vector3(rec.x, rec.y || 0, rec.z);
+    if (rec.ty === 'ch' || rec.ty === 'fu') return new THREE.Vector3(rec.x, rec.y || 0, rec.z);
     if (rec.e !== undefined) {
       var c = { x: rec.gx * CELL + (rec.e === 1 ? half : rec.e === 3 ? -half : 0),
         z: rec.gz * CELL + (rec.e === 2 ? half : rec.e === 0 ? -half : 0) };
@@ -954,6 +1317,9 @@ window.BrixBuilding = (function () {
      записи постройки: на сервере, в бэкапе localStorage, в снимках
      ============================================================ */
   var chestRecs = new Map();
+  /* ✅ v0.4.44: печки — реестр как у сундука (свободная постройка,
+     состояние cont/on живёт на сервере и приходит в 'fust') */
+  var furnaceRecs = new Map();
   var CHEST_OPEN_ANGLE = 1.85;   // ~106° — крышка откидывается назад
 
   function placeChest(en) {
@@ -1009,6 +1375,109 @@ window.BrixBuilding = (function () {
         { volume: 0.55, jitter: 0.03 });
     }
     return b;
+  }
+
+  /* ============================================================
+     ✅ v0.4.44 ПЕЧКА — применение записи (как сундук): свободная
+     постройка, cont/on живут в rec и приходят с сервера в 'fust'
+     ============================================================ */
+  function applyFurnace(b, opts) {
+    opts = opts || {};
+    if (!_scene) return null;
+    var dup = null;
+    furnaceRecs.forEach(function (en) {
+      if (String(en.rec.id).charAt(0) !== 'L') return;
+      var dx = en.rec.x - b.x, dz = en.rec.z - b.z;
+      if (dx * dx + dz * dz < 0.02) dup = en;
+    });
+    if (dup) {
+      _scene.remove(dup.group);
+      furnaceRecs.delete(dup.rec.id);
+      b._silentReid = true;
+    }
+    var ex = furnaceRecs.get(b.id);
+    if (ex) {
+      ex.rec.x = b.x; ex.rec.z = b.z; ex.rec.y = b.y;
+      if (b.rot !== undefined) ex.rec.rot = b.rot;
+      if (b.cont !== undefined) ex.rec.cont = b.cont || {};
+      if (b.on !== undefined) ex.rec.on = b.on ? 1 : 0;
+      if (b.by !== undefined) ex.rec.by = b.by;
+      if (b.own !== undefined) ex.rec.own = b.own;
+      ex.group.position.set(ex.rec.x, ex.rec.y, ex.rec.z);
+      ex.group.rotation.y = ex.rec.rot || 0;
+      return ex.rec;
+    }
+    var built = buildFurnaceGroup(b);
+    var en = { rec: b, group: built.group, fire: built.fire, body: built.body };
+    furnaceRecs.set(b.id, en);
+    _scene.add(built.group);
+    built.group.position.set(b.x, b.y || 0, b.z);
+    built.group.rotation.y = b.rot || 0;
+    built.group.traverse(function (o) {
+      if (o.isMesh && !o.userData.bid) o.userData.bid = b.id;
+    });
+    hitGroups.push(built.group);
+    pieceById.set(b.id, en);
+    if (pieceHp.get(b.id) === undefined) {
+      pieceHp.set(b.id, (b.hp !== undefined ? b.hp : buildMaxHp('fu')));
+    }
+    if (!opts.silent && !b._silentReid && window.BrixSfx) {
+      BrixSfx.play('build' + (1 + Math.floor(Math.random() * 3)),
+        { volume: 0.55, jitter: 0.03 });
+    }
+    return b;
+  }
+  /* живое состояние печки (для меню): rec {cont, on, ...} */
+  function furnaceCont(id) {
+    var en = furnaceRecs.get(id);
+    return en ? en.rec : null;
+  }
+
+  /* ✅ v0.4.44 ЗОНА ЛЕСТНИЦЫ под игроком: если (x, z) в клетке с лестницей,
+     возвращает {y0, y1} — допустимые высоты НОГ (controls.js в этой зоне
+     выключает гравитацию: W — вверх, S — вниз, наверху шаг на потолок).
+     Иначе — null */
+  function ladderAt(x, z) {
+    var found = null;
+    cellRecs.forEach(function (cell) {
+      if (found || !cell.ld) return;
+      var cx = cell.ld.rec.gx * CELL, cz = cell.ld.rec.gz * CELL;
+      if (Math.abs(x - cx) <= CELL / 2 - 0.15 && Math.abs(z - cz) <= CELL / 2 - 0.15) {
+        found = { y0: cell.ld.rec.top,
+          y1: cell.ld.rec.top + WALL_H + 0.3 };
+      }
+    });
+    return found;
+  }
+  /* сервер/вкладки прислали состояние — обновляем запись и подсветку */
+  function setFurnaceState(id, cont, on) {
+    var en = furnaceRecs.get(id);
+    if (!en) return;
+    en.rec.cont = cont || {};
+    en.rec.on = on ? 1 : 0;
+    saveLocal();
+  }
+  /* ✅ v0.4.44: прицел на печку (F): луч по печкам + постройки + рельеф — печка
+     откроется, только если она ПЕРВАЯ, во что упёрся взгляд */
+  function furnaceAim() {
+    if (!inited || !_intRay || !_camera || !center2) return null;
+    if (pad.open || vault || menu.open || uiBlocked()) return null;
+    if (!window.BrixGame || BrixGame.state.phase !== 'playing') return null;
+    if (!furnaceRecs.size) return null;
+    _intRay.setFromCamera(center2, _camera);
+    _intRay.far = 3.0;
+    var targets = [];
+    furnaceRecs.forEach(function (en) { if (en.group) targets.push(en.group); });
+    var solids = rayTargets.slice();
+    if (_terrainMesh) solids.push(_terrainMesh);
+    targets = targets.concat(solids);
+    var hits = _intRay.intersectObjects(targets, true);
+    if (!hits.length) return null;
+    var o = hits[0].object;
+    while (o && !(o.userData && o.userData.bfu && furnaceRecs.has(o.userData.bfu))) {
+      o = o.parent;
+    }
+    return o ? o.userData.bfu : null;
   }
 
   /* ============================================================
@@ -1235,6 +1704,11 @@ window.BrixBuilding = (function () {
       var why = { busy: L('Здесь уже стоит постройка', 'Occupied'),
         nofound: L('Под постройкой должен быть фундамент', 'Needs a foundation below'),
         nowall: L('Сначала поставь стену', 'Place a wall first'),
+        noceil: L('Нужен потолок 1 этажа (пол 2 этажа)', 'Needs a first-floor ceiling (2nd floor)'),
+        ceil: L('В этой клетке потолок — лестнице некуда', 'This cell has a ceiling — no room for a ladder'),
+        ld: L('В этой клетке лестница — потолок перекроет проход', 'This cell has stairs — a ceiling would block them'),
+        ceilmax: L('Один потолок держит максимум 2 потолка без стены — поставь стену',
+          'One ceiling holds at most 2 wall-less ceilings — place a wall'),
         nodw: L('Дверь ставится в дверной проём', 'A door needs a doorway'),
         spam: L('Слишком быстро', 'Too fast') }[msg.why] ||
         L('Сервер не дал построить', 'Server denied the build');
@@ -1254,18 +1728,20 @@ window.BrixBuilding = (function () {
     } catch (e) { /* нет связи */ }
   }
 
-  /* ✅ v0.4.12: повтор установки тем же планом после добора фундамента */
+  /* ✅ v0.4.12: повтор установки тем же планом после добора фундамента.
+     ✅ v0.4.44: уровень (стена 2 этажа) тоже передаётся */
   function retryPlace(plan) {
     if (window.BrixGame.state.phase !== 'playing') return;
     var tid = 'T' + Math.random().toString(36).slice(2, 9);
     var rec = { id: 'L' + (++localSeq), ty: plan.ty, gx: plan.gx, gz: plan.gz,
       top: plan.top, by: myName, at: Date.now(), _ep: serverEp };   // ✅ v0.4.13
     if (plan.e !== undefined) rec.e = plan.e;
+    if (plan.lv === 1) rec.lv = 1;
     applyRecord(rec);
     pendingPlace[tid] = { rec: rec, old: rec._replacedOld || null,
       plan: plan, retried: true };
     BrixNet.sendBplace(plan.ty, plan.gx, plan.gz, plan.e, plan.top, tid,
-      plan.px, plan.pz);
+      plan.px, plan.pz, plan.lv);
     placeFallbackTimer(tid);
     saveLocalTry();
   }
@@ -1358,6 +1834,29 @@ window.BrixBuilding = (function () {
       var cb = new THREE.Mesh(cg.base, null); cb.position.y = 0.29; g.add(cb);
       var cl = new THREE.Mesh(cg.lid, null); cl.position.set(0, 0.55, 0); g.add(cl);
       g.userData.m = cb;
+    } else if (kind === 'ld') {
+      // ✅ v0.4.45 призрак лестницы: силуэт ступеней с площадкой
+      var lg = ladderGeo();
+      var gl = new THREE.Mesh(lg.landing, null); gl.position.set(0, LDR.MID - 0.06, -0.75); g.add(gl);
+      for (var glk = 0; glk < LDR.LO_N; glk++) {
+        var glr = new THREE.Mesh(lg.riserL, null);
+        glr.position.set(-0.7, LDR.LO_RISE * glk + LDR.LO_RISE / 2,
+          LDR.Z_F - LDR.LO_RUN * glk - LDR.LO_RUN / 2);
+        g.add(glr);
+      }
+      for (var glj = 0; glj < LDR.UP_N; glj++) {
+        var glu = new THREE.Mesh(lg.riserU, null);
+        glu.position.set(0.7, LDR.MID + LDR.UP_RISE * glj + LDR.UP_RISE / 2,
+          LDR.Z_B + LDR.UP_RUN * glj + LDR.UP_RUN / 2);
+        g.add(glu);
+      }
+      g.userData.m = gl;
+    } else if (kind === 'fu') {
+      // ✅ v0.4.44 призрак печки: тот же ОДИН МЕШ-купол (материал призрака)
+      var fmg = new THREE.Mesh(furnaceGeo(), null);
+      fmg.position.y = 0.02;
+      g.add(fmg);
+      g.userData.m = fmg;
     } else {
       var c = new THREE.Mesh(_geo.ceil, null); c.position.y = CEIL_T / 2; g.add(c); g.userData.m = c;
     }
@@ -1407,16 +1906,22 @@ window.BrixBuilding = (function () {
 
   /** ✅ v0.4.10 план для КРАЕВОЙ детали (стена/окно/проём) по точке прицела.
       Окно и проём можно ставить и ВМЕТО существующей стены (замена);
-      на край с окном/проёмом/дверью — нельзя */
+      на край с окном/проёмом/дверью — нельзя.
+      ✅ v0.4.45 ОКНО НА ПОТОЛОК (просьба игрока «пусть окно можно ставить
+      и на потолок»): целишься в ПЛИТУ перекрытия с окном в руках — окно
+      встаёт на ближайший край этой клетки ВТОРЫМ ЭТАЖОМ (стена с окном
+      на уровне потолка). А целишься в СТЕНУ 2 ЭТАЖА — окно встаёт ВМЕТО
+      неё (замена, как у стены 1 этажа) */
   function planOnEdge(P, hit, ty) {
     var gx, gz;
     // если попали в палубу/стену/окно/проём — берём её клетку
-    var viaMesh = null, viaEdge2 = null, o = hit && hit.object;
+    var viaMesh = null, viaEdge2 = null, viaCeil = false, o = hit && hit.object;
     while (o) {
       /* ✅ fix 0.4.11: ПОПАЛИ В СТЕНУ/ОКНО/ПРОЁМ — их канонический ключ
-         (bedge) точно знает клетку-анкер. Раньше клетку «угадывали»
+         (bedge) точно знает клетку-анкер. Раньше клетку «угадывали"
          округлением точки прицела и на половине краёв промахивались —
          призрак краснел «нет фундамента», хотя фундамент рядом */
+      if (o.userData && o.userData.bceil) viaCeil = true;
       if (!viaEdge2 && o.userData && o.userData.bedge) viaEdge2 = o.userData.bedge;
       if (o.userData && o.userData.bcell) { viaMesh = o.userData.bcell; break; }
       o = o.parent;
@@ -1432,6 +1937,22 @@ window.BrixBuilding = (function () {
     }
     var anchorCell = cellRecs.get(key(gx, gz));
     if (!anchorCell || !anchorCell.f) return { valid: false, why: 'nofound' };
+    /* ✅ v0.4.45 ОКНО НА ПОТОЛОК: в ПЛИТУ потолка с окном — окно на
+       ближайший край клетки УРОВНЕМ ВЫШЕ (база = верх плиты потолка,
+       как у стен 2 этажа). Край занят стеной 2 этажа — замена окном;
+       занят окном/проёмом/дверью — нельзя */
+    if (ty === 'wi' && viaCeil && anchorCell.c) {
+      var cwTop = Math.round((anchorCell.c.rec.top + CEIL_T) * 100) / 100;
+      var cwDx = P.x - gx * CELL, cwDz = P.z - gz * CELL;
+      var cwE = Math.abs(cwDx) > Math.abs(cwDz) ? (cwDx > 0 ? 1 : 3) : (cwDz > 0 ? 2 : 0);
+      var cwCan = canonicalEdge(gx, gz, cwE);
+      var cwEx = edgeRecs.get(key(cwCan.gx, cwCan.gz) + ',' + cwCan.e + ',1');
+      if (cwEx && (cwEx.rec.ty !== 'w' || cwEx.rec.lv !== 1)) {
+        return { valid: false, why: 'busy', gx: gx, gz: gz, e: cwE };
+      }
+      return { valid: true, ty: 'wi', lv: 1,
+        gx: gx, gz: gz, e: cwE, top: cwTop };
+    }
     // ближайший край клетки: куда смещена точка прицела от центра
     var dx = P.x - gx * CELL, dz = P.z - gz * CELL;
     var e = Math.abs(dx) > Math.abs(dz) ? (dx > 0 ? 1 : 3) : (dz > 0 ? 2 : 0);
@@ -1440,12 +1961,60 @@ window.BrixBuilding = (function () {
     var ex = edgeRecs.get(ekey);
     if (ex) {
       var et = ex.rec.ty;
+      /* ✅ v0.4.44 СТЕНА НА СТЕНУ: целишься в обычную стену 1 этажа
+         со стеной в руках — призрак перелезает НАВЕРХ (стена 2 этажа
+         стоит на краю потолка, если он есть в клетке этого края) */
+      if (ty === 'w' && et === 'w' && ex.rec.lv !== 1) {
+        var s1 = cellRecs.get(key(ex.rec.gx, ex.rec.gz));
+        var s2 = null;
+        // вторая клетка края (за стеной)
+        if (ex.rec.e === 0) s2 = cellRecs.get(key(ex.rec.gx, ex.rec.gz - 1));
+        else if (ex.rec.e === 3) s2 = cellRecs.get(key(ex.rec.gx - 1, ex.rec.gz));
+        /* ✅ v0.4.44: якорем шлём КЛЕТКУ С ПОТОЛКОМ (сервер ищет потолок
+           именно в ней; если потолок только за стеной — шлём вторую) */
+        var anch = (s1 && s1.c) ? { gx: ex.rec.gx, gz: ex.rec.gz }
+          : (s2 && s2.c) ? { gx: (ex.rec.e === 0 ? ex.rec.gx : ex.rec.gx - 1),
+                             gz: (ex.rec.e === 0 ? ex.rec.gz - 1 : ex.rec.gz) }
+          : null;
+        if (anch && !edgeRecs.get(ekey + ',1')) {
+          var supC = (s1 && s1.c) ? s1.c : s2.c;
+          return { valid: true, ty: 'w', lv: 1,
+            gx: anch.gx, gz: anch.gz, e: ex.rec.e,
+            top: Math.round((supC.rec.top + CEIL_T) * 100) / 100 };
+        }
+        return { valid: false, why: 'noceil' };
+      }
       if (ty === 'w') return { valid: false, why: 'busy' };
+      /* ✅ v0.4.45 ОКНО НА 2 ЭТАЖ: целишься в СТЕНУ 2 ЭТАЖА (lv1) с окном
+         в руках — окно встаёт ВМЕТО неё (замена, как у стены 1 этажа) */
+      if (ty === 'wi' && et === 'w' && ex.rec.lv === 1) {
+        return { valid: true, ty: 'wi', lv: 1,
+          gx: ex.rec.gx, gz: ex.rec.gz, e: ex.rec.e, top: ex.rec.top };
+      }
       // окно/проём встают ВМЕТО обычной стены (замена) — иначе нельзя
       if ((ty === 'wi' || ty === 'dw') && et !== 'w') return { valid: false, why: 'busy' };
     }
     // ✅ МАГНИТ К КРАЮ: деталь встаёт ровно на край фундамента
     return { valid: true, ty: ty, gx: gx, gz: gz, e: e, top: anchorCell.f.rec.top };
+  }
+
+  /* ============================================================
+     ✅ v0.4.44 план ЛЕСТНИЦЫ: клетка фундамента БЕЗ потолка (проём,
+     через который залезают на 2 этаж). Призрак по центру клетки
+     ============================================================ */
+  function planLadder(P, hit) {
+    var viaCell = null, o = hit && hit.object;
+    while (o) {
+      if (o.userData && o.userData.bcell) { viaCell = o.userData.bcell; break; }
+      o = o.parent;
+    }
+    var gx = viaCell ? parseInt(viaCell.split(',')[0], 10) : Math.round(P.x / CELL);
+    var gz = viaCell ? parseInt(viaCell.split(',')[1], 10) : Math.round(P.z / CELL);
+    var cell = cellRecs.get(key(gx, gz));
+    if (!cell || !cell.f) return { valid: false, why: 'nofound', gx: gx, gz: gz };
+    if (cell.ld) return { valid: false, why: 'busy', gx: gx, gz: gz };
+    if (cell.c) return { valid: false, why: 'ceil', gx: gx, gz: gz };
+    return { valid: true, ty: 'ld', gx: gx, gz: gz, top: cell.f.rec.top };
   }
 
   /** центр края (мировые координаты середины стены) — для поиска проёма */
@@ -1562,20 +2131,65 @@ window.BrixBuilding = (function () {
       var cell = cellRecs.get(key(gx, gz));
       if (!cell || !cell.f) continue;          // нет фундамента
       if (cell.c) continue;                    // потолок уже стоит
+      /* ✅ v0.4.45: в клетке ЛЕСТНИЦА — потолок нельзя (перекроет
+         проход на 2 этаж; сервер считает так же — причина 'ld') */
+      if (cell.ld) continue;
       // есть ли стена на любом из 4 краёв клетки (канонические ключи)
       var hasWall = edgeRecs.has(key(gx, gz) + ',0') ||
                     edgeRecs.has(key(gx, gz) + ',3') ||
                     edgeRecs.has(key(gx, gz + 1) + ',0') ||
                     edgeRecs.has(key(gx + 1, gz) + ',3');
-      if (!hasWall) continue;
+      /* ✅ v0.4.44 ПОТОЛОК НА ПОТОЛОК: без стены — можно, если рядом есть
+         потолок-опора и она ещё держит < 2 потолков без стен (сервер
+         считает так же — 'ceilmax') */
+      if (!hasWall) {
+        var nbC = [[gx + 1, gz], [gx - 1, gz], [gx, gz + 1], [gx, gz - 1]];
+        var sup = null;
+        for (var si = 0; si < nbC.length; si++) {
+          var nc = cellRecs.get(key(nbC[si][0], nbC[si][1]));
+          if (nc && nc.c) { sup = nc.c.rec; break; }
+        }
+        if (!sup) continue;                    // ни стены, ни потолка рядом
+        var hanging = 0;
+        var snb = [[sup.gx + 1, sup.gz], [sup.gx - 1, sup.gz],
+                   [sup.gx, sup.gz + 1], [sup.gx, sup.gz - 1]];
+        for (var sj = 0; sj < snb.length; sj++) {
+          var sc = cellRecs.get(key(snb[sj][0], snb[sj][1]));
+          var scHasWall = edgeRecs.has(key(snb[sj][0], snb[sj][1]) + ',0') ||
+                          edgeRecs.has(key(snb[sj][0], snb[sj][1]) + ',3') ||
+                          edgeRecs.has(key(snb[sj][0], snb[sj][1] + 1) + ',0') ||
+                          edgeRecs.has(key(snb[sj][0] + 1, snb[sj][1]) + ',3');
+          if (sc && sc.c && !scHasWall) hanging++;
+        }
+        if (hanging >= 2) continue;            // опора уже держит два
+      }
       return { valid: true, ty: 'c', gx: gx, gz: gz,
         top: Math.round((cell.f.rec.top + WALL_H) * 100) / 100 };
+    }
+    /* ============================================================
+       ✅ v0.4.44 ПОТОЛОК 2 ЭТАЖА (второй проход): все клетки 1 этажа
+       уже накрыты — потолок строится НАД ПОТОЛКОМ: клетка должна
+       иметь потолок 1 этажа (пол 2 этажа), НЕ иметь потолка 2 этажа
+       и стену 2 этажа (lv1) на любом краю. Ходьба по перекрытию 2
+       этажа работает (floorAt держит c1)
+       ============================================================ */
+    for (var k = 0; k < cands.length; k++) {
+      var gx2 = cands[k].gx, gz2 = cands[k].gz;
+      var cell2 = cellRecs.get(key(gx2, gz2));
+      if (!cell2 || !cell2.c || cell2.c1) continue;
+      var hasWall1 = edgeRecs.has(key(gx2, gz2) + ',0,1') ||
+                     edgeRecs.has(key(gx2, gz2) + ',3,1') ||
+                     edgeRecs.has(key(gx2, gz2 + 1) + ',0,1') ||
+                     edgeRecs.has(key(gx2 + 1, gz2) + ',3,1');
+      if (!hasWall1) continue;
+      return { valid: true, ty: 'c', lv: 1, gx: gx2, gz: gz2,
+        top: Math.round((cell2.c.rec.top + CEIL_T + WALL_H) * 100) / 100 };
     }
     // ничего подходящего — прежняя причина (по первой клетке-якорю, если была)
     if (viaEdge) {
       var pp2 = viaEdge.split(',');
-      var cell2 = cellRecs.get(key(parseInt(pp2[0], 10), parseInt(pp2[1], 10)));
-      if (!cell2 || !cell2.f) return { valid: false, why: 'nofound' };
+      var cell3 = cellRecs.get(key(parseInt(pp2[0], 10), parseInt(pp2[1], 10)));
+      if (!cell3 || !cell3.f) return { valid: false, why: 'nofound' };
     }
     return { valid: false, why: 'nowall' };
   }
@@ -1600,10 +2214,11 @@ window.BrixBuilding = (function () {
   }
 
   /* ============================================================
-     ✅ v0.4.22 СУНДУК: свободная установка — на землю и на палубу
-     фундамента. Высоту берём из точки луча (на фундаменте — ИЗ
-     ЗАПИСИ клетки, чтобы сундук не парил), поворот — лицом к игроку.
-     В воде, на склоне и рядом с другим сундуком ставиться нельзя
+     ✅ v0.4.22 СУНДУК: свободная установка — на землю, на палубу
+     фундамента и ✅ v0.4.44 НА ПОТОЛОК (просьба игрока «сундук на
+     потолок»): потолок — тоже горизонтальная поверхность, ставим на
+     его верх (2 этаж). Высоту берём из записи клетки, поворот —
+     лицом к игроку. В воде и рядом с другим сундуком — нельзя
      ============================================================ */
   function planChest(P, hit) {
     var wn = (hit && hit.face && hit.object)
@@ -1614,8 +2229,20 @@ window.BrixBuilding = (function () {
     var onDeck = !!(hit.object.userData && hit.object.userData.bcell);
     if (onDeck) {
       var fcell = cellRecs.get(hit.object.userData.bcell);
-      if (fcell && fcell.f) y = fcell.f.rec.top;      // точно по палубе фундамента
-      else onDeck = false;
+      if (fcell && fcell.f) {
+        /* палуба, потолок 1 этажа или потолок 2 этажа — та поверхность,
+           в которую упёрся луч: берём самую высокую опору НЕ ВЫШЕ точки + 0.4 */
+        var cands = [];
+        if (fcell.f) cands.push(fcell.f.rec.top);
+        if (fcell.c) cands.push(fcell.c.rec.top + CEIL_T);
+        if (fcell.c1) cands.push(fcell.c1.rec.top + CEIL_T);
+        var bestY = null;
+        for (var ci = 0; ci < cands.length; ci++) {
+          if (cands[ci] <= P.y + 0.45 && (bestY === null || cands[ci] > bestY)) bestY = cands[ci];
+        }
+        if (bestY !== null) y = bestY;
+        else onDeck = false;
+      } else onDeck = false;
     }
     var valid = true;
     if (y < WATER_LEVEL + 0.1) valid = false;         // не в воде
@@ -1626,6 +2253,19 @@ window.BrixBuilding = (function () {
     var rot = 0;
     if (_camera) rot = Math.atan2(_camera.position.x - x, _camera.position.z - z);
     return { ty: 'ch', x: x, z: z, y: y, rot: rot, valid: valid };
+  }
+
+  /* ✅ v0.4.44 ПЕЧКА — та же свободная установка, что у сундука:
+     земля / палуба / потолок (и 2 этажа). Клист с печками вместо сундуков */
+  function planFurnace(P, hit) {
+    var plan = planChest(P, hit);
+    if (!plan) return null;
+    furnaceRecs.forEach(function (en) {
+      var dx = en.rec.x - plan.x, dz = en.rec.z - plan.z;
+      if (dx * dx + dz * dz < 1.44) plan.valid = false;   // рядом другая печка
+    });
+    plan.ty = 'fu';
+    return plan;
   }
 
   function updateGhost() {
@@ -1675,6 +2315,8 @@ window.BrixBuilding = (function () {
     else if (current === 'c') plan = planCeiling(P, hits[0]);
     else if (current === 'dr') plan = planDoor(P, hits[0]);
     else if (current === 'ch') plan = planChest(P, hits[0]);   // ✅ v0.4.22
+    else if (current === 'ld') plan = planLadder(P, hits[0]);   // ✅ v0.4.44
+    else if (current === 'fu') plan = planFurnace(P, hits[0]);  // ✅ v0.4.44
     else plan = planOnEdge(P, hits[0], current);   // 'w' | 'wi' | 'dw'
     if (!plan) { ghost.group.visible = false; ghost.shown = false; return; }
     /* ✅ v0.4.12: точку прицела едет НА СЕРВЕР (px/pz) — сервер сам
@@ -1683,10 +2325,14 @@ window.BrixBuilding = (function () {
     plan.px = P.x; plan.pz = P.z;
     ghost.plan = plan;
     ghost.valid = !!plan.valid;
-    if (current === 'ch') {
-      // ✅ v0.4.22 сундук: свободные координаты + поворот к игроку
+    if (current === 'ch' || current === 'fu') {
+      // ✅ v0.4.22 сундук / ✅ v0.4.44 печка: свободные координаты + поворот к игроку
       ghost.group.position.set(plan.x, plan.y, plan.z);
       ghost.group.rotation.y = plan.rot || 0;
+    } else if (current === 'ld') {
+      // ✅ v0.4.44 лестница: призрак по центру клетки, от палубы вверх
+      ghost.group.position.set(plan.gx * CELL, plan.top || 0, plan.gz * CELL);
+      ghost.group.rotation.y = 0;
     } else if (EDGE_TY[current]) {
       ghost.group.position.set(plan.gx * CELL + (plan.e === 1 ? CELL / 2 : plan.e === 3 ? -CELL / 2 : 0),
         plan.top || 0,
@@ -1745,9 +2391,32 @@ window.BrixBuilding = (function () {
       }
       return;
     }
+    /* ============================================================
+       ✅ v0.4.44 ПЕЧКА — свободная постройка как сундук: свой канал
+       сервера (fuplace), состояние cont/on живёт у сервера ('fust')
+       ============================================================ */
+    if (plan.ty === 'fu') {
+      var fuRec = { id: 'L' + (++localSeq), ty: 'fu', x: plan.x, z: plan.z,
+        y: plan.y, rot: plan.rot, by: myName, at: Date.now(),
+        _ep: serverEp, cont: {}, on: 0 };
+      applyRecord(fuRec);                    // у себя — СРАЗУ (оптимистично)
+      pendingPlace[tid] = { rec: fuRec, old: null, plan: plan };
+      if (window.BrixNet && BrixNet.mode === 'server') {
+        BrixNet.sendFuPlace(plan.x, plan.z, plan.y, plan.rot, tid);
+        chestPlaceFallbackTimer(tid);
+        saveLocalTry();
+      } else {
+        if (window.BrixNet) {
+          BrixNet.send({ t: 'bnew', pid: (BrixNet.id || 'tab') + ':p', b: fuRec });
+        }
+        saveLocal();
+      }
+      return;
+    }
     var rec = { id: 'L' + (++localSeq), ty: plan.ty, gx: plan.gx, gz: plan.gz,
       top: plan.top, by: myName, at: Date.now(), _ep: serverEp };   // ✅ v0.4.13
     if (plan.e !== undefined) rec.e = plan.e;
+    if (plan.lv === 1) rec.lv = 1;   /* ✅ v0.4.44: стена/потолок 2 этажа */
     applyRecord(rec);                        // у себя — СРАЗУ (оптимистично)
     // ✅ v0.4.10: запоминаем, ЧТО заменили (стена→окно/проём, проём→дверь)
     // — при отказе сервера вернём на место
@@ -1756,7 +2425,7 @@ window.BrixBuilding = (function () {
     pendingPlace[tid] = { rec: rec, old: rec._replacedOld || null, plan: plan };
     if (window.BrixNet && BrixNet.mode === 'server') {
       BrixNet.sendBplace(plan.ty, plan.gx, plan.gz, plan.e, plan.top, tid,
-        plan.px, plan.pz);
+        plan.px, plan.pz, plan.lv);
       placeFallbackTimer(tid);
       saveLocalTry();
     } else {
@@ -1830,6 +2499,9 @@ window.BrixBuilding = (function () {
     cellRecs.forEach(function (cell) {
       if (!found && cell.f && cell.f.rec.id === id) found = cell.f.rec;
       if (!found && cell.c && cell.c.rec.id === id) found = cell.c.rec;
+      /* ✅ v0.4.44: потолок 2 этажа и лестница тоже ищутся по id */
+      if (!found && cell.c1 && cell.c1.rec.id === id) found = cell.c1.rec;
+      if (!found && cell.ld && cell.ld.rec.id === id) found = cell.ld.rec;
     });
     if (found) return found;
     var e2 = null;
@@ -2512,6 +3184,19 @@ window.BrixBuilding = (function () {
         '<path d="M4 12v-2.2c0-1.2 1-2.2 2.2-2.2h11.6c1.2 0 2.2 1 2.2 2.2V12" ' + stroke + '/>' +
         '<path d="M10.5 12v3.2h3V12" ' + stroke + '/></svg>';
     }
+    if (kind === 'ld') {
+      // ✅ v0.4.44 лестница: две направляющие и перекладины
+      return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24">' +
+        '<path d="M7 3.5L5.5 20.5M17 3.5l1.5 17" ' + stroke + '/>' +
+        '<path d="M6.2 8h11.6M6 12.5h12M5.7 17h12.6" ' + stroke + '/></svg>';
+    }
+    if (kind === 'fu') {
+      // ✅ v0.4.44 печка: купол с устьем и огонь внутри
+      return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24">' +
+        '<path d="M4 20c0-6 2-13 8-13s8 7 8 13H4z" ' + stroke + '/>' +
+        '<path d="M9 20c0-3.5 1-6 3-6s3 2.5 3 6" ' + stroke + '/>' +
+        '<path d="M12 16.5c1 1 1 2 0 3" stroke="#e8a04a" fill="none" stroke-width="1.5" stroke-linecap="round"/></svg>';
+    }
     if (kind === 'dr') {
       // ✅ v0.4.10 дверь: полотно с ручкой, приоткрытая
       return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24">' +
@@ -2798,6 +3483,19 @@ window.BrixBuilding = (function () {
         if (en.lidPivot) en.lidPivot.rotation.x = CHEST_OPEN_ANGLE * en.open;
       }
     });
+    /* ✅ v0.4.44: огонь в устье печки (вкл/выкл + лёгкое мерцание) */
+    furnaceRecs.forEach(function (en) {
+      if (en.fire) {
+        var burning = en.rec.on ? 1 : 0;
+        en.fire.intensity += ((burning * (1.3 + Math.sin(performance.now() * 0.011) * 0.25)) -
+          en.fire.intensity) * Math.min(1, dt * 5);
+        if (en.body && en.body.material) {
+          en.body.material.emissiveIntensity +=
+            ((burning * (0.5 + Math.sin(performance.now() * 0.008) * 0.14)) -
+             en.body.material.emissiveIntensity) * Math.min(1, dt * 5);
+        }
+      }
+    });
     vaultTick(dt);          // перелаз через окно
     /* ✅ v0.4.32 fix: aim.t НИКОГДА не уменьшался — aimCheck(false) после
        первого вызова уходил в ранний return навсегда, и подсказка «F —
@@ -2868,6 +3566,14 @@ window.BrixBuilding = (function () {
     chestCont: chestCont,               // содержимое сундука ({item: count}) или null
     setChestCont: setChestCont,         // обновить содержимое (сервер главнее)
     chestLid: chestLid,                 // крышка: 1 открыть, 0 закрыть (анимация в tick)
+    /* ✅ v0.4.44: печка + лестница */
+    furnaceAim: furnaceAim,             // F наведён на печку — вернуть её id (или null)
+    furnaceCont: furnaceCont,           // rec печки ({cont, on, ...}) или null
+    setFurnaceState: setFurnaceState,   // сервер прислал 'fust' — обновить
+    ladderAt: ladderAt,                 // зона лестницы под игроком (для залезания)
+    /* ✅ v0.4.44: перебор печек для локальной плавки (соло/вкладки) */
+    _furnaces: function (fn) { furnaceRecs.forEach(function (en) { fn(en.rec); }); },
+    _furnacesDirty: function () { saveLocal(); },
     /* ✅ v0.4.28: ломание построек (хп + удары) */
     hitTargets: hitTargets,             // группы деталей для луча ЛКМ
     findPiece: findPiece,               // меш -> { id, ty }

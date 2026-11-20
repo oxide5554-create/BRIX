@@ -7,6 +7,76 @@ window.BrixData = window.BrixData || {};
 
 window.BrixData.NEWS = [
   {
+    id: 'n-syringe-psave-c4stack',
+    date: '20.11.2026',
+    tag: 'new',
+    title: {
+      ru: 'Патч 0.4.46 — Шприц (+46 хп), сохранение игрока и С4 ×10',
+      en: 'Patch 0.4.46 — Syringe (+46 hp), player save and C4 ×10'
+    },
+    excerpt: {
+      ru: 'ШПРИЦ: ЛКМ — укол с анимацией из модели шприца (руки наши): поднимает, ставит укол и на «продавливании» даёт +46 ХП; расходуется, стакается по 10, крафтится (20 металлолома + 10 фрагментов) и падает из военных ящиков. СОХРАНЕНИЕ: позиция, весь инвентарь и выбранный слот хотбара живут на сервере — вышел и зашёл: ты там же и с теми же вещами; при смерти сохранение стирается (вещи в трупе). ПОД ЛЕСТНИЦЕЙ — только в приседе: стоя голова упирается в площадку и марш. С4 теперь стакается по 10. ФИКС: два калаша в сундуке больше не слипаются — каждый в своём слоте.',
+      en: 'SYRINGE: LMB injects with the animation from the syringe model (our own hands): raise, inject, and at the plunger press you get +46 HP; it is consumed, stacks ×10, crafts from 20 scrap + 10 metal fragments and drops from military crates. PLAYER SAVE: position, whole inventory and the selected hotbar slot live on the server — log out and back in, you are exactly where you left; death wipes the save (your stuff is in the corpse). UNDER THE STAIRS — crouch only: standing you hit your head on the landing and the upper flight. C4 now stacks ×10. FIX: two AKs no longer merge in a chest — each gets its own slot.'
+    },
+    body: {
+      ru: [
+        'ШПРИЦ (+46 ХП): ЛКМ со шприцем в руках — УКОЛ. Играется полная анимация из модели medical_syringe_healing_fps_animation.glb (5.73 с): шприц поднимается, держится наготове, на 3.45 с «продавливается» — В ЭТОТ МОМЕНТ приходит +46 ХП. Руки в анимации — НАШИ (чужие руки модели скрыты, наш риг повторяет жест), шприц — из модели.',
+        'Шприц РАСХОДУЕТСЯ (снимается со слота сразу после ЛКМ), СТАКУЕТСЯ ПО 10 (как С4). КРАФТ: 20 металлолома + 10 метал фрагментов (вкладка ИНСТРУМЕНТЫ). Падает из ВОЕННЫХ ящиков с шансом 30% (1–2 шт). Если здоровье полное — укол не тратится.',
+        'СОХРАНЕНИЕ ИГРОКА (server.js 0.4.46): позиция (ноги) + поворот + ХП + ВЕСЬ инвентарь + выбранный слот хотбара хранятся на СЕРВЕРЕ в players.json под BRIX-ID. Клиент шлёт сохранение раз в 3 с и при выходе; welcome возвращает его — игрок появляется ТОЧНО там, где вышел, со всеми вещами и обоймами (у оружия сохраняется остаток магазина).',
+        'СМЕРТЬ = СТИРКА СОХРАНЕНИЯ: весь инвентарь уходит в труп-лутбокс, сохранение удаляется — задвоить вещи невозможно (нельзя выйти до смерти и вернуться с полным инвентарём). После респауна сохранение пишется заново (стартовый набор).',
+        'ПОД ЛЕСТНИЦЕЙ — ТОЛЬКО В ПРИСЕДЕ: у площадки и верхнего марша низ на 1.5/1.62 м — стоя (голова 1.82 м) об них УДАРЯЕШЬСЯ: движение блокируется, как стеной. В приседе (C) голова 1.17 м — проход есть. Вставать ПОД лестницей нельзя — пока голова упирается, C не встаёт. Подъём по ступеням не изменился.',
+        'С4 СТАКОМ 10: в одном слоте до 10 блоков (было 1). Бросок снимает 1 из стека.',
+        'ФИКС «ДВА КАЛАША В СУНДУКЕ СТАКУТСЯ»: оружие и инструменты кладутся ПО 1 ШТУКЕ НА СЛОТ — в сундуке/трупе каждый калаш занимает СВОЙ слот, клик забирает ОДИН калаш, у каждого своя обойма. Стакуются только ресурсы.',
+        'СЕРВЕР: замени server.js и ПЕРЕЗАПУСТИ его (v0.4.46 — новая логика heal/psave). Кэш поднят до ?v=085 — после перезахода страница обновится сама.'
+      ],
+      en: [
+        'SYRINGE (+46 HP): LMB with the syringe in hand — INJECTION. The full animation from medical_syringe_healing_fps_animation.glb plays (5.73 s): the syringe rises, waits ready, and at 3.45 s the plunger is pressed — THAT is when you get +46 HP. The hands are OURS (the model’s arms are hidden, our rig repeats the gesture); the syringe itself comes from the model.',
+        'The syringe is CONSUMED (removed right after LMB) and STACKS ×10 (like C4). CRAFT: 20 scrap + 10 metal fragments (TOOLS tab). Drops from MILITARY crates at 30% chance (1–2 pcs). If your health is full the syringe is not wasted.',
+        'PLAYER SAVE (server.js 0.4.46): position (feet) + yaw + HP + the WHOLE inventory + the selected hotbar slot live ON THE SERVER in players.json keyed by BRIX-ID. The client sends the save every 3 s and on exit; welcome returns it — you spawn EXACTLY where you left, with all your items and weapon magazines intact.',
+        'DEATH = SAVE WIPED: the whole inventory goes into the corpse lootbox and the save is deleted — duplicating items is impossible (you cannot log out before dying and come back with a full inventory). After respawn a fresh save is written (starter kit).',
+        'UNDER THE STAIRS — CROUCH ONLY: the landing and the upper flight are 1.5/1.62 m high — standing (head 1.82 m) you bang your head and movement is blocked like a wall. Crouched (C) your head is 1.17 m — you pass. You cannot stand up under the stairs — C is ignored while your head hits. Climbing the steps is unchanged.',
+        'C4 STACK OF 10: one slot holds up to 10 blocks (was 1). A throw takes 1 from the stack.',
+        'FIX “TWO AKs MERGE IN A CHEST”: weapons and tools occupy ONE UNIT PER SLOT — in chests/corpses each AK takes its own slot, a click takes ONE rifle, each has its own magazine. Only resources stack.',
+        'SERVER: replace server.js and RESTART it (v0.4.46 — new heal/psave logic). Cache bumped to ?v=085 — the page updates itself after reconnect.'
+      ]
+    }
+  },
+  {
+    id: 'n-c4-server-corpses',
+    date: '20.11.2026',
+    tag: 'new',
+    title: {
+      ru: 'Патч 0.4.43 — С4 тикает на сервере, обломки взрывов и трупы-лутбоксы',
+      en: 'Patch 0.4.43 — C4 ticks on the server, blast debris and corpse lootboxes'
+    },
+    excerpt: {
+      ru: 'С4: таймер теперь В СЕРВЕРЕ — вышедший из игры не отменяет взрыв, а зашедший после постановки видит блок и слышит тыки с правильной фазы (главный фикс: события С4 раньше терялись в сети — чужие игроки вообще их не получали). Обломки: взорванное распадается на 5×5 кусков, падает на землю и растворяется. Трупы: смерть оставляет труп-лутбокс со всем инвентарём — подойди и жми F; труп синхронизируется и сохраняется сервером.',
+      en: 'C4: the fuse now lives ON THE SERVER — leaving the game no longer cancels the blast, and anyone who joined after placement sees the bomb and hears the ticks at the right phase (main fix: C4 events used to be silently dropped by the network layer — other players never received them). Debris: blown-up pieces split into a 5×5 grid of chunks that fall to the ground and fade away. Corpses: death leaves a lootbox body with the whole inventory — walk up and press F; corpses are synced and saved by the server.'
+    },
+    body: {
+      ru: [
+        'С4 ТИКАЕТ В СЕРВЕРЕ (а не у игрока): когда блок прилип, сервер создаёт сущность (id, точка, нормаль, кто поставил, время) и сам взрывает её через 11.24 с — РОВНО ТАК ЖЕ, как раньше тикал клиент. Теперь: бросавший ВЫШЕЛ из игры — бомба всё равно взорвётся; сервер ПЕРЕЗАПУСТИЛИ до взрыва — бомбы сохраняются в world-objs.json и таймер продолжается после старта.',
+        'ГЛАВНЫЙ ФИКС СИНХРОНИЗАЦИИ: раньше js/net/net.js молча ТЕРЯЛ события c4placed/c4boom (в его switch просто не было таких строк) — чужие игроки ВООБЩЕ не видели блок, не слышали тыков и взрыва, фьюз существовал только у бросавшего. Теперь неизвестные события доставляются обработчикам автоматически — все видят и слышат С4 одинаково.',
+        'НОВЫЙ ИГРОК ВИДИТ БОМБУ: зашёл после постановки — живые С4 приезжают в снапшоте мира с ОСТАТКОМ фьюза, тыки играются с правильной фазы, и взрыв произойдёт в тот же момент, что у всех (решает сервер). Урон (постройки −400, игроки −250) сервер считает ОДИН раз на взрыв.',
+        'ОБЛОМКИ ВЗРЫВОВ: то, что взрыв С4 сломал, больше не исчезает молча — сервер рассылает список разрушенных деталей, и у ВСЕХ игроков каждая распадается на решётку 5×5 кусков: куски разлетаются с физикой (гравитация, отскок), падают на землю, лежат ~5.5 с и за 1.5 с «растворяются». Разлёт детерминирован сидом — у всех выглядит одинаково. На игру куски не влияют, FPS не режут (лимит 280).',
+        'ТРУПЫ-ЛУТБОКСЫ: при смерти игрока его ВЕСЬ инвентарь уходит в ТРУП на месте гибели — лежащая кукла в цвете игрока, красное пульсирующее кольцо и плашка «ТРУП · Ник». Подойди и нажми F — откроется лут-меню со всеми ресурсами погибшего (клик — забрать стек, перетаскивание — сколько влезет). Труп живёт НА СЕРВЕРЕ: видят все, синхронизируется мгновенно (кто-то забрал вещь — у остальных она исчезла), сохраняется в world-objs.json для НОВЫХ игроков и переживает рестарт. Опустел — труп убирается у всех; TTL — 20 минут.',
+        'СВОИ ВЕЩИ МОЖНО ВЕРНУТЬ: после респауна инвентарь пуст (без двойных вещей) — вернись к своему трупу и забери всё обратно по F; на экране смерти остаётся красный череп-метка на карте.',
+        'РЭГДОЛЛ-СМЕРТЬ: чужой игрок при смерти больше НЕ уходит под землю — «кости пропадают»: тело плавно падает на землю, сжимается и растворяется, а на месте остаётся труп-лутбокс. РЕЖИМЫ: всё работает и на сервере, и во вкладках, и в соло.',
+        'СЕРВЕР: ЗАМЕНИ server.js и ОБЯЗАТЕЛЬНО ПЕРЕЗАПУСТИ (v0.4.43 — логика менялась). Кэш поднят до ?v=082 — страница обновится после Ctrl+Shift+R.'
+      ],
+      en: [
+        'C4 TICKS ON THE SERVER (not the player): when the bomb sticks, the server creates an entity (id, point, normal, owner, time) and detonates it itself after 11.24 s — exactly like the client used to. Now: the thrower LEAVES — the bomb still explodes; the server RESTARTS before the blast — bombs are saved to world-objs.json and the timer resumes on boot.',
+        'MAIN SYNC FIX: js/net/net.js used to silently DROP c4placed/c4boom events (the switch simply had no cases for them) — other players NEVER saw the bomb, heard no ticks and no explosion; the fuse existed only in the thrower’s head. Unknown events are now delivered to their handlers automatically — everyone sees and hears C4 the same way.',
+        'NEW PLAYERS SEE THE BOMB: join after placement — live C4s arrive in the world snapshot with the REMAINING fuse; ticks play at the right phase and the blast happens at the same moment for everyone (the server decides). Damage (buildings −400, players −250) is applied by the server ONCE per blast.',
+        'BLAST DEBRIS: what the C4 destroys no longer vanishes silently — the server broadcasts the destroyed pieces and EVERY player sees each piece split into a 5×5 grid of chunks: chunks fly out with physics (gravity, one bounce), land on the ground, rest for ~5.5 s and “dissolve” over 1.5 s. The scatter is seeded — identical for everyone. Chunks are purely visual and FPS-safe (280 cap).',
+        'CORPSE LOOTBOXES: when a player dies, their WHOLE inventory goes into a BODY at the death spot — a lying doll in the player’s color, a pulsing red ring and a “BODY · Nick” plate. Walk up and press F — a loot menu opens with all their resources (click — take the stack, drag — as much as fits). The corpse lives ON THE SERVER: everyone sees it, sync is instant (someone took an item — it disappears for the rest), it is saved to world-objs.json for NEW players and survives restarts. Emptied — removed for everyone; TTL — 20 minutes.',
+        'GET YOUR OWN STUFF BACK: after respawn your inventory is empty (no duplicates) — walk back to your body and loot it with F; the death screen keeps the red skull marker on the map.',
+        'RAGDOLL DEATH: other players no longer sink into the ground — “the bones are gone”: the body falls smoothly to the ground, compresses and dissolves, leaving the lootbox corpse. MODES: works on the server, in tabs and in solo.',
+        'SERVER: REPLACE server.js and RESTART (v0.4.43 — logic changed). Cache bumped to ?v=082 — the page picks it up after Ctrl+Shift+R.'
+      ]
+    }
+  },
+  {
     id: 'n-biomes-footprints',
     date: '20.11.2026',
     tag: 'new',

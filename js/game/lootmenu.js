@@ -28,12 +28,13 @@ window.BrixLootMenu = (function () {
   var curLoot = null;
   var curMil = 0;
   var curMode = null;   /* ✅ v0.4.22: 'chest' — меню сундука «наоборот» */
+  var curName = '';     /* ✅ v0.4.43: имя погибшего (режим 'corpse') */
   var onTake = null;   // (cbId, item, amt) — забрать из ящика
   var onPut = null;    // (cbId, item, amt, fromIndex) — положить в ящик
   var onClose = null;
   var lastOpen = 0;    // ✅ защита от немедленного закрытия тем же F (репо)
 
-  function t(k) { return window.BrixState ? BrixState.t(k) : k; }
+  function t(k, o) { return window.BrixState ? BrixState.t(k, o) : k; }
 
   function itemName(id) {
     var d = (window.BrixItems && BrixItems[id]) || { id: id, name: id, nameEn: id };
@@ -182,7 +183,9 @@ window.BrixLootMenu = (function () {
         onDragStart(e, { src: 'crate', item: item });
       });
       el.addEventListener('click', function () {
-        if (onTake && curId) onTake(curId, item, (curLoot && curLoot[item]) || 0);
+        /* ✅ v0.4.46: забираем СТОЛЬКО, сколько в ЭТОМ слоте (оружие — 1
+           штуку, ресурс — весь стек) */
+        if (onTake && curId) onTake(curId, item, count || (curLoot && curLoot[item]) || 0);
       });
     }
     el.addEventListener('dragover', onDragOver);
@@ -251,14 +254,28 @@ window.BrixLootMenu = (function () {
     var grid = document.getElementById('lootCrateGrid');
     var invGrid = document.getElementById('lootInvGrid');
     var hotGrid = document.getElementById('lootHotbarGrid');
-    /* ✅ v0.4.22: у сундука 16 слотов (ящики: деревянный 12 / военный 18) */
-    var size = curMode === 'chest' ? 16 : (curMil ? 18 : 12);
+    /* ✅ v0.4.22: у сундука 16 слотов (ящики: деревянный 12 / военный 18)
+       ✅ v0.4.43: у трупа тоже 16 — вещей может быть много */
+    var size = (curMode === 'chest' || curMode === 'corpse')
+      ? 16 : (curMil ? 18 : 12);
 
-    // --- ящик: лут разворачиваем в слоты ---
+    /* --- ящик/сундук/труп: лут разворачиваем в слоты ---
+       ✅ v0.4.46 ФИКС «ДВА КАЛАША В СУНДУКЕ СТАКУТСЯ»: нестакуемое
+       (оружие/инструмент, stackLimit 1) показывается ПО ШТУКЕ на слоте —
+       два калаша = ДВА слота, клик забирает ОДИН. Стакуются только
+       ресурсы (лимит стека > 1). Внутри сундук по-прежнему хранит
+       «id → сколько всего» (порядок не важен) */
     grid.innerHTML = '';
     var keys = Object.keys(curLoot || {}).filter(function (k) { return curLoot[k] > 0; });
+    var entries = [];
+    keys.forEach(function (k) {
+      var lim = stackLimit(k);
+      var n = curLoot[k] | 0;
+      if (lim > 1) entries.push({ id: k, n: n });          // ресурс — один слот, весь стек
+      else { for (var q = 0; q < Math.min(n, size); q++) entries.push({ id: k, n: 1 }); }
+    });
     for (var i = 0; i < size; i++) {
-      if (i < keys.length) renderCrateSlot(grid, keys[i], curLoot[keys[i]]);
+      if (i < entries.length) renderCrateSlot(grid, entries[i].id, entries[i].n);
       else renderCrateSlot(grid, null, 0);
     }
 
@@ -272,19 +289,26 @@ window.BrixLootMenu = (function () {
     for (var h = 0; h < 6; h++) renderOwnSlot(hotGrid, I.slots[h], h);
   }
 
-  /** открыть меню ящика (id чекблока, лут, mil, mode — ✅ v0.4.22 'chest') */
-  function open(id, loot, mil, mode) {
+  /** открыть меню (id, лут, mil, mode — ✅ v0.4.22 'chest';
+      ✅ v0.4.43: mode 'corpse' + customTitle — имя погибшего) */
+  function open(id, loot, mil, mode, customTitle) {
     ensure();
     curId = id;
     curMil = mil || 0;
     curMode = mode || null;
+    curName = String(customTitle || '');
     lastOpen = performance.now();
     document.getElementById('lootTitle').textContent =
-      curMode === 'chest' ? t('loot.titleChest') : crateTitle(curMil);
-    /* ✅ v0.4.22: у сундука своя подсказка — «класть» на первом месте */
+      curMode === 'chest' ? t('loot.titleChest')
+      : curMode === 'corpse' ? t('loot.titleCorpse', { n: curName || '?' })
+      : crateTitle(curMil);
+    /* ✅ v0.4.22: у сундука своя подсказка — «класть» на первом месте
+       ✅ v0.4.43: у трупа — только забирать */
     var hintEl = document.getElementById('lootHint');
     if (hintEl) {
-      hintEl.textContent = curMode === 'chest' ? t('loot.hintChest') : t('loot.hint');
+      hintEl.textContent = curMode === 'chest' ? t('loot.hintChest')
+        : curMode === 'corpse' ? t('loot.hintCorpse')
+        : t('loot.hint');
     }
     document.getElementById('lootInvCap').innerHTML =
       t('loot.inv') + ' <span style="color:#8a8a8a;font-weight:400">· ' + backpackCount() + '</span>';
@@ -310,6 +334,7 @@ window.BrixLootMenu = (function () {
     curId = null;
     curLoot = null;
     curMode = null;
+    curName = '';
     if (onClose) onClose(closingId);
   }
 
