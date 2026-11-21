@@ -100,6 +100,21 @@ window.BrixFirstPerson = (function () {
   var MACE_YAW = 90;           // доворот головы булавы вокруг рукояти (град)
   var MACE = { len: MACE_TARGET_LEN, yaw: MACE_YAW };   // «вживая» настройка
 
+  /* ✅ v0.4.53 ФАКЕЛ (модель пользователя non-textured_burning_torch_4.glb
+     → assets/models/torch.glb): ДЕРЖИТСЯ КАК ТОПОР (одна правая рука,
+     хват placeLikeAxe), но НИКАК НЕ ОРУЖИЕ: замахов нет, урона нет —
+     только СВЕТ ночью (в мире его включает gameworld.js, здесь —
+     маленький «уголёк»-PointLight, подсвечивающий кисть у пламени).
+     Пламя модели СТАТИЧНОЕ (анимация «Burning» вырезана при оптимизации),
+     поэтому огонь НЕ МЕРЦАЕТ и свет РОВНЫЙ.
+     Настраивается вживую из консоли (F12):
+       BrixFirstPerson.TORCH.len = 0.8;  BrixFirstPerson.TORCH.yaw = 0; */
+  var TORCH_URL = 'assets/models/torch.glb';
+  var GRIP_TORCH = Object.assign({}, GRIP);
+  var TORCH_TARGET_LEN = 0.80;  // длина факела в руке, м (чуть длиннее топора)
+  var TORCH_YAW = 0;            // доворот вокруг рукояти (голова факела симметрична)
+  var TORCH = { len: TORCH_TARGET_LEN, yaw: TORCH_YAW };   // «вживая» настройка
+
   /* ✅ v0.4.41 С4 (модель пользователя C4.glb → assets/models/c4.glb):
      взрывчатка ДЕРЖИТСЯ ПО-ДРУГОМУ, чем всё остальное: блок ПО ЦЕНТРУ
      экрана перед грудью, ОБЕ руки держат его ЗА БОКИ (кисти вертикальны,
@@ -614,6 +629,13 @@ window.BrixFirstPerson = (function () {
     rx: 0.16, ry: 0.10, rz: 0.66, rphi: 30
   });
 
+  /* ✅ v0.4.53 поза idle с ФАКЕЛОМ: факел длинный и горящий — держим его
+     ВЕРТИКАЛЬНЕЕ топора (rz↓, rphi↓), чтобы пламя было видно НАД кистью
+     и не «торчало» в лицо, и чуть ближе к центру (как у булавы) */
+  var FIDLE_TORCH = Object.assign({}, FIDLE_AXE, {
+    rx: 0.16, ry: 0.10, rz: 0.64, rphi: 22, roll: 90
+  });
+
   // ✅ v0.4.41 поза idle с С4: обе руки ПО ЦЕНТРУ, симметрично (rx ↔ lx),
   // ладони вертикальны (как у револьвера rphi 0 / roll 90) — блок между
   // ними. rz 0.62 (не ближе — иначе кисти уходят НИЖЕ кадра камеры рук),
@@ -901,6 +923,8 @@ window.BrixFirstPerson = (function () {
     this.ironPick = null;     // {holder, wrap} — железная кирка
     this.ironAxe = null;      // {holder, wrap} — железный топор (v0.2.9)
     this.mace = null;         // {holder, wrap} — булава (v0.4.40, грузится отдельно)
+    this.torch = null;        // ✅ v0.4.53 {holder, wrap} — факел (грузится отдельно)
+    this.torchGlow = null;    // ✅ v0.4.53 PointLight-«уголёк» у пламени (руки)
     this.c4 = null;           // ✅ v0.4.41 {holder, wrap, proto} — С4 (грузится отдельно)
     this.revolver = null;     // {holder, wrap} — револьвер (v0.4.5)
     this.shotgun = null;      // {holder, wrap} — дробовик (v0.4.19)
@@ -997,6 +1021,14 @@ window.BrixFirstPerson = (function () {
         if (self._attachC4) self._attachC4(cg);
       }).catch(function () {
         console.warn('[BrixFirstPerson] С4 не загрузился (запускай через сервер) — руки работают, С4 будет без модели');
+      });
+      /* ✅ v0.4.53: ФАКЕЛ — грузится ОТДЕЛЬНО (как булава/С4). Модель уже
+         в assets/models/torch.glb (на file:// его нет во встроенных моделях —
+         руки работают, факел будет без модели) */
+      loadModel(TORCH_URL).then(function (tg) {
+        if (self._attachTorch) self._attachTorch(tg);
+      }).catch(function () {
+        console.warn('[BrixFirstPerson] факел не загрузился (запускай через сервер) — руки работают, факел будет без модели');
       });
       /* ✅ v0.4.46: ШПРИЦ — грузится ОТДЕЛЬНО С АНИМАЦИЕЙ (BrixGLB.loadAnim:
          клип из GLB — подъем/удержание/укол/убирание). На file:// его нет
@@ -1195,6 +1227,36 @@ window.BrixFirstPerson = (function () {
       mholder.visible = self.currentWeapon === 'mace' && self.visible;
       self.mace = { holder: mholder, wrap: mwrap };
       console.log('[BrixFirstPerson] булава в руках готова (длина ' + MACE.len + ' м)');
+    };
+
+    /* ✅ v0.4.53 ФАКЕЛ — сборка КАК У ТОПОРА (fitToolLikeAxe: рукоять вдоль
+       +Y, нижний конец в ладони, длина TORCH.len), но:
+       • НИКАКИХ замахов (клипов удара нет — ЛКМ с факелом не работает);
+       • НЕ бросает и НЕ принимает тени + геометрия уже без скелета и
+         без анимации — факел дешевле кадра, чем любой инструмент;
+       • у пламени маленький PointLight-«уголёк» (БЕЗ теней, радиус 2.5 м):
+         включается ТОЛЬКО ночью и горит РОВНО (никакого мерцания) */
+    this._attachTorch = function (tg) {
+      if (self.torch) return;
+      fitToolLikeAxe(tg, TORCH.len);
+      if (TORCH.yaw) tg.rotateY(TORCH.yaw * D);
+      walkMat(tg);
+      tg.traverse(function (o) {
+        if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; }
+      });
+      var glow = new THREE.PointLight(0xff9a4d, 0, 2.5, 2);
+      glow.castShadow = false;
+      glow.position.set(0, TORCH.len * 0.60, 0);   // у головы факела (пламя)
+      var twrap = new THREE.Group();
+      twrap.add(tg);
+      var tholder = new THREE.Group();
+      tholder.add(glow);
+      tholder.add(twrap);
+      B.RightHand.add(tholder);
+      tholder.visible = self.currentWeapon === 'torch' && self.visible;
+      self.torch = { holder: tholder, wrap: twrap };
+      self.torchGlow = glow;
+      console.log('[BrixFirstPerson] факел в руках готов (длина ' + TORCH.len + ' м)');
     };
 
     /* ✅ v0.4.41 С4 — своя сборка: модель НОРМАЛИЗУЕТСЯ к единичному
@@ -1693,6 +1755,11 @@ this._attachSyringe = function (res) {
     this.placeMace = function (roll) {
       if (!self.mace) return;
       placeLikeAxe(roll, self.mace.holder, self.mace.wrap, GRIP_MACE);
+    };
+    // ✅ v0.4.53 факел — хват КАК У ТОПОРА (одна правая рука, рукоять в ладони)
+    this.placeTorch = function (roll) {
+      if (!self.torch) return;
+      placeLikeAxe(roll, self.torch.holder, self.torch.wrap, GRIP_TORCH);
     };
     // ✅ v0.4.6 план строителя — тот же хват ладони, лист наклонён самим wrap
     this.placePlan = function (roll) {
@@ -2250,6 +2317,7 @@ this._attachSyringe = function (res) {
       else if (self.currentWeapon === 'ironAxe') self.placeIronAxe(p.roll !== undefined ? p.roll : 90);
       else if (self.currentWeapon === 'ironPickaxe') self.placeIronPick(p.roll !== undefined ? p.roll : 90);
       else if (self.currentWeapon === 'mace' && self.mace) self.placeMace(p.roll !== undefined ? p.roll : 90);   // ✅ v0.4.40 булава
+      else if (self.currentWeapon === 'torch' && self.torch) self.placeTorch(p.roll !== undefined ? p.roll : 90);   // ✅ v0.4.53 факел
       else if (self.currentWeapon === 'plan' && self.plan) self.placePlan(p.roll !== undefined ? p.roll : 90);
       else if (self.currentWeapon === 'revolver' && self.revolver) self.placeRevolver();
       else if (self.currentWeapon === 'shotgun' && self.shotgun) self.placeShotgun();
@@ -2333,6 +2401,7 @@ this._attachSyringe = function (res) {
                    this.currentWeapon === 'ironPickaxe' ||
                    this.currentWeapon === 'ironAxe' ||
                    this.currentWeapon === 'mace' ||   // ✅ v0.4.40 булава
+                   this.currentWeapon === 'torch' ||  // ✅ v0.4.53 факел (держится как топор)
                    this.currentWeapon === 'c4' ||     // ✅ v0.4.41 С4
                    this.currentWeapon === 'plan' ||
                    this.currentWeapon === 'revolver' ||
@@ -2354,6 +2423,7 @@ this._attachSyringe = function (res) {
     if (this.ironPick) this.ironPick.holder.visible = showArms && this.currentWeapon === 'ironPickaxe';
     if (this.ironAxe) this.ironAxe.holder.visible = showArms && this.currentWeapon === 'ironAxe';
     if (this.mace) this.mace.holder.visible = showArms && this.currentWeapon === 'mace';   // ✅ v0.4.40
+    if (this.torch) this.torch.holder.visible = showArms && this.currentWeapon === 'torch';   // ✅ v0.4.53 факел
     if (this.c4) this.c4.holder.visible = showArms && this.currentWeapon === 'c4';   // ✅ v0.4.41
     if (this.plan) this.plan.holder.visible = showArms && this.currentWeapon === 'plan';
     if (this.revolver) this.revolver.holder.visible = showArms && this.currentWeapon === 'revolver';
@@ -2591,6 +2661,19 @@ this._attachSyringe = function (res) {
     if (!this.loaded) return;
     this._clock += dt;
 
+    /* ✅ v0.4.53 ФАКЕЛ — «уголёк» в руках: горит РОВНО, только НОЧЬЮ
+       (isNight — и ночь, и сумерки), плавно включается/гаснет.
+       Никаких колебаний интенсивности — пламя НЕ МЕРЦАЕТ */
+    if (this.torchGlow) {
+      var nightOn = this.currentWeapon === 'torch' && window.BrixEnvironment &&
+        BrixEnvironment.isNight && BrixEnvironment.isNight();
+      var wantGlow = nightOn ? 1.1 : 0;
+      this._glowK = (this._glowK === undefined ? 0 : this._glowK) +
+        (wantGlow - (this._glowK === undefined ? 0 : this._glowK)) * Math.min(1, dt * 3);
+      this.torchGlow.intensity = this._glowK;
+      this.torchGlow.visible = this._glowK > 0.02;
+    }
+
     // ✅ v0.4.5: покой зависит от оружия — с револьвером своя стойка
     // ✅ v0.4.19: та же стойка с дробовиком
     // ✅ v0.4.36: и с револьвером-карабином 3× (хват как у револьвера)
@@ -2599,6 +2682,7 @@ this._attachSyringe = function (res) {
     if (this.currentWeapon === 'revolver' || this.currentWeapon === 'shotgun' ||
         this.currentWeapon === 'rev3x') idle = FIDLE_REV;
     else if (this.currentWeapon === 'mace') idle = FIDLE_MACE;   // ✅ v0.4.40 булава
+    else if (this.currentWeapon === 'torch') idle = FIDLE_TORCH; // ✅ v0.4.53 факел
     else if (this.currentWeapon === 'c4') idle = FIDLE_C4;       // ✅ v0.4.41 С4
     else if (this.currentWeapon === 'syringe') idle = FIDLE_SYR; // ✅ v0.4.46 шприц
     else idle = FIDLE_AXE;
@@ -2762,6 +2846,10 @@ this._attachSyringe = function (res) {
   //   BrixFirstPerson.MACE.len = 0.86 (длина в руке, м)
   //   BrixFirstPerson.MACE.yaw = 0  (доворот головы булавы, град)
   FirstPersonPlayer.MACE = MACE;
+  // ✅ v0.4.53 настройка ФАКЕЛА из консоли (F12):
+  //   BrixFirstPerson.TORCH.len = 0.8 (длина в руке, м)
+  //   BrixFirstPerson.TORCH.yaw = 0  (доворот вокруг рукояти, град)
+  FirstPersonPlayer.TORCH = TORCH;
   // ✅ v0.4.41 настройка С4 из консоли (F12):
   //   BrixFirstPerson.C4.len = 0.4 · BrixFirstPerson.C4.oy = -0.05
   //   BrixFirstPerson.C4.yaw = 180 (если блок повернулся спиной)

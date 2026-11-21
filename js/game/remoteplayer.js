@@ -325,6 +325,7 @@ window.BrixRemotePlayer = (function () {
       ironPickaxe: ['assets/models/pickaxe.glb', 0.58],
       ironAxe: ['assets/models/iron_axe.glb', 0.58],
       mace: ['assets/models/mace.glb', 0.92],             // ✅ v0.4.40 булава
+      torch: ['assets/models/torch.glb', 0.80],           // ✅ v0.4.53 факел (в руке как топор)
       revolver: ['assets/models/revolver.glb', 0.30],   // ✅ v0.4.5
       shotgun: ['assets/models/shotgun.glb', 0.62],     // ✅ v0.4.19
       rifle: ['assets/models/ak47.glb', 0.72],          // ✅ v0.4.21

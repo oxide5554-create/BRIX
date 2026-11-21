@@ -211,6 +211,7 @@ window.BrixI18N = (function () {
     /* ✅ v0.4.43 труп-лутбокс */
     'loot.titleCorpse': 'ТРУП · {n}',
     'loot.hintCorpse': 'Клик по предмету — ЗАБРАТЬ весь стек · перетаскивание в инвентарь — сколько влезет · F / ESC — закрыть',
+    'loot.magHint': 'В обойме',
     'corpse.tag': 'ТРУП · {n}',
     'corpse.self': 'Ты',
     'corpse.full': 'Инвентарь полон',
@@ -560,6 +561,7 @@ window.BrixI18N = (function () {
     /* ✅ v0.4.43 corpse lootbox */
     'loot.titleCorpse': 'BODY · {n}',
     'loot.hintCorpse': 'Click an item to TAKE the whole stack · drag into inventory — as much as fits · F / ESC — close',
+    'loot.magHint': 'in magazine',
     'corpse.tag': 'BODY · {n}',
     'corpse.self': 'You',
     'corpse.full': 'Inventory is full',

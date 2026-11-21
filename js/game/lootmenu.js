@@ -28,6 +28,9 @@ window.BrixLootMenu = (function () {
   var curLoot = null;
   var curMil = 0;
   var curMode = null;   /* ✅ v0.4.22: 'chest' — меню сундука «наоборот» */
+  /* ✅ v0.4.54 СИНХРОНИЗАЦИЯ ПАТРОНОВ: обоймы стволов в трупе
+     {id: [обойма, обойма, ...]} — показываются бейджем на слоте */
+  var curMags = null;
   var curName = '';     /* ✅ v0.4.43: имя погибшего (режим 'corpse') */
   var onTake = null;   // (cbId, item, amt) — забрать из ящика
   var onPut = null;    // (cbId, item, amt, fromIndex) — положить в ящик
@@ -161,9 +164,10 @@ window.BrixLootMenu = (function () {
 
   /* ---------- отрисовка слотов ---------- */
 
-  /** слот ящика: клик — забрать весь стек; можно перетащить в инвентарь;
-      НА НЕГО можно перетащить свой предмет (положить в ящик) */
-  function renderCrateSlot(container, item, count) {
+  /** слот ящика/трупа: клик — забрать весь стек; можно перетащить в инвентарь;
+      НА НЕГО можно перетащить свой предмет (положить в ящик).
+      ✅ v0.4.54: mag — остаток обоймы у ствола из трупа (бейдж, как в хотбаре) */
+  function renderCrateSlot(container, item, count, mag) {
     var el = document.createElement('div');
     el.className = 'crate-slot crate-slot-live';
     if (item) {
@@ -177,7 +181,15 @@ window.BrixLootMenu = (function () {
         c.textContent = count;
         el.appendChild(c);
       }
-      el.title = itemName(item);
+      /* ✅ v0.4.54 СИНХРОНИЗАЦИЯ ПАТРОНОВ: у ствола из трупа видно ОБойму */
+      if (mag > 0) {
+        var m = document.createElement('div');
+        m.className = 'count loot-mag';
+        m.textContent = mag;
+        m.title = t('loot.magHint');
+        el.appendChild(m);
+      }
+      el.title = itemName(item) + (mag > 0 ? ' · ' + t('loot.magHint') + ' ' + mag : '');
       el.draggable = true;
       el.addEventListener('dragstart', function (e) {
         onDragStart(e, { src: 'crate', item: item });
@@ -272,10 +284,15 @@ window.BrixLootMenu = (function () {
       var lim = stackLimit(k);
       var n = curLoot[k] | 0;
       if (lim > 1) entries.push({ id: k, n: n });          // ресурс — один слот, весь стек
-      else { for (var q = 0; q < Math.min(n, size); q++) entries.push({ id: k, n: 1 }); }
+      else {
+        /* ✅ v0.4.54: каждый ствол трупа — свой слот СО СВОЕЙ ОБоймой
+           (mags {id: [20, 30]} — первый слот 20, второй 30) */
+        var mm = (curMags && Array.isArray(curMags[k])) ? curMags[k] : [];
+        for (var q = 0; q < Math.min(n, size); q++) entries.push({ id: k, n: 1, mag: mm[q] || 0 });
+      }
     });
     for (var i = 0; i < size; i++) {
-      if (i < entries.length) renderCrateSlot(grid, entries[i].id, entries[i].n);
+      if (i < entries.length) renderCrateSlot(grid, entries[i].id, entries[i].n, entries[i].mag);
       else renderCrateSlot(grid, null, 0);
     }
 
@@ -290,13 +307,15 @@ window.BrixLootMenu = (function () {
   }
 
   /** открыть меню (id, лут, mil, mode — ✅ v0.4.22 'chest';
-      ✅ v0.4.43: mode 'corpse' + customTitle — имя погибшего) */
-  function open(id, loot, mil, mode, customTitle) {
+      ✅ v0.4.43: mode 'corpse' + customTitle — имя погибшего;
+      ✅ v0.4.54: mags — {id: [обойма,...]} остатки патронов стволов трупа) */
+  function open(id, loot, mil, mode, customTitle, mags) {
     ensure();
     curId = id;
     curMil = mil || 0;
     curMode = mode || null;
     curName = String(customTitle || '');
+    curMags = mags || null;   // ✅ v0.4.54
     lastOpen = performance.now();
     document.getElementById('lootTitle').textContent =
       curMode === 'chest' ? t('loot.titleChest')
@@ -319,10 +338,12 @@ window.BrixLootMenu = (function () {
     if (document.pointerLockElement) document.exitPointerLock();
   }
 
-  /** сервер прислал новый лут этого ящика — перерисовать, если открыт */
-  function update(id, loot) {
+  /** сервер прислал новый лут этого ящика — перерисовать, если открыт
+      ✅ v0.4.54: mags — обновлённые обоймы трупа (кто-то забрал ствол) */
+  function update(id, loot, mags) {
     if (root && !root.classList.contains('hidden') && curId === id) {
       curLoot = loot || {};
+      if (mags) curMags = mags;
       render();
     }
   }
@@ -333,6 +354,7 @@ window.BrixLootMenu = (function () {
     root.classList.add('hidden');
     curId = null;
     curLoot = null;
+    curMags = null;   // ✅ v0.4.54
     curMode = null;
     curName = '';
     if (onClose) onClose(closingId);

@@ -162,12 +162,15 @@ window.BrixCorpses = (function () {
     return sp;
   }
 
-  /** создать/обновить труп (rec: {id,x,y,z,n,c,inv}) */
+  /** создать/обновить труп (rec: {id,x,y,z,n,c,inv, ✅ v0.4.54 mags})
+      mags — {id: [обойма, обойма, ...]}: обоймы огнестрела умирают В ТРУПЕ,
+      а не обнуляются (убил игрока с 20 патронами в калаше — там и лутаешь 20) */
   function spawn(rec) {
     if (!rec || !rec.id) return;
     var old = map[rec.id];
     if (old) {
       old.inv = rec.inv || old.inv;
+      if (rec.mags) old.mags = rec.mags;             // ✅ v0.4.54
       if (rec.lt) old.looted = true;   // ✅ v0.4.50: сервер сказал «уже лутали»
       if (old.grp) old.grp.position.set(rec.x, corpseY(rec.x, rec.z, rec.y), rec.z);
       return;
@@ -184,6 +187,7 @@ window.BrixCorpses = (function () {
        («уже лутали») — новичок не «омолаживает» старые трупы */
     map[rec.id] = { id: rec.id, x: rec.x, y: y, z: rec.z,
       n: rec.n || '?', c: rec.c || '', inv: rec.inv || {},
+      mags: rec.mags || {},                           // ✅ v0.4.54 обоймы
       grp: body.grp, ring: body.ring, tag: body.tag, t: Math.random() * 3,
       born: Date.now() - Math.max(0, Number(rec.age) || 0),
       looted: !!rec.lt };
@@ -297,7 +301,8 @@ window.BrixCorpses = (function () {
   function loot(id) {
     var e = map[id];
     if (!e || !window.BrixLootMenu) return;
-    BrixLootMenu.open(id, e.inv, 0, 'corpse', e.n);
+    /* ✅ v0.4.54: mags — обоймы стволов в трупе (меню показывает остаток) */
+    BrixLootMenu.open(id, e.inv, 0, 'corpse', e.n, e.mags);
   }
 
   function checkEmpty(id) {
@@ -336,16 +341,27 @@ window.BrixCorpses = (function () {
     e.looted = true;   // ✅ v0.4.50: с трупа лутали — TTL 20 мин вместо 10
     var inv2 = Object.assign({}, e.inv);
     inv2[item] = have - amt;
+    /* ✅ v0.4.54 СИНХРОНИЗАЦИЯ ПАТРОНОВ: обойма уходит из трупа ВМЕСТЕ
+       со стволом (mags {id: [...]} — по обойме на каждый ствол вида;
+       забрали 1 из 2 калашей — у забранного обойма из очереди) */
+    var mag = 0;
+    if (e.mags && Array.isArray(e.mags[item]) && e.mags[item].length) {
+      mag = e.mags[item].shift() | 0;
+      if (!e.mags[item].length) delete e.mags[item];
+      if (pendingTake[tid]) pendingTake[tid].mag = mag;   // для отката deny
+    }
+    var mags2 = e.mags ? Object.assign({}, e.mags) : {};
     if (I) {
-      I.addItem(item, amt);
+      I.addItem(item, amt, mag);
       if (I.showPickup) I.showPickup(item, amt);
     }
     e.inv = inv2;
-    if (window.BrixLootMenu && BrixLootMenu.openId() === id) BrixLootMenu.update(id, inv2);
+    e.mags = mags2;
+    if (window.BrixLootMenu && BrixLootMenu.openId() === id) BrixLootMenu.update(id, inv2, mags2);
     if (mode() === 'server') {
       BrixNet.send({ t: 'corpseTake', id: id, item: item, amt: amt, tid: tid });
     } else if (mode() === 'tabs') {
-      BrixNet.send({ t: 'corpseLoot', id: id, inv: inv2, pid: myId(),
+      BrixNet.send({ t: 'corpseLoot', id: id, inv: inv2, mags: mags2, pid: myId(),
         item: item, amt: amt, tid: 'tab' });
     }
     checkEmpty(id);
@@ -362,7 +378,13 @@ window.BrixCorpses = (function () {
     if (e) {
       e.inv = Object.assign({}, e.inv);
       e.inv[p.item] = (e.inv[p.item] || 0) + p.amt;
-      if (window.BrixLootMenu && BrixLootMenu.openId() === p.id) BrixLootMenu.update(p.id, e.inv);
+      /* ✅ v0.4.54: обойма тоже возвращается в труп (в начало очереди) */
+      if (p.mag) {
+        e.mags = e.mags || {};
+        e.mags[p.item] = Array.isArray(e.mags[p.item]) ? e.mags[p.item] : [];
+        e.mags[p.item].unshift(p.mag);
+      }
+      if (window.BrixLootMenu && BrixLootMenu.openId() === p.id) BrixLootMenu.update(p.id, e.inv, e.mags);
     }
     toast(t('corpse.deny'));
   }
@@ -371,18 +393,20 @@ window.BrixCorpses = (function () {
     var e = map[msg.id];
     if (!e) return;
     e.inv = msg.inv || {};
+    if (msg.mags) e.mags = msg.mags;   // ✅ v0.4.54: сервер прислал обоймы трупа
     if (msg.amt) e.looted = true;   // ✅ v0.4.50: кто-то что-то взял — расширенный TTL
     var mine = msg.pid === myId();
     if (mine && msg.tid) delete pendingTake[msg.tid];
     else if (mine && !msg.tid && msg.item) {
-      // старый сервер без tid — предмет добавляем тут (как applyCrateLoot)
+      // старый сервер без tid — предмет добавляем тут (как applyCrateLoot);
+      // ✅ v0.4.54: старый сервер обойму не шлёт — будет 0, как раньше
       var I = invInst();
       if (I) {
         I.addItem(msg.item, msg.amt || 0);
         if (I.showPickup) I.showPickup(msg.item, msg.amt || 0);
       }
     }
-    if (window.BrixLootMenu && BrixLootMenu.openId() === msg.id) BrixLootMenu.update(msg.id, e.inv);
+    if (window.BrixLootMenu && BrixLootMenu.openId() === msg.id) BrixLootMenu.update(msg.id, e.inv, e.mags);
     checkEmpty(msg.id);
   }
 

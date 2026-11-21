@@ -34,6 +34,18 @@ window.BrixItems = {
     id: 'ironAxe', name: 'Железный топор', nameEn: 'Iron Axe',
     icon: BrixAx('assets/icons/iron_axe.png'), stackable: false, tool: 'ironAxe'
   },
+  /* ✅ v0.4.53 ФАКЕЛ (модель пользователя non-textured_burning_torch_4.glb
+     → assets/models/torch.glb, оптимизирована: убрана анимация «Burning» —
+     пламя СТАТИЧНОЕ и свет РОВНЫЙ, без мерцания):
+     • держится КАК ТОПОР (одна правая рука), выдаётся в слот 1;
+     • НИКАКОГО УРОНА — факел НЕ БЬЁТ: ЛКМ с ним ничего не делает
+       (см. hitWithTool в gameworld.js), он только СВЕТИТ;
+     • НОЧЬЮ вокруг игрока включается ровный тёплый свет (одна PointLight
+       без теней — дёшево для FPS), днём гаснет (см. gameworld.js) */
+  torch: {
+    id: 'torch', name: 'Факел', nameEn: 'Torch',
+    icon: BrixAx('assets/icons/torch.png'), stackable: false, tool: 'torch'
+  },
   /* ✅ v0.4.5 РЕВОЛЬВЕР (модель пользователя colt_detective_gun.glb):
      стреляет патронами, обойма 6; ✅ v0.4.40 урон: В ГОЛОВУ 18, в тело 9
      (таблица игрока: тело = голова / 2); в слоте показывает остаток
@@ -244,8 +256,11 @@ window.BrixInventory = (function () {
     //    смерти дают КАМЕННЫЙ ТОПОР И КАМЕННУЮ КИРКУ И ВСЁ». Револьвер/патроны/
     //    железные инструменты/план/ресурсы больше НЕ выдаются — всё это
     //    добывается и крафтится (план строителя — крафт «5 дерева»)
-    this.slots[0] = { item: BrixItems.stoneAxe, count: 1 };
-    this.slots[1] = { item: BrixItems.stonePickaxe, count: 1 };
+    // ✅ v0.4.53 ФАКЕЛ в СЛОТЕ 1 (просьба игрока: держать факел клавишей 1,
+    //    как топор): топор и кирка сдвинулись на слоты 2 и 3
+    this.slots[0] = { item: BrixItems.torch, count: 1 };
+    this.slots[1] = { item: BrixItems.stoneAxe, count: 1 };
+    this.slots[2] = { item: BrixItems.stonePickaxe, count: 1 };
 
     this._mount();
     this._bind();
@@ -357,11 +372,20 @@ window.BrixInventory = (function () {
     return slot ? slot.item : null;
   };
 
-  Inventory.prototype.addItem = function (itemId, count) {
+  /* ✅ v0.4.54 СИНХРОНИЗАЦИЯ ПАТРОНОВ: обоймы у оружия теперь ПЕРЕЖИВАЮТ
+     смерть/лут трупа/сохранение. addItem принимает ТРЕТИЙ параметр mag —
+     сколько патронов в обойме у добавляемого ствола (0 — как раньше) */
+  Inventory.GUN_MAG_MAX = { revolver: 6, shotgun: 2, rifle: 30, smg: 30, rev3x: 6 };
+
+  Inventory.prototype.addItem = function (itemId, count, mag) {
     count = count || 1;
     var item = BrixItems[itemId];
     if (!item) return false;
     var changed = false;
+
+    // обойма: только у огнестрела, обрезается по лимиту ствола
+    var magMax = Inventory.GUN_MAG_MAX[item.tool] || 0;
+    mag = Math.max(0, Math.min(magMax, Math.floor(Number(mag) || 0)));
 
     // стекуемые — сначала в существующие стеки (хотбар → рюкзак)
     if (item.stackable) {
@@ -397,7 +421,12 @@ window.BrixInventory = (function () {
           /* ✅ v0.4.36: револьвер-карабин (tool 'rev3x') — тоже */
           if (item.tool === 'revolver' || item.tool === 'shotgun' ||
               item.tool === 'rifle' || item.tool === 'smg' ||
-              item.tool === 'rev3x') this.slots[j].mag = 0;
+              item.tool === 'rev3x') {
+            /* ✅ v0.4.54: обойма приходит ВМЕСТЕ с оружием (труп/сохранение) —
+               уходит в ПЕРВЫЙ добавленный ствол, остальные — 0 */
+            this.slots[j].mag = mag;
+            mag = 0;
+          }
           count -= put; changed = true;
         }
       }
@@ -691,13 +720,18 @@ window.BrixInventory = (function () {
       return instance;
     },
     get: function () { return instance; },
+    /* ✅ v0.4.54: лимиты обойм огнестрела (нужны gameworld.js при сборе
+       трупа — какие стволы несут обойму) */
+    GUN_MAG_MAX: Inventory.GUN_MAG_MAX,
     /* ✅ v0.4.44: СТАРТОВЫЙ НАБОР ПОСЛЕ СМЕРТИ — каменный топор + каменная
        кирка (просьба игрока «после смерти дают каменный топор и каменную
-       кирку и всё»). Полный инвентарь погибшего лежит в трупе-лутбоксе */
+       кирку и всё»). Полный инвентарь погибшего лежит в трупе-лутбоксе
+       ✅ v0.4.53/54: факел — в слот 1 (клавиша 1), топор и кирка — 2 и 3 */
     giveStarterKit: function () {
       if (!instance) return;
-      instance.slots[0] = { item: BrixItems.stoneAxe, count: 1 };
-      instance.slots[1] = { item: BrixItems.stonePickaxe, count: 1 };
+      instance.slots[0] = { item: BrixItems.torch, count: 1 };
+      instance.slots[1] = { item: BrixItems.stoneAxe, count: 1 };
+      instance.slots[2] = { item: BrixItems.stonePickaxe, count: 1 };
       instance.renderAll();
       if (instance._notifySelect) instance._notifySelect();
     },

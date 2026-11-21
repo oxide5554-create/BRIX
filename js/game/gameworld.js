@@ -521,10 +521,11 @@ window.BrixGameWorld = (function () {
       // ✅ v0.4.35: 'smg' — томпсон в руках (держится как калаш)
       // ✅ v0.4.36: 'rev3x' — револьвер-карабин 3× (держится как револьвер)
       // ✅ v0.4.40: 'mace' — булава в руках (держится как топор)
+      // ✅ v0.4.53: 'torch' — ФАКЕЛ в руках (держится как топор, только СВЕТИТ)
       hands.setWeapon(tool === 'axe' || tool === 'pickaxe' || tool === 'ironPickaxe' ||
         tool === 'ironAxe' || tool === 'revolver' || tool === 'shotgun' ||
         tool === 'rifle' || tool === 'smg' || tool === 'rev3x' ||
-        tool === 'mace' || tool === 'c4' || tool === 'plan' ||
+        tool === 'mace' || tool === 'c4' || tool === 'plan' || tool === 'torch' ||
         /* ✅ v0.4.46: шприц — руки держат его наготове (модель шприца) */
         tool === 'syringe' ? tool : null);
       // смена оружия сбрасывает прицеливание (у огнестрелов — оставляем выбор игроку:
@@ -577,6 +578,8 @@ window.BrixGameWorld = (function () {
     BrixSfx.load('syrSquirt', sfxUrl('assets/sfx/syringe/inject.mp3'));
 
     // стартовое состояние: слот 0 — каменный топор
+    // ✅ v0.4.53: слот 0 — ФАКЕЛ (клавиша 1, держится как топор), топор и
+    // кирка сдвинулись на клавиши 2 и 3; факел сразу в руках на спавне
     var startSel = inventory.slots[0];
     hands.setWeapon(startSel && startSel.item.tool ? startSel.item.tool : 'axe');
 
@@ -1451,6 +1454,11 @@ window.BrixGameWorld = (function () {
     }
 
     function hitWithTool() {
+      // ✅ v0.4.53 ФАКЕЛ: ОН НЕ БЬЁТ — ТОЛЬКО СВЕТИТ (просьба игрока).
+      //    Ни замаха, ни звука, ни кулдауна, ни урона: ЛКМ с факелом
+      //    просто ничего не делает. Деревья/руды/постройки/игроки — мимо.
+      var selT = inventory.getSelectedItem();
+      if (selT && selT.tool === 'torch') return;
       if (toolCooldown > 0) return;
       var sel0 = inventory.getSelectedItem();
       var tool0 = sel0 && sel0.tool;
@@ -2083,18 +2091,31 @@ window.BrixGameWorld = (function () {
        (новые игроки его видят). ВКЛАДКИ: 'corpseNew' в BroadcastChannel.
        СОЛО: локальный труп. После респауна можно вернуться и забрать
        свои вещи (F). Инвентарь очищается — двойных вещей нет
+       ✅ v0.4.54 СИНХРОНИЗАЦИЯ ПАТРОНОВ: вместе с инвентарём собираем
+       ОБоймы огнестрела — mags {id: [обойма, обойма, ...]} (по одной на
+       каждый ствол этого вида, в порядке слотов). Раньше обойма
+       терялась ЗДЕСЬ: убил игрока с 20 патронами в калаше — в трупе
+       и после лутания обойма была 0
        ============================================================ */
     function collectInvMap() {
-      var m = {};
+      var m = {}, mags = {};
+      var GUNS = (window.BrixInventory && BrixInventory.GUN_MAG_MAX) ||
+        { revolver: 1, shotgun: 1, rifle: 1, smg: 1, rev3x: 1 };
       for (var i = 0; i < inventory.slots.length; i++) {
         var s = inventory.slots[i];
-        if (s && s.item && s.count > 0) m[s.item.id] = (m[s.item.id] || 0) + s.count;
+        if (!s || !s.item || !(s.count > 0)) continue;
+        m[s.item.id] = (m[s.item.id] || 0) + s.count;
+        // у огнестрела обойма уходит в труп ВМЕСТЕ со стволом
+        if (GUNS[s.item.tool] && typeof s.mag === 'number' && s.mag > 0) {
+          (mags[s.item.id] = mags[s.item.id] || []).push(s.mag | 0);
+        }
       }
-      return m;
+      return { inv: m, mags: mags };
     }
 
     function dropCorpseOnDeath() {
-      var invMap = collectInvMap();
+      var invCol = collectInvMap();
+      var invMap = invCol.inv, magMap = invCol.mags;
       var px = camera.position.x, pz = camera.position.z;
       var py = camera.position.y - 1.7;              // примерный уровень земли
       var rec = null;
@@ -2109,20 +2130,23 @@ window.BrixGameWorld = (function () {
         return;
       }
       if (BrixNet.mode === 'server') {
+        /* ✅ v0.4.54: mags — обоймы огнестрела (сервер хранит и возвращает
+           их при лутании; старый сервер просто проигнорирует поле) */
         BrixNet.send({ t: 'corpse', x: Math.round(px * 10) / 10,
-          y: Math.round(py * 10) / 10, z: Math.round(pz * 10) / 10, inv: invMap });
+          y: Math.round(py * 10) / 10, z: Math.round(pz * 10) / 10,
+          inv: invMap, mags: magMap });
       } else if (BrixNet.mode === 'tabs') {
         rec = { t: 'corpseNew', id: 'r' + Math.random().toString(36).slice(2, 8),
           x: Math.round(px * 10) / 10, y: Math.round(py * 10) / 10,
           z: Math.round(pz * 10) / 10, n: BrixNet.NAME, c: BrixNet.COLOR,
-          inv: invMap, pid: BrixNet.id };
+          inv: invMap, mags: magMap, pid: BrixNet.id };
         BrixNet.send(rec);                           // другим вкладкам
         if (window.BrixCorpses) BrixCorpses.onNet(rec);   // себе сразу
       } else if (window.BrixCorpses) {
         rec = { t: 'corpseNew', id: 'r' + Math.random().toString(36).slice(2, 8),
           x: Math.round(px * 10) / 10, y: Math.round(py * 10) / 10,
           z: Math.round(pz * 10) / 10, n: BrixState.t('corpse.self'),
-          c: '#b0722f', inv: invMap };
+          c: '#b0722f', inv: invMap, mags: magMap };
         BrixCorpses.onNet(rec);
       }
       // опустошаем инвентарь: всё осталось в трупе (предмет добавится при луте)
@@ -2215,10 +2239,12 @@ window.BrixGameWorld = (function () {
       }
       aliveSince = Date.now();   // время выживания — заново
       /* ✅ v0.4.44: после смерти выдаём СТАРТОВЫЙ НАБОР — каменный топор и
-         каменная кирка (просьба игрока). Весь инвентарь остался в трупе */
+         каменная кирка (просьба игрока). Весь инвентарь остался в трупе.
+         ✅ v0.4.53: факел — в слот 1 (клавиша 1), как в стартовом наборе */
       try {
-        inventory.slots[0] = { item: BrixItems.stoneAxe, count: 1 };
-        inventory.slots[1] = { item: BrixItems.stonePickaxe, count: 1 };
+        inventory.slots[0] = { item: BrixItems.torch, count: 1 };
+        inventory.slots[1] = { item: BrixItems.stoneAxe, count: 1 };
+        inventory.slots[2] = { item: BrixItems.stonePickaxe, count: 1 };
         inventory.renderAll();
         if (inventory._notifySelect) inventory._notifySelect();
       } catch (eKit) {}
@@ -2703,7 +2729,8 @@ window.BrixGameWorld = (function () {
       if (!combatHud) return;
       var s = gunSlot();
       var selItem = inventory.getSelectedItem();
-      var holding = s || (selItem && selItem.tool);
+      // ✅ v0.4.53: у ФАКЕЛА прицела нет — он не оружие, он только светит
+      var holding = s || (selItem && selItem.tool && selItem.tool !== 'torch');
       if (!holding || dead || BrixGame.state.phase !== 'playing' ||
           isInvOpen() || isLootOpen() || isMiniOpen()) {
         combatHud.cross.style.display = 'none';
@@ -3649,6 +3676,25 @@ window.BrixGameWorld = (function () {
               I.renderAll();
               I.select(Math.max(0, Math.min(5, Math.floor(Number(sv.hot) || 0))));
               if (I._notifySelect) I._notifySelect();
+              /* ✅ v0.4.53 ФАКЕЛ: у вернувшегося игрока из СТАРОГО сохранения
+                 факела нет — выдадим один в свободный слот (сначала хотбар
+                 1–6, потом рюкзак), чтобы свет был у всех */
+              try {
+                var hasTorch = false;
+                for (var ti = 0; ti < I.slots.length; ti++) {
+                  var ts = I.slots[ti];
+                  if (ts && ts.item && ts.item.id === 'torch') { hasTorch = true; break; }
+                }
+                if (!hasTorch) {
+                  for (var tj = 0; tj < I.slots.length; tj++) {
+                    if (!I.slots[tj]) {
+                      I.slots[tj] = { item: BrixItems.torch, count: 1 };
+                      I.renderAll();
+                      break;
+                    }
+                  }
+                }
+              } catch (eTk) {}
             }
             /* --- здоровье (сервер уже восстановил своё p.hp) --- */
             if (typeof sv.hp === 'number' && isFinite(sv.hp) && sv.hp > 0) {
@@ -3985,6 +4031,32 @@ window.BrixGameWorld = (function () {
           if (storm) { storm.dispose(); storm = null; }
         } });
 
+        /* ✅ v0.4.53 ФАКЕЛ — СВЕТ В МИРЕ: одна PointLight у игрока,
+           БЕЗ ТЕНЕЙ и с ограниченным радиусом (дёшево для FPS).
+           Горит РОВНО — НИКАКОГО МЕРЦАНИЯ (просьба игрока «чтобы не
+           мерцало от огня»): интенсивность либо плавно растёт до цели,
+           либо плавно гаснет, колебаний нет. Светит ТОЛЬКО НОЧЬЮ
+           (isNight — ночь и сумерки), днём гаснет.
+           Позиция — на игроке, чуть ниже глаз (как пламя факела в руке) */
+        var torchLight = new THREE.PointLight(0xff9a4d, 0, 13, 2);
+        torchLight.castShadow = false;
+        torchLight.visible = false;
+        scene.add(torchLight);
+        disposables.push({ dispose: function () { scene.remove(torchLight); torchLight = null; } });
+        var torchGlowK = 0;
+        function tickTorchLight(dt) {
+          var selT = inventory.getSelectedItem();
+          var held = !!(selT && selT.tool === 'torch');
+          var night = !!(window.BrixEnvironment &&
+            BrixEnvironment.isNight && BrixEnvironment.isNight());
+          var want = (held && night) ? 26 : 0;   // 26 кд — видно в ~5-9 м (decay 2)
+          torchGlowK += (want - torchGlowK) * Math.min(1, dt * 3);
+          torchLight.intensity = torchGlowK;
+          torchLight.visible = torchGlowK > 0.05;
+          torchLight.position.copy(camera.position);
+          torchLight.position.y -= 0.35;
+        }
+
         /* 5 — компиляция шейдеров (реальная) */
         setStage('load.step.shaders', 91);
         await nextFrame();
@@ -4211,6 +4283,7 @@ window.BrixGameWorld = (function () {
         }
 
           lights.tick(controls.position);
+          tickTorchLight(dt);   // ✅ v0.4.53 факел: ровный свет ночью (без мерцания)
           sky.tick(camera);
           water.tick(tt);
           /* ✅ v0.4.51: сутки/погода каждый кадр; зимность места

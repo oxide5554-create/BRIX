@@ -655,7 +655,7 @@ function writeWorldNow() {
       c4: worldObjs.c4.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z,
         n: c.n || [0, 1, 0], by: c.by, at: c.at })),
       corpses: worldObjs.corpses.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z,
-        n: c.n, c: c.c, inv: c.inv, at: c.at, lt: c.lt ? 1 : 0 })),
+        n: c.n, c: c.c, inv: c.inv, mags: c.mags || {}, at: c.at, lt: c.lt ? 1 : 0 })),
       corpseSeq: worldObjs.corpseSeq | 0,
       /* ✅ v0.4.44: запасы деревьев (w/g/fd) и руд (iron/sulfur/stone) —
          ПЕРЕЖИВАЮТ РЕСТАРТ СЕРВЕРА, как бочки и постройки */
@@ -971,6 +971,30 @@ function sanitizeInv(inv) {
     if (!/^[a-zA-Z0-9_]{1,16}$/.test(k) || v <= 0) continue;
     out[k] = Math.min(999999, v);
     n++;
+  }
+  return out;
+}
+
+/* ✅ v0.4.54 СИНХРОНИЗАЦИЯ ПАТРОНОВ: обоймы огнестрела в трупе.
+   mags {id: [обойма, обойма, ...]} — по одной обойме на каждый ствол
+   этого вида. Чистим: только id из инвентаря трупа, целые, не больше
+   8 обойм на вид. Убит игрок с 20 патронами в калаше — из трупа
+   лутается КАЛАШ С 20, а не с нулём (просьба игрока) */
+function sanitizeMags(inv, mags) {
+  const out = {};
+  if (!mags || typeof mags !== 'object') return out;
+  for (const k of Object.keys(inv)) {
+    if (!((inv[k] | 0) > 0)) continue;
+    let arr = mags[k];
+    if (!Array.isArray(arr)) {
+      // старый клиент мог прислать число — трактуем как одну обойму
+      arr = Number.isFinite(Number(arr)) ? [Number(arr)] : [];
+    }
+    const vals = arr
+      .map((v) => Math.floor(Number(v) || 0))
+      .filter((v) => v > 0 && v < 100000)
+      .slice(0, 8);
+    if (vals.length) out[k] = vals;
   }
   return out;
 }
@@ -1603,7 +1627,7 @@ function objsSnapshot(p) {
    ✅ v0.4.50: age — возраст трупа в мс (для клиентского TTL), lt —
    «с трупа уже что-то лутали» (TTL 20 мин вместо 10) */
     corpses: worldObjs.corpses.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z,
-      n: c.n, c: c.c, inv: c.inv, lt: c.lt ? 1 : 0,
+      n: c.n, c: c.c, inv: c.inv, mags: c.mags || {}, lt: c.lt ? 1 : 0,
       age: Math.max(0, Date.now() - (c.at || Date.now())) })),
 /* ✅ v0.4.10: постройки в снапшоте — новый игрок сразу видит дом
    (даже если на сервере сейчас 0 игроков: builds живёт в памяти сервера).
@@ -2532,6 +2556,9 @@ server.on('upgrade', (req, sock) => {
             fx = p.state.x; fz = p.state.z;
           }
           const cinv = sanitizeInv(msg.inv);
+          /* ✅ v0.4.54: обоймы огнестрела уходят в труп ВМЕСТЕ со стволами
+             (убитый с заряженным калашом — в трупе калаш С ПАТРОНАМИ) */
+          const cmags = sanitizeMags(cinv, msg.mags);
           /* ✅ v0.4.44 ПУСТОЙ ТРУП НЕ СОЗДАЁТСЯ (просьба игрока «трупы пустые
              сразу исчезают»): у погибшего не было вещей — тела в мире нет.
              Пустой труп бесполезен и только мусорит карту */
@@ -2542,13 +2569,13 @@ server.on('upgrade', (req, sock) => {
             id: 'r' + worldObjs.corpseSeq,
             x: Math.round(fx * 10) / 10, z: Math.round(fz * 10) / 10,
             y: Math.round((Number(msg.y) || 0) * 10) / 10,
-            n: p.name, c: p.c, inv: cinv, at: Date.now()
+            n: p.name, c: p.c, inv: cinv, mags: cmags, at: Date.now()
           };
           worldObjs.corpses.push(rec);
           while (worldObjs.corpses.length > CORPSE_MAX) worldObjs.corpses.shift();
           markDirty();
           broadcast({ t: 'corpseNew', id: rec.id, x: rec.x, y: rec.y, z: rec.z,
-            n: rec.n, c: rec.c, inv: rec.inv, lt: 0,
+            n: rec.n, c: rec.c, inv: rec.inv, mags: rec.mags, lt: 0,
             age: 0 }, null);
           console.log('[corpse] труп ' + rec.id + ' (' + rec.n + ') с ' +
             Object.keys(cinv).length + ' видами вещей (' + rec.x + ', ' + rec.z + ')');
@@ -2559,7 +2586,8 @@ server.on('upgrade', (req, sock) => {
           const cc = worldObjs.corpses.find((x) => x.id === String(msg.id || ''));
           if (!cc) break;
           if (!p.state || dist2(p.state.x, p.state.z, cc.x, cc.z) > 36) break;  // >6 м
-          p.send({ t: 'corpseLoot', id: cc.id, inv: cc.inv });
+          /* ✅ v0.4.54: вместе с лутом — ОБоймы стволов (меню показывает) */
+          p.send({ t: 'corpseLoot', id: cc.id, inv: cc.inv, mags: cc.mags || {} });
           break;
         }
         /* взять предмет из трупа (amt — сколько; без amt — весь стек) */
@@ -2576,6 +2604,13 @@ server.on('upgrade', (req, sock) => {
           let amt = Math.max(1, Math.floor(Number(msg.amt) || have));
           amt = Math.min(amt, have);
           ct.inv[it] = have - amt;
+          /* ✅ v0.4.54 СИНХРОНИЗАЦИЯ ПАТРОНОВ: из трупа уходит ОБойма
+             ВМЕСТЕ со стволом (по одной на каждый взятый ствол вида) */
+          if (ct.mags && Array.isArray(ct.mags[it]) && ct.mags[it].length) {
+            const pop = Math.min(amt, ct.mags[it].length);
+            ct.mags[it].splice(0, pop);
+            if (!ct.mags[it].length) delete ct.mags[it];
+          }
           ct.lt = 1;   // ✅ v0.4.50: с трупа УЖЕ лутали — TTL 20 мин вместо 10
           const cempty = !Object.keys(ct.inv).some((k) => (ct.inv[k] | 0) > 0);
           markDirty();
@@ -2585,8 +2620,8 @@ server.on('upgrade', (req, sock) => {
             broadcast({ t: 'corpseGone', id: ct.id }, null);
             console.log('[corpse] труп ' + ct.id + ' (' + ct.n + ') обыскан и убран');
           } else {
-            broadcast({ t: 'corpseLoot', id: ct.id, inv: ct.inv, pid: p.id,
-              item: it, amt: amt, tid: String(msg.tid || '') }, null);
+            broadcast({ t: 'corpseLoot', id: ct.id, inv: ct.inv, mags: ct.mags || {},
+              pid: p.id, item: it, amt: amt, tid: String(msg.tid || '') }, null);
           }
           break;
         }
