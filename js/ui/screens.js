@@ -56,9 +56,53 @@ window.BrixScreens = (function () {
     };
   }
 
-  // ================= СЕРВЕРА (ADMIN) =================
+  // ================= СЕРВЕРА (✅ v0.4.64 СПИСОК ОФИЦИАЛЬНЫХ СЕРВЕРОВ) =================
+  // Два реалма: BrixLand (выживание) и BrixPvP (арена). У каждого — свой
+  // живой счётчик онлайна (опрос /status своего порта) и свой состав
+  // игроков. Карточки «СЛУЖЕБНЫЙ СЕРВЕР»/«Последний сервер» убраны,
+  // надписи ADMIN больше нет — вкладка для всех игроков.
   function renderServers(layer) {
-    var srv = BrixData.ADMIN_SERVER;
+    var servers = BrixData.SERVERS || [];
+
+    var cards = servers.map(function (srv) {
+      var isPvp = srv.mode === 'pvp';
+      var icon = isPvp ? BrixIcon('swords', 24) : BrixIcon('trees', 24);
+      var iconStyle = isPvp
+        ? 'display:grid;place-items:center;width:48px;height:48px;flex-shrink:0;border:1px solid rgba(205,65,47,.6);background:rgba(205,65,47,.15);color:var(--rust-bright)'
+        : 'display:grid;place-items:center;width:48px;height:48px;flex-shrink:0;border:1px solid rgba(94,151,71,.6);background:rgba(94,151,71,.15);color:#8fce6c';
+      return (
+        '<div class="rust-card server-card" data-server-card="' + srv.id + '">' +
+          '<div class="srv-top">' +
+            '<div style="display:flex;align-items:center;gap:16px">' +
+              '<div style="' + iconStyle + '">' + icon + '</div>' +
+              '<div>' +
+                '<div class="srv-title-row">' +
+                  '<span class="mini-badge">' + BrixState.t(srv.modeKey || 'srv.mode.vanilla') + '</span>' +
+                  '<h3 class="srv-name font-h">' + srv.name + '</h3>' +
+                '</div>' +
+                '<div class="srv-meta">' +
+                  '<span><span class="ic">' + BrixIcon('globe', 13) + '</span>' + srv.map + '</span>' +
+                  '<span><span class="ic">' + BrixIcon('map', 13) + '</span>' + srv.size + '</span>' +
+                  '<span><span class="ic">' + BrixIcon('users', 13) + '</span><span data-srv-online="' + srv.id + '">…</span></span>' +
+                  '<span class="good"><span>' + BrixIcon('signal', 13) + '</span>' + srv.ping + ' ms</span>' +
+                '</div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="srv-status">' +
+              '<span class="ping-dot"></span>' +
+              '<span class="st" data-srv-state="' + srv.id + '">' + BrixState.t('srv.online') + '</span>' +
+              '<button class="btn-rust-primary" data-connect="' + srv.id + '">' + BrixState.t('srv.connect') + '</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="srv-features">' +
+            '<div>' + BrixIcon('check', 13) + BrixState.t(isPvp ? 'srv.pvp.f1' : 'srv.land.f1') + '</div>' +
+            '<div>' + BrixIcon('check', 13) + BrixState.t(isPvp ? 'srv.pvp.f2' : 'srv.land.f2') + '</div>' +
+            '<div>' + BrixIcon('check', 13) + BrixState.t(isPvp ? 'srv.pvp.f3' : 'srv.land.f3') + '</div>' +
+          '</div>' +
+          '<p class="srv-desc">' + BrixState.t(isPvp ? 'srv.pvp.desc' : 'srv.land.desc') + '</p>' +
+          '<div class="srv-roster" data-roster="' + srv.id + '"></div>' +
+        '</div>');
+    }).join('');
 
     layer.innerHTML =
       '<div class="screen-panel">' +
@@ -72,102 +116,62 @@ window.BrixScreens = (function () {
           '</div>' +
         '</div>' +
         '<div class="panel-body rust-scroll">' +
-          '<div class="srv-wrap">' +
-            // карточка сервера
-            '<div class="rust-card server-card">' +
-              '<div class="srv-top">' +
-                '<div style="display:flex;align-items:center;gap:16px">' +
-                  '<div style="display:grid;place-items:center;width:48px;height:48px;flex-shrink:0;border:1px solid rgba(205,65,47,.6);background:rgba(205,65,47,.15);color:var(--rust-bright)">' +
-                    BrixIcon('shieldcheck', 24) +
-                  '</div>' +
-                  '<div>' +
-                    '<div class="srv-title-row">' +
-                      '<span class="mini-badge">' + BrixState.t('srv.admin.badge') + '</span>' +
-                      '<h3 class="srv-name font-h">' + srv.name + '</h3>' +
-                    '</div>' +
-                    '<div class="srv-meta">' +
-                      '<span><span class="ic">' + BrixIcon('globe', 13) + '</span>' + srv.map + '</span>' +
-                      '<span><span class="ic">' + BrixIcon('map', 13) + '</span>' + BrixState.t('srv.admin.sizeVal') + '</span>' +
-                      '<span><span class="ic">' + BrixIcon('crown', 13) + '</span>' + BrixState.t('srv.admin.mode') + '</span>' +
-                      '<span><span class="ic">' + BrixIcon('users', 13) + '</span><span data-srv-online>…</span></span>' +
-                      '<span class="good"><span>' + BrixIcon('signal', 13) + '</span>' + srv.ping + ' ms</span>' +
-                    '</div>' +
-                  '</div>' +
-                '</div>' +
-                '<div class="srv-status">' +
-                  '<span class="ping-dot"></span>' +
-                  '<span class="st">' + BrixState.t('srv.admin.status') + '</span>' +
-                  '<button class="btn-rust-primary" data-connect>' + BrixState.t('srv.admin.connect') + '</button>' +
-                '</div>' +
-              '</div>' +
-              // особенности
-              '<div class="srv-features">' +
-                '<div>' + BrixIcon('check', 13) + BrixState.t('srv.admin.feature1') + '</div>' +
-                '<div>' + BrixIcon('check', 13) + BrixState.t('srv.admin.feature2') + '</div>' +
-                '<div>' + BrixIcon('check', 13) + BrixState.t('srv.admin.feature3') + '</div>' +
-              '</div>' +
-              // ✅ v0.3.3: РЕАЛЬНЫЕ игроки на сервере (без выдуманных)
-              '<div class="srv-roster" data-roster></div>' +
-            '</div>' +
-            // инфо ADMIN
-            '<div class="srv-info-grid">' +
-              '<div class="rust-card srv-info">' +
-                '<div class="cap" style="color:var(--rust-bright)">' + BrixState.t('srv.admin.infoTitle') + '</div>' +
-                '<p>' + BrixState.t('srv.admin.info') + '</p>' +
-                '<div class="access">' + BrixIcon('shieldcheck', 13) + BrixState.t('srv.admin.access') + '</div>' +
-              '</div>' +
-              '<div class="rust-card srv-info">' +
-                '<div class="cap" style="color:var(--ember)">' + BrixState.t('srv.admin.lastPlayed') + '</div>' +
-                '<p class="last-name">' + (BrixState.data.lastServerId ? srv.name : '—') + '</p>' +
-                '<p>' + BrixState.t('srv.admin.note') + '</p>' +
-              '</div>' +
-            '</div>' +
-          '</div>' +
+          '<div class="srv-wrap">' + cards + '</div>' +
+          '<p class="srv-pick">' + BrixState.t('srv.pick') + '</p>' +
         '</div>' +
       '</div>';
 
     bindClose(layer);
-    layer.querySelector('[data-connect]').onmouseenter = function () { menuAudio.hover(); };
-    layer.querySelector('[data-connect]').onclick = function () {
-      menuAudio.click();
-      BrixState.setLastServer(BrixData.ADMIN_SERVER.id);
-      BrixGame.connect(BrixData.ADMIN_SERVER.id);
-    };
 
-    /* ✅ v0.3.3: живой онлайн — опрос /status каждые 4 секунды.
-       Счётчик РЕАЛЬНЫЙ: сервер сам считает подключённых игроков,
-       при выходе игрока в меню или из игры он уменьшается. */
-    var onlineEl = layer.querySelector('[data-srv-online]');
-    var rosterEl = layer.querySelector('[data-roster]');
-    function drawSrvStatus() {
-      var info = window.BrixFriends ? BrixFriends.serverInfo() : { ok: false, players: 0, names: [] };
-      var pp = function (n) { return window.BrixFriends ? BrixFriends.pluralPeople(n, BrixState.data.lang) : '?'; };
-      if (info.ok) {
-        // ✅ v0.3.4: «1 человек / 2 человека / 3 человека»
-        onlineEl.textContent = info.players + '/' + (info.max || 64) + ' — ' +
-          info.players + ' ' + pp(info.players) + ' ' + BrixState.t('srv.onlineWord');
-        var names = info.names || [];
-        var html = '<div class="srv-roster-cap font-h">' + BrixIcon('users', 13) +
-          ' ' + BrixState.t('srv.roster') + ' — ' + names.length + ' ' + pp(names.length) + '</div>';
-        if (names.length) {
-          html += '<div class="srv-roster-list">' + names.map(function (n) {
-            var hue = avatarHue(n);
-            return '<span class="srv-player"><span class="sp-dot"></span>' + n + '</span>';
-          }).join('') + '</div>';
+    /* ПОДКЛЮЧИТЬСЯ: lastServer + connect (сервер сам выберет порт) */
+    servers.forEach(function (srv) {
+      var btn = layer.querySelector('[data-connect="' + srv.id + '"]');
+      if (!btn) return;
+      btn.onmouseenter = function () { menuAudio.hover(); };
+      btn.onclick = function () {
+        menuAudio.click();
+        BrixState.setLastServer(srv.id);
+        BrixGame.connect(srv.id);
+      };
+    });
+
+    /* ЖИВЫЕ счётчики ОБОИХ серверов: опрос /status каждого реалма
+       каждые 4 секунды. Счётчик свой у каждого сервера. */
+    var pp = function (n) { return window.BrixFriends ? BrixFriends.pluralPeople(n, BrixState.data.lang) : '?'; };
+    function drawAll() {
+      servers.forEach(function (srv) {
+        var info = window.BrixFriends ? BrixFriends.serverInfo(srv.port) : { ok: false };
+        var onlineEl = layer.querySelector('[data-srv-online="' + srv.id + '"]');
+        var stateEl = layer.querySelector('[data-srv-state="' + srv.id + '"]');
+        var rosterEl = layer.querySelector('[data-roster="' + srv.id + '"]');
+        if (!onlineEl || !rosterEl) return;
+        if (info.ok) {
+          onlineEl.textContent = info.players + '/' + (info.max || srv.max || 64) + ' — ' +
+            info.players + ' ' + pp(info.players) + ' ' + BrixState.t('srv.onlineWord');
+          if (stateEl) stateEl.textContent = BrixState.t('srv.online');
+          var names = info.names || [];
+          var html = '<div class="srv-roster-cap font-h">' + BrixIcon('users', 13) +
+            ' ' + BrixState.t('srv.roster') + ' — ' + names.length + ' ' + pp(names.length) + '</div>';
+          if (names.length) {
+            html += '<div class="srv-roster-list">' + names.map(function (n) {
+              return '<span class="srv-player"><span class="sp-dot"></span>' + n + '</span>';
+            }).join('') + '</div>';
+          } else {
+            html += '<div class="srv-nobody">' + BrixState.t('srv.nobody') + '</div>';
+          }
+          rosterEl.innerHTML = html;
         } else {
-          html += '<div class="srv-nobody">' + BrixState.t('srv.nobody') + '</div>';
+          onlineEl.textContent = BrixState.t('srv.offline');
+          if (stateEl) stateEl.textContent = BrixState.t('srv.offline');
+          rosterEl.innerHTML = '<div class="srv-roster-cap font-h">' + BrixIcon('users', 13) +
+            ' ' + BrixState.t('srv.roster') + '</div><div class="srv-nobody">' + BrixState.t('srv.offline') + '</div>';
         }
-        rosterEl.innerHTML = html;
-      } else {
-        onlineEl.textContent = BrixState.t('srv.offline');
-        rosterEl.innerHTML = '<div class="srv-roster-cap font-h">' + BrixIcon('users', 13) +
-          ' ' + BrixState.t('srv.roster') + '</div><div class="srv-nobody">' + BrixState.t('srv.offline') + '</div>';
-      }
+      });
     }
-    drawSrvStatus();
+    drawAll();
     var srvTimer = setInterval(function () {
-      if (!document.body.contains(onlineEl)) { clearInterval(srvTimer); return; }
-      drawSrvStatus();
+      if (!document.body.contains(layer)) { clearInterval(srvTimer); return; }
+      drawAll();
     }, 4000);
   }
 
@@ -245,10 +249,17 @@ window.BrixScreens = (function () {
 
     function drawTabs() {
       tabsEl.innerHTML = '';
+      /* ✅ v0.4.62: ДВЕ вкладки (просьба игрока) — «ДРУЗЬЯ» и «ВСЕ ИГРОКИ»
+         (все, кто играл или играет; у каждого «был N ч назад»).
+         Входящие заявки теперь в КОЛОКОЛЬЧИКЕ — там «Принять/Игнорировать».
+         Себя из «ВСЕ ИГРОКИ» не показываем — и из счётчика тоже */
+      var myId = BrixState.data.profileId;
+      var playersN = BrixFriends.allPlayersList().filter(function (p) {
+        return p.id !== myId && String(p.name || '').toLowerCase() !== myNick;
+      }).length;
       [
         { id: 'friends', key: 'fr.tabs.friends', n: so().friends.length },
-        { id: 'invites', key: 'fr.tabs.in',      n: so().incoming.length },
-        { id: 'out',     key: 'fr.tabs.out',     n: so().outgoing.length }
+        { id: 'players', key: 'fr.tabPlayers',   n: playersN }
       ].forEach(function (tab) {
         var b = document.createElement('button');
         b.className = frTab === tab.id ? 'active' : '';
@@ -257,6 +268,126 @@ window.BrixScreens = (function () {
         b.onclick = function () { menuAudio.click(); frTab = tab.id; drawTabs(); drawBody(); };
         tabsEl.appendChild(b);
       });
+    }
+
+    /* ---------- ✅ v0.4.62 ПРОФИЛЬ ИГРОКА ----------
+       Клик по игроку (друг или из «ВСЕ ИГРОКИ») → аватар, имя, ID,
+       «в сети / был N ч назад» и кнопки ПРИГЛАСИТЬ / УДАЛИТЬ ИЗ ДРУЗЕЙ */
+    function socialProfile(p, onRefresh) {
+      var back = document.createElement('div');
+      back.className = 'overlay';
+      back.style.zIndex = 70;
+      var isSelf = p.id === BrixState.data.profileId ||
+        String(p.name || '').toLowerCase() === myNick;
+      var isFriend = so().friends.some(function (f) {
+        return f.id === p.id || f.name.toLowerCase() === String(p.name || '').toLowerCase();
+      });
+      var hue = avatarHue(String(p.name || '?'));
+      var st = BrixFriends.statusOf(p);
+      var statusText = st === 'offline' && p.ls ? BrixFriends.lastSeenText(p)
+        : st === 'server' ? BrixState.t('fr.status.server')
+        : st === 'lobby' ? BrixState.t('fr.status.lobby')
+        : BrixFriends.lastSeenText(p);
+
+      back.innerHTML =
+        '<div class="modal-box rust-card bell-panel rust-scroll">' +
+          '<div class="panel-head">' +
+            '<h2 class="font-h">' + BrixState.t('fr.profile') + '</h2>' +
+            '<button class="close-btn" data-close>' + BrixIcon('x', 17) + '</button>' +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:14px;padding:6px 4px 12px">' +
+            '<div class="fr-ava" style="width:52px;height:52px;font-size:20px;background:hsl(' + hue + ',45%,38%)">' +
+              String(p.name || '?').slice(0, 1).toUpperCase() + '</div>' +
+            '<div style="min-width:0">' +
+              '<div class="fr-name-row"><span class="fr-name" style="font-size:16px">' + (p.name || '?') + '</span></div>' +
+              '<div class="fr-status-text">' + statusText + '</div>' +
+              '<div class="fr-status-text" style="opacity:0.7">' + BrixState.t('fr.profileId') + ': ' + p.id + '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="notif-actions" data-actions></div>' +
+        '</div>';
+
+      back.querySelector('[data-close]').onclick = function () { back.remove(); };
+      back.onclick = function (e) { if (e.target === back) back.remove(); };
+
+      var act = back.querySelector('[data-actions]');
+      function closeAnd(fn) { back.remove(); if (fn) fn(); }
+      if (isSelf) {
+        act.innerHTML = '<div class="fr-empty" style="padding:4px 0 0">' + BrixState.t('fr.inviteSelf') + '</div>';
+      } else if (isFriend) {
+        var rb = document.createElement('button');
+        rb.className = 'btn-rust danger';
+        rb.textContent = BrixState.t('fr.remove');
+        rb.onclick = function (e) {
+          e.stopPropagation();
+          menuAudio.click();
+          BrixModals.confirmDialog({
+            title: BrixState.t('fr.removeTitle'),
+            body: BrixState.t('fr.removeBody', { name: p.name }),
+            confirmText: BrixState.t('fr.remove'),
+            cancelText: BrixState.t('common.cancel'),
+            onConfirm: function () { BrixState.removeFriend(p.id); closeAnd(onRefresh); },
+            onCancel: function () {}
+          });
+        };
+        act.appendChild(rb);
+      } else {
+        var ib = document.createElement('button');
+        ib.className = 'btn-rust-primary';
+        ib.textContent = BrixState.t('fr.inviteNew');
+        ib.onclick = function (e) {
+          e.stopPropagation();
+          menuAudio.click();
+          var res = BrixFriends.invite(p.id.indexOf('srv-') === 0 ? p.name : p.id);
+          if (res === 'sent') { menuAudio.buy(); BrixToast.toast({ description: BrixState.t('fr.inviteSentTo', { name: p.name }) }); closeAnd(onRefresh); }
+          else if (res === 'dup') { menuAudio.error(); BrixToast.toast({ description: BrixState.t('fr.inviteDup') }); }
+          else { menuAudio.error(); BrixToast.toast({ description: BrixState.t('fr.inviteOffline') }); }
+        };
+        act.appendChild(ib);
+      }
+      document.body.appendChild(back);
+    }
+
+    /* ---------- ВКЛАДКА «ВСЕ ИГРОКИ» (✅ v0.4.62) ----------
+       Все, кто играл или играет: имя + «в сети» / «был N ч назад».
+       Клик по игроку → профиль (ПРИГЛАСИТЬ / УДАЛИТЬ ИЗ ДРУЗЕЙ) */
+    function drawPlayersTab() {
+      bodyEl.innerHTML = '<div data-list></div>';
+      var listEl = bodyEl.querySelector('[data-list]');
+
+      function redraw() {
+        if (myGen !== frGen) return;
+        var list = BrixFriends.allPlayersList().filter(function (p) {
+          return p.id !== BrixState.data.profileId &&
+            String(p.name || '').toLowerCase() !== myNick;
+        });
+        listEl.innerHTML = '';
+        if (!list.length) {
+          listEl.innerHTML = '<div class="fr-empty">' + BrixState.t('fr.emptyPlayers') + '</div>';
+          return;
+        }
+        var wrap = document.createElement('div');
+        wrap.className = 'fr-list';
+        list.forEach(function (p) {
+          var isFriend = so().friends.some(function (f) {
+            return f.id === p.id || f.name.toLowerCase() === String(p.name || '').toLowerCase();
+          });
+          var st = BrixFriends.statusOf(p);
+          var statusText = BrixFriends.lastSeenText(p) +
+            (isFriend ? ' · ' + BrixState.t('fr.tabs.friends') : '');
+          var row = socialRow(p, st === 'offline' ? 'offline' : st, statusText, '', false);
+          row.style.cursor = 'pointer';
+          row.onclick = function (e) {
+            if (e.target.closest('button')) return;   // кнопки — сами
+            menuAudio.click();
+            socialProfile(p, redraw);
+          };
+          wrap.appendChild(row);
+        });
+        listEl.appendChild(wrap);
+      }
+      curRefresh = redraw;
+      redraw();
     }
 
     /* ---------- ВКЛАДКА «ДРУЗЬЯ» ----------
@@ -296,6 +427,13 @@ window.BrixScreens = (function () {
         var row = socialRow(f, st, statusText,
           '<button title="' + BrixState.t('fr.remove') + '" class="danger" data-act="remove">' + BrixIcon('trash', 14) + '</button>');
         removeFriendRow(f, row);
+        /* ✅ v0.4.62: клик по другу → ПРОФИЛЬ (пригласить/удалить) */
+        row.style.cursor = 'pointer';
+        row.onclick = function (e) {
+          if (e.target.closest('button')) return;
+          menuAudio.click();
+          socialProfile(f, curRefresh);
+        };
         return { row: row, st: st };
       }
 
@@ -502,8 +640,7 @@ window.BrixScreens = (function () {
     function drawBody() {
       curRefresh = null;
       if (frTab === 'friends') drawFriendsTab();
-      else if (frTab === 'invites') drawInvitesTab();
-      else drawOutTab();
+      else drawPlayersTab();      // ✅ v0.4.62: вторая вкладка — ВСЕ ИГРОКИ
       layer.querySelector('[data-subtitle]').textContent = '';
     }
 
@@ -626,6 +763,10 @@ window.BrixScreens = (function () {
   }
 
   // ================= СКИНЫ =================
+  // ✅ v0.4.60 СКИНЫ — КОСТЮМЫ НА АККАУНТЕ: покупка ОДИН РАЗ помечает
+  // скин «КУПЛЕНО» (state.ownedSkinIds) и НИКОГДА не кладёт предмет в
+  // инвентарь. Скин применяется при КРАФТЕ: крафт-меню (Q) → чертёж →
+  // клик по иконке предмета → список скинов → выбрал купленный → СКАФТ.
   var RARITY = {
     common:    { color: '#a8b0a6', glow: 'rgba(168,176,166,0.14)' },
     uncommon:  { color: '#7fae62', glow: 'rgba(127,174,98,0.14)' },
@@ -635,11 +776,9 @@ window.BrixScreens = (function () {
   };
 
   var SKIN_TABS = [
-    { id: 'all',      labelKey: 'skins.tab.all' },
-    { id: 'weapon',   labelKey: 'skins.tab.weapon' },
-    { id: 'tool',     labelKey: 'skins.tab.tool' },
-    { id: 'clothing', labelKey: 'skins.tab.clothing' },
-    { id: 'misc',     labelKey: 'skins.tab.misc' }
+    { id: 'all',    labelKey: 'skins.tab.all' },
+    { id: 'weapon', labelKey: 'skins.tab.weapon' },
+    { id: 'tool',   labelKey: 'skins.tab.tool' }
   ];
 
   function renderSkins(layer) {
@@ -664,6 +803,7 @@ window.BrixScreens = (function () {
         '</div>' +
         '<div class="panel-body rust-scroll">' +
           '<div style="margin:0 auto;max-width:860px">' +
+            '<div class="skins-hint">' + BrixState.t('skins.hint') + '</div>' +
             '<div class="skins-tabs" data-tabs></div>' +
             '<div class="skins-grid" data-grid></div>' +
           '</div>' +
@@ -693,36 +833,32 @@ window.BrixScreens = (function () {
     }
 
     function drawGrid() {
-      var S2 = BrixState.data;
-      var list = BrixData.SKINS.filter(function (s) {
+      var list = ((window.BrixData && BrixData.SKINS) || []).filter(function (s) {
         return curTab === 'all' ? true : s.type === curTab;
       });
 
       gridEl.innerHTML = '';
       list.forEach(function (skin, i) {
-        var isOwned = S2.ownedSkinIds.indexOf(skin.id) !== -1;
-        var isEquipped = S2.equippedSkinIds.indexOf(skin.id) !== -1;
-        var r = RARITY[skin.rarity];
+        var r = RARITY[skin.rarity] || RARITY.common;
+        var owned = (S.ownedSkinIds || []).indexOf(skin.id) !== -1;
 
         var card = document.createElement('div');
-        card.className = 'rust-card skin-card' + (isEquipped ? ' equipped' : '');
-        if (isEquipped) card.style.boxShadow = '0 0 24px ' + RARITY.legendary.glow;
+        card.className = 'rust-card skin-card' + (owned ? ' owned' : '');
         card.style.animationDelay = Math.min(i * 0.04, 0.35) + 's';
 
         card.innerHTML =
-          '<div class="icon-area" style="background:radial-gradient(ellipse at 50% 35%, ' + r.glow + ', rgba(0,0,0,0.35) 75%), rgba(255,255,255,0.03);color:' + r.color + '">' +
-            BrixData.itemIcon(skin.icon, 'item') +
-            (isEquipped ? '<span class="mini-badge equipped-badge">' + BrixState.t('skins.equippedMark') + '</span>' : '') +
+          '<div class="icon-area" data-view style="background:radial-gradient(ellipse at 50% 35%, ' + r.glow + ', rgba(0,0,0,0.35) 75%), rgba(255,255,255,0.03);cursor:pointer" title="' +
+            BrixState.t('skins.view3d') + '">' +
+            '<img src="' + skin.iconUrl + '" alt="" draggable="false" style="max-width:82%;max-height:82%;object-fit:contain;filter:drop-shadow(0 6px 10px rgba(0,0,0,0.5))">' +
             '<span class="rarity-dot" style="background:' + r.color + ';box-shadow:0 0 8px ' + r.color + '"></span>' +
+            (owned ? '<span class="owned-mark font-h">' + BrixState.t('skins.ownedMark') + '</span>' : '') +
           '</div>' +
-          '<div class="name">' + skin.name[S2.lang] + '</div>' +
+          '<div class="name">' + (skin.name[S.lang] || skin.name.ru) + '</div>' +
           '<div class="rarity" style="color:' + r.color + '">' + BrixState.t('skins.rarity.' + skin.rarity) + '</div>' +
           '<div class="foot">' +
-            (isOwned
-              ? '<span class="owned">' + BrixState.t('skins.owned') + '</span>'
-              : '<span class="price">' + BrixIcon('coins', 12) + (skin.price === 0 ? '—' : skin.price) + '</span>') +
-            (isOwned
-              ? '<button class="btn-rust' + (isEquipped ? ' equipped' : '') + '" data-equip>' + BrixState.t(isEquipped ? 'skins.unequip' : 'skins.equip') + '</button>'
+            '<span class="price">' + (owned ? '' : BrixIcon('coins', 12) + skin.price) + '</span>' +
+            (owned
+              ? '<button class="btn-rust-primary" disabled>' + BrixState.t('skins.owned') + '</button>'
               : '<button class="btn-rust-primary" data-buy>' + BrixState.t('skins.buy') + '</button>') +
           '</div>';
 
@@ -730,15 +866,15 @@ window.BrixScreens = (function () {
           b.onmouseenter = function () { menuAudio.hover(); };
         });
 
-        var equipBtn = card.querySelector('[data-equip]');
-        if (equipBtn) {
-          equipBtn.onclick = function () {
+        /* ✅ v0.4.62: клик по КАРТИНКЕ — 3D-осмотр скина (вращение, покупка) */
+        var viewArea = card.querySelector('[data-view]');
+        if (viewArea) {
+          viewArea.onclick = function () {
             menuAudio.click();
-            BrixState.toggleEquipSkin(skin.id);
-            BrixToast.toast({
-              description: isEquipped
-                ? BrixState.t('skins.unequipped', { name: skin.name[BrixState.data.lang] })
-                : BrixState.t('skins.equipped', { name: skin.name[BrixState.data.lang] })
+            skinPreview(skin, function () {
+              drawGrid();
+              var c = layer.querySelector('[data-coins]');
+              if (c) c.textContent = BrixState.data.coins;
             });
           };
         }
@@ -746,25 +882,221 @@ window.BrixScreens = (function () {
         var buyBtn = card.querySelector('[data-buy]');
         if (buyBtn) {
           buyBtn.onclick = function () {
-            var ok = BrixState.buySkin(skin.id, skin.price);
-            if (ok) {
+            var nm = skin.name[BrixState.data.lang] || skin.name.ru;
+            if (BrixState.buySkin(skin.id, skin.price)) {
               menuAudio.buy();
-              BrixToast.toast({ description: BrixState.t('skins.bought', { name: skin.name[BrixState.data.lang] }) });
+              BrixToast.toast({ description: BrixState.t('skins.bought', { name: nm }) });
+              drawGrid();   // карточка сразу становится «КУПЛЕНО»
             } else {
               menuAudio.error();
               BrixToast.toast({ description: BrixState.t('skins.notEnough') });
             }
+            layer.querySelector('[data-coins]').textContent = BrixState.data.coins;
           };
         }
 
         gridEl.appendChild(card);
       });
-
-      layer.querySelector('[data-coins]').textContent = BrixState.data.coins;
     }
 
     drawTabs();
     drawGrid();
+  }
+
+  /* ============================================================
+     ✅ v0.4.62 3D-ОСМОТР СКИНА В МАГАЗИНЕ (просьба игрока: «нажми на
+     скин — он пойдёт в 3D без руки, можно крутить-вертеть и купить»).
+     Клик по КАРТИНКЕ скина → модальное окно: настоящая 3D-модель
+     предмета (iron_axe.glb / revolver.glb / ...) с надетой обёрткой
+     скина, БЕЗ РУК. Тянешь мышью/пальцем — вращается; отпустил —
+     медленно крутится сам. Кнопки КУПИТЬ / КУПЛЕНО / ЗАКРЫТЬ.
+     ============================================================ */
+  var SKIN_MODEL_URL = {
+    revolver:    'assets/models/revolver.glb',
+    thompson:    'assets/models/thompson.glb',
+    c4:          'assets/models/c4.glb',
+    stoneAxe:    'assets/models/stone_axe.glb',
+    ironPickaxe: 'assets/models/pickaxe.glb',
+    ironAxe:     'assets/models/iron_axe.glb'
+  };
+
+  function skinPreview(skin, onBought) {
+    if (!window.THREE || !window.BrixGLB) return;
+    var url = SKIN_MODEL_URL[skin.item];
+    if (!url) return;
+    var L = BrixState.data.lang === 'en' ? 'en' : 'ru';
+
+    var back = document.createElement('div');
+    back.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(8,10,14,0.82);' +
+      'display:flex;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(3px)';
+    var panel = document.createElement('div');
+    panel.style.cssText = 'position:relative;width:min(92vw,560px);max-height:92vh;overflow:auto;' +
+      'background:linear-gradient(160deg,#26221c,#191712);border:1px solid #4a4034;border-radius:10px;' +
+      'box-shadow:0 24px 70px rgba(0,0,0,0.65);padding:14px 16px 16px;font-family:inherit;color:#e8e2d6';
+    var r = RARITY[skin.rarity] || RARITY.common;
+    var owned = (BrixState.data.ownedSkinIds || []).indexOf(skin.id) !== -1;
+
+    panel.innerHTML =
+      '<div style="display:flex;align-items:flex-start;gap:10px">' +
+        '<div style="flex:1;min-width:0">' +
+          '<div class="font-h" style="font-size:17px">' + (skin.name[L] || skin.name.ru) + '</div>' +
+          '<div style="font-size:12px;margin-top:2px;color:' + r.color + '">' +
+            BrixState.t('skins.rarity.' + skin.rarity) + ' · ' +
+            (owned ? BrixState.t('skins.owned') : (skin.price + ' ' + BrixState.t('skins.balance'))) +
+          '</div>' +
+        '</div>' +
+        '<button data-x style="background:none;border:none;color:#9a927f;cursor:pointer;padding:4px">' + BrixIcon('x', 18) + '</button>' +
+      '</div>' +
+      '<div data-stage style="position:relative;margin:10px auto 0;border-radius:8px;overflow:hidden;' +
+        'background:radial-gradient(ellipse at 50% 30%, rgba(255,255,255,0.05), rgba(0,0,0,0.5) 75%);' +
+        'border:1px solid rgba(255,255,255,0.08);touch-action:none;cursor:grab">' +
+        '<canvas data-cnv style="display:block;width:100%;height:auto"></canvas>' +
+      '</div>' +
+      '<div style="font-size:11.5px;color:#9a927f;text-align:center;margin-top:6px">' +
+        BrixState.t('skins.rotate') + '</div>' +
+      '<div style="display:flex;gap:10px;margin-top:10px">' +
+        '<button data-buy class="btn-rust-primary font-h" style="flex:1;justify-content:center;display:flex;align-items:center;gap:7px">' +
+          (owned ? BrixState.t('skins.owned') : (BrixIcon('coins', 14) + '<span>' + BrixState.t('skins.buy') + ' ' + skin.price + '</span>')) +
+        '</button>' +
+        '<button data-close class="font-h" style="padding:9px 16px;background:#3a332a;border:1px solid #55483a;' +
+          'border-radius:6px;color:#e8e2d6;cursor:pointer">ЗАКРЫТЬ</button>' +
+      '</div>';
+    back.appendChild(panel);
+    document.body.appendChild(back);
+
+    var canvas = panel.querySelector('[data-cnv]');
+    var stage = panel.querySelector('[data-stage]');
+    var buyBtn = panel.querySelector('[data-buy]');
+    var W = 640, H = 640;
+
+    var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(W, H, false);
+    canvas.style.aspectRatio = '1/1';
+
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(32, 1, 0.01, 20);
+    camera.position.set(0.75, 0.42, 2.55);
+    camera.lookAt(0, 0, 0);
+    scene.add(camera);
+    scene.add(new THREE.HemisphereLight(0xdfeaff, 0x3a3f4a, 0.95));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+    var key = new THREE.DirectionalLight(0xffffff, 1.6);
+    key.position.set(1.8, 2.4, 2.6); scene.add(key);
+    var fill = new THREE.DirectionalLight(0xbfd8ff, 0.6);
+    fill.position.set(-2, -0.6, 1.4); scene.add(fill);
+
+    var group = new THREE.Group();
+    scene.add(group);
+    var yaw = 0.8, pitch = -0.22, dragging = false, lastX = 0, lastY = 0, raf = 0, closed = false;
+    var prev = performance.now();
+
+    function frame(now) {
+      if (closed) return;
+      var dt = Math.min(0.05, (now - prev) / 1000); prev = now;
+      if (!dragging) yaw += dt * 0.45;              // медленно крутится сам
+      group.rotation.set(pitch, yaw, 0, 'YXZ');
+      renderer.render(scene, camera);
+      raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+
+    stage.addEventListener('pointerdown', function (e) {
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+      stage.style.cursor = 'grabbing';
+      try { stage.setPointerCapture(e.pointerId); } catch (eP) {}
+    });
+    stage.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      yaw += (e.clientX - lastX) * 0.011;
+      pitch = Math.max(-1.25, Math.min(1.25, pitch + (e.clientY - lastY) * 0.008));
+      lastX = e.clientX; lastY = e.clientY;
+    });
+    var stopDrag = function () { dragging = false; stage.style.cursor = 'grab'; };
+    stage.addEventListener('pointerup', stopDrag);
+    stage.addEventListener('pointercancel', stopDrag);
+
+    function close() {
+      closed = true;
+      cancelAnimationFrame(raf);
+      renderer.dispose();
+      back.remove();
+      document.removeEventListener('keydown', onEsc);
+    }
+    function onEsc(e) { if (e.key === 'Escape') close(); }
+    document.addEventListener('keydown', onEsc);
+    panel.querySelector('[data-x]').onclick = close;
+    panel.querySelector('[data-close]').onclick = function () { menuAudio.click(); close(); };
+    back.addEventListener('mousedown', function (e) { if (e.target === back) close(); });
+
+    buyBtn.onclick = function () {
+      if ((BrixState.data.ownedSkinIds || []).indexOf(skin.id) !== -1) return;
+      if (BrixState.buySkin(skin.id, skin.price)) {
+        menuAudio.buy();
+        BrixToast.toast({ description: BrixState.t('skins.bought', { name: skin.name[L] || skin.name.ru }) });
+        buyBtn.innerHTML = BrixState.t('skins.owned');
+        buyBtn.disabled = true; buyBtn.style.opacity = '0.6';
+        if (onBought) onBought();
+      } else {
+        menuAudio.error();
+        BrixToast.toast({ description: BrixState.t('skins.notEnough') });
+      }
+    };
+    if (owned) { buyBtn.disabled = true; buyBtn.style.opacity = '0.6'; }
+
+    /* модель: грузим GLB, нормализуем, надеваем обёртку скина */
+    BrixGLB.load(url + (url.indexOf('?') < 0 ? '?skinview=1' : ''), function (g) {
+      if (closed) return;
+      var box = new THREE.Box3().setFromObject(g);
+      var size = box.getSize(new THREE.Vector3());
+      var c = box.getCenter(new THREE.Vector3());
+      var k = 1.25 / (Math.max(size.x, size.y, size.z) || 1);
+      g.position.set(-c.x, -c.y, -c.z);
+      var inner = new THREE.Group();
+      inner.add(g);
+      inner.scale.setScalar(k);
+      group.add(inner);
+      /* обёртка скина поверх базовой текстуры (flipY=false — glTF).
+         ✅ v0.4.63 ФИКС «ОБЁРТКА НЕПРАВИЛЬНО СИДИТ»: у большинства
+         моделей (revolver.glb и др.) материал metalness=1 — без
+         карты металличности металл «съедает» окрас обёртки (в руках
+         спасает env-освещение сцены, в витрине его нет). Теперь:
+         массивы материалов обрабатываются каждый; если у скина есть
+         rough/metal карты — ставим их (как в руках); если нет —
+         витринный вид: metalness 0.15 / roughness 0.6 */
+      var wrapUrl = (window.BrixWeaponSkins && BrixWeaponSkins.wrapFor(skin.id)) || null;
+      var skDef = (window.BrixWeaponSkins && BrixWeaponSkins.def(skin.id)) || null;
+      if (wrapUrl) {
+        var applyWrap = function (tex, roughTex, metalTex) {
+          if (closed) return;
+          g.traverse(function (o) {
+            if (!o.isMesh || !o.material) return;
+            var mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach(function (m) {
+              m.map = tex;
+              if (m.color) m.color.setHex(0xffffff);
+              if (roughTex || metalTex) {
+                if (roughTex && 'roughnessMap' in m) { m.roughnessMap = roughTex; m.roughness = 1; }
+                if (metalTex && 'metalnessMap' in m) { m.metalnessMap = metalTex; m.metalness = 1; }
+              } else {
+                if ('roughnessMap' in m) { m.roughnessMap = null; m.roughness = 0.6; }
+                if ('metalnessMap' in m) { m.metalnessMap = null; m.metalness = 0.15; }
+              }
+              m.needsUpdate = true;
+            });
+          });
+        };
+        BrixWeaponSkins.getTex(wrapUrl, function (tex) {
+          var needR = skDef && skDef.rough, needM = skDef && skDef.metal;
+          if (!needR && !needM) { applyWrap(tex, null, null); return; }
+          var left = (needR ? 1 : 0) + (needM ? 1 : 0);
+          var rT = null, mT = null;
+          var doneM = function () { if (--left === 0) applyWrap(tex, rT, mT); };
+          if (needR) BrixWeaponSkins.getTex(skDef.rough, function (t) { rT = t; doneM(); });
+          if (needM) BrixWeaponSkins.getTex(skDef.metal, function (t) { mT = t; doneM(); });
+        });
+      }
+    }, function () { /* модель не загрузилась — окно остаётся с фоном */ });
   }
 
   // ================= НАСТРОЙКИ =================

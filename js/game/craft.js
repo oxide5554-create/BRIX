@@ -22,6 +22,16 @@
 //  Пока панель открыта — управление стоит (Q/ESC закрывают),
 //  рендер и сеть ЖИВУТ (как у мини-меню M). Крафт МГНОВЕННЫЙ:
 //  ресурсы списываются, предмет падает в инвентарь.
+//
+//  ✅ v0.4.60 СКИНЫ — КОСТЮМЫ НА АККАУНТЕ: в превью чертежа БОЛЬШАЯ
+//  ИКОНКА ПРЕДМЕТА — КНОПКА. Клик по ней открывает СПИСОК ВСЕХ СКИНОВ
+//  ЭТОГО ПРЕДМЕТА: «без скина» + купленные (некупленные видны серыми —
+//  купить в магазине, меню игры). Выбрал скин → обычный СКАФТ →
+//  предмет создаётся сразу с этим скином (иконка слота + обёртка
+//  в руках, у других игроков тоже). Скин хранится в слоте инвентаря
+//  и НИКОГДА не тратится. Каталог: js/data/skins.js, обёртки:
+//  js/data/weaponskins.js. Скины есть у револьвера, томпсона, С4,
+//  каменного топора и каменной кирки.
 // ============================================================
 window.BrixCraft = (function () {
   'use strict';
@@ -31,6 +41,32 @@ window.BrixCraft = (function () {
   var selId = null;         // выбранный чертёж
   var cat = 'all';          // вкладка
   var qty = 1;
+  /* ✅ v0.4.60: выбранный СКИН для текущего чертежа (null — без скина).
+     Скин — «костюм» с аккаунта (ownedSkinIds); сбрасывается при смене
+     чертежа. Крафтит предмет со скином БЕЗ траты скина */
+  var selSkin = null;
+
+  /* ---------- скины (костюмы на аккаунте — js/data/skins.js) ---------- */
+
+  /** все скины, которые надеваются на предмет этого чертежа */
+  function skinsOf(rec) {
+    return (window.BrixData && BrixData.skinsForItem) ? BrixData.skinsForItem(rec.out) : [];
+  }
+  /** id скинов, купленных на аккаунте */
+  function ownedSkins() {
+    var S = window.BrixState && BrixState.data;
+    return (S && S.ownedSkinIds) || [];
+  }
+  function skinName(sk) {
+    return lang() === 'en' ? (sk.name.en || sk.name.ru) : sk.name.ru;
+  }
+  /** выбранный скин ЭТОГО чертежа (объект) или null */
+  function chosenSkin(rec) {
+    if (!selSkin) return null;
+    var list = skinsOf(rec);
+    for (var i = 0; i < list.length; i++) if (list[i].id === selSkin) return list[i];
+    return null;
+  }
 
   /* ---------- рецепты ---------- */
   var CATS = {
@@ -41,6 +77,9 @@ window.BrixCraft = (function () {
     ammo:   { ru: 'ПАТРОНЫ',     en: 'AMMO' }
   };
   var RECIPES = [
+    /* ✅ v0.4.60: скины больше НЕ в рецептах — они берутся из каталога
+       BrixData.SKINS по базовому предмету (skinsForItem). Чертёж один,
+       клик по его иконке открывает список скинов */
     { id: 'stoneAxe',     cat: 'tool',   out: 'stoneAxe',     req: [['wood', 10]] },
     { id: 'stonePickaxe', cat: 'tool',   out: 'stonePickaxe', req: [['stone', 15], ['wood', 10]] },
     { id: 'ironAxe',      cat: 'tool',   out: 'ironAxe',      req: [['wood', 20], ['metal', 5]] },
@@ -93,10 +132,9 @@ window.BrixCraft = (function () {
     return lang() === 'en' ? (d.nameEn || d.name) : d.name;
   }
   function itemIcon(id) {
-    /* ✅ v0.4.25: если на предмет надет СКИН — иконка скина */
-    var d = itemDef(id);
-    var sk = window.BrixWeaponSkins ? BrixWeaponSkins.iconFor(id) : null;
-    return sk || d.icon || '';
+    /* ✅ v0.4.60: скин — костюм в слоте, у базового предмета ОДНА иконка;
+       иконку скина берут отдельно через BrixWeaponSkins.iconFor(skinId) */
+    return itemDef(id).icon || '';
   }
 
   function inv() { return (window.BrixInventory && BrixInventory.get()) || null; }
@@ -155,7 +193,16 @@ window.BrixCraft = (function () {
             '</span><button class="bxc-x" id="bxcClose">✕</button></div>' +
           '<div class="bxc-preview">' +
             '<div class="bxc-name font-h" id="bxcName"></div>' +
-            '<div class="bxc-shot"><img id="bxcImg" alt=""></div>' +
+            /* ✅ v0.4.60: ИКОНКА ПРЕДМЕТА — КНОПКА. У предметов со скинами
+               клик открывает СПИСОК ВСЕХ СКИНОВ ЭТОГО ПРЕДМЕТА (как в
+               референсе): выбрал — СКАФТ создаст предмет с этим скином */
+            '<div class="bxc-shot-wrap" id="bxcShotWrap">' +
+              '<button class="bxc-shot" id="bxcShot" type="button">' +
+                '<img id="bxcImg" alt="" draggable="false">' +
+                '<span class="bxc-shot-arrow font-h">▾</span>' +
+              '</button>' +
+              '<div class="bxc-skin-menu hidden" id="bxcSkinMenu"></div>' +
+            '</div>' +
           '</div>' +
           '<div class="bxc-table" id="bxcTable"></div>' +
           '<div class="bxc-qty">' +
@@ -191,6 +238,18 @@ window.BrixCraft = (function () {
       setQty(parseInt(this.value, 10) || 1);
     });
     root.querySelector('#bxcCraftBtn').onclick = function () { craft(); };
+    /* ✅ v0.4.60: клик по ИКОНКЕ ПРЕДМЕТА — открыть/закрыть список скинов */
+    root.querySelector('#bxcShot').onclick = function () {
+      if (!skinsOf(recById(selId) || RECIPES[0]).length) return;   // скинов нет — молчим
+      sfx('hover');
+      toggleSkinMenu();
+    };
+    /* клик мимо меню (и мимо иконки) — закрыть список скинов */
+    document.addEventListener('mousedown', function (e) {
+      if (!open || !root) return;
+      var w = root.querySelector('#bxcShotWrap');
+      if (w && !w.contains(e.target)) closeSkinMenu();
+    });
 
     paintTabs();
     if (!selId) selId = RECIPES[0].id;
@@ -225,15 +284,90 @@ window.BrixCraft = (function () {
     });
   }
 
-  /* ---------- левая панель: превью + таблица ресурсов ---------- */
+  /* ---------- левая панель: превью + список скинов + таблица ресурсов ---------- */
+
+  /* ✅ v0.4.60: СПИСОК СКИНОВ ПРЕДМЕТА — открывается кликом по большой
+     иконке в превью (как на референсе игрока). В списке: «без скина» +
+     все скины этого предмета; купленные — активны, некупленные серые */
+
+  function closeSkinMenu() {
+    var m = root && root.querySelector('#bxcSkinMenu');
+    if (m) m.classList.add('hidden');
+  }
+
+  function toggleSkinMenu() {
+    var m = root.querySelector('#bxcSkinMenu');
+    if (!m) return;
+    if (!m.classList.contains('hidden')) { closeSkinMenu(); return; }
+    var rec = recById(selId) || RECIPES[0];
+    var own = ownedSkins();
+    var items = [{ id: '', icon: itemIcon(rec.out), nm: ru('NO SKIN', 'БЕЗ СКИНА'), own: true }];
+    skinsOf(rec).forEach(function (sk) {
+      items.push({
+        id: sk.id,
+        icon: (window.BrixWeaponSkins && BrixWeaponSkins.iconFor(sk.id)) || sk.iconUrl,
+        nm: skinName(sk),
+        own: own.indexOf(sk.id) !== -1
+      });
+    });
+    m.innerHTML =
+      '<div class="bxc-sm-cap font-h">' + ru('PICK A SKIN', 'ВЫБЕРИ СКИН') + '</div>' +
+      items.map(function (it) {
+        return '<button class="bxc-sm-item font-h' + (it.id === (selSkin || '') ? ' on' : '') +
+          (it.own ? '' : ' lock') + '" data-sk="' + it.id + '">' +
+          '<img src="' + it.icon + '" alt="" draggable="false">' +
+          '<span class="nm">' + esc(it.nm) + '</span>' +
+          '<span class="st">' + (it.own ? (it.id === (selSkin || '') ? '●' : '✓') : ru('NOT OWNED', 'НЕ КУПЛЕНО')) + '</span>' +
+          '</button>';
+      }).join('') +
+      '<div class="bxc-sm-hint">' +
+      ru('Crafting with a skin is a regular craft — the skin is not spent and stays owned',
+         'Крафт со скином — обычный крафт, скин не тратится и остаётся купленным') + '</div>';
+
+    [].slice.call(m.querySelectorAll('.bxc-sm-item')).forEach(function (b) {
+      b.onmouseenter = function () { sfx('hover'); };
+      b.onclick = function () {
+        var id = b.getAttribute('data-sk') || null;
+        if (b.classList.contains('lock')) {
+          sfx('back');
+          toast(ru('This skin is not bought — open the game menu → SKINS and buy it',
+            'Скин не куплен — открой меню игры → «СКИНЫ» и купи его'), 6);
+          return;
+        }
+        sfx('click');
+        selSkin = id;
+        closeSkinMenu();
+        paintLeft();
+      };
+    });
+
+    m.classList.remove('hidden');
+  }
+
   function paintLeft() {
     var rec = recById(selId) || RECIPES[0];
     var iv = inv();
+    var sk = chosenSkin(rec);
+    var list = skinsOf(rec);
+
     var name = root.querySelector('#bxcName');
     var img = root.querySelector('#bxcImg');
-    name.textContent = itemName(rec.out);
-    img.src = itemIcon(rec.out);
-    img.alt = itemName(rec.out);
+    /* превью показывает ВЫБРАННЫЙ вид: скин (имя + PNG-рендер) или обычный */
+    name.textContent = sk ? skinName(sk) : itemName(rec.out);
+    var icon = (sk && window.BrixWeaponSkins && BrixWeaponSkins.iconFor(sk.id)) || itemIcon(rec.out);
+    img.src = icon;
+    img.alt = name.textContent;
+
+    /* иконка-кнопка: у предметов со скинами — стрелка «▾» и подсказка */
+    var shot = root.querySelector('#bxcShot');
+    if (shot) {
+      shot.classList.toggle('hasskins', list.length > 0);
+      shot.classList.toggle('skinned', !!sk);
+      shot.title = list.length
+        ? (sk ? ru('Click: pick another skin', 'Нажми: выбрать другой скин')
+              : ru('Click: pick a skin', 'Нажми: выбрать скин'))
+        : '';
+    }
 
     var tbl = root.querySelector('#bxcTable');
     var html =
@@ -276,9 +410,16 @@ window.BrixCraft = (function () {
       var d = document.createElement('div');
       d.className = 'bxc-inv-slot' + (s ? '' : ' empty');
       if (s) {
-        d.title = itemName(s.item.id) + (s.item.stackable ? ' ×' + s.count : '');
+        /* ✅ v0.4.60: у скинутого слота — иконка скина + имя со скином */
+        var sic = (s.skin && window.BrixWeaponSkins && BrixWeaponSkins.iconFor(s.skin)) || s.item.icon;
+        var snm = itemName(s.item.id);
+        if (s.skin && window.BrixData && BrixData.skinById) {
+          var sk2 = BrixData.skinById(s.skin);
+          if (sk2) snm += ' — ' + skinName(sk2);
+        }
+        d.title = snm + (s.item.stackable ? ' ×' + s.count : '');
         d.innerHTML =
-          '<img src="' + itemIcon(s.item.id) + '" alt="" draggable="false">' +
+          '<img src="' + sic + '" alt="" draggable="false">' +
           (s.item.stackable && s.count > 1 ? '<b>' + s.count + '</b>' : '');
       }
       host.appendChild(d);
@@ -309,13 +450,19 @@ window.BrixCraft = (function () {
       row.innerHTML =
         '<img class="bxc-row-ico" src="' + itemIcon(rec.out) + '" alt="" draggable="false">' +
         '<div class="bxc-row-mid">' +
-          '<div class="bxc-row-name">' + esc(itemName(rec.out)) + '</div>' +
+          '<div class="bxc-row-name">' + esc(itemName(rec.out)) +
+            /* ✅ v0.4.60: у предмета есть скины — маркер; сам выбор в превью,
+               кликом по иконке предмета */
+            (skinsOf(rec).length ? ' <span class="bxc-skin-badge font-h">' + ru('HAS SKINS', 'ЕСТЬ СКИН') + '</span>' : '') +
+          '</div>' +
           '<div class="bxc-row-req">' + reqHtml + '</div>' +
         '</div>' +
         '<div class="bxc-row-cc font-h">' + (cc >= 1 ? '×' + cc : ru('NO RES', 'НЕТ РЕС.')) + '</div>';
       row.onclick = function () {
         sfx('hover');
         selId = rec.id;
+        selSkin = null;   // новый чертёж — выбор скина заново (по умолчанию без скина)
+        closeSkinMenu();
         qty = 1;
         var inp = root.querySelector('#bxcQtyIn');
         if (inp) inp.value = 1;
@@ -340,6 +487,12 @@ window.BrixCraft = (function () {
     var iv = inv();
     var rec = recById(selId);
     if (!iv || !rec) return;
+    /* ✅ v0.4.60: предмет создаётся БАЗОВЫЙ; выбранный скин (если куплен
+       и подходит предмету) прикрепляется к слоту — «костюм». Скин НЕ
+       тратится: ресурсов списывается ровно как в обычном крафте */
+    var sk = chosenSkin(rec);
+    var skinId = sk ? sk.id : null;
+    var outId = rec.out;
     var made = 0;
     var madeRuns = 0;   /* ✅ v0.4.44: число запусков (рецепт может давать yield > 1) */
     var want = qty;
@@ -350,8 +503,8 @@ window.BrixCraft = (function () {
         if (iv.countItem(rec.req[k][0]) < rec.req[k][1]) { ok = false; break; }
       }
       if (!ok) break;
-      // есть куда положить?
-      if (iv.freeSpaceFor(rec.out) < 1) {
+      // есть куда положить? (скинутое стакается только с таким же скином)
+      if (iv.freeSpaceFor(outId, skinId) < 1) {
         toast(ru('No space in inventory', 'Нет места в инвентаре'), 4);
         break;
       }
@@ -361,14 +514,14 @@ window.BrixCraft = (function () {
       }
       /* ✅ v0.4.44: рецепт выдаёт yield предметов за 1 крафт
          (дробь ×2, винтовочные ×12, пистолетные ×24) */
-      iv.addItem(rec.out, rec.yield || 1);
+      iv.addItem(outId, rec.yield || 1, 0, skinId);
       made += (rec.yield || 1);
       madeRuns++;
     }
     if (made > 0) {
-      try { iv.showPickup(rec.out, made); } catch (e) {}
-      toast(ru('Crafted: ' + made + ' × ' + itemName(rec.out),
-        'Скрафчено: ' + made + ' × ' + itemName(rec.out)), 4);
+      try { iv.showPickup(outId, made, skinId); } catch (e) {}
+      toast(ru('Crafted: ' + made + ' × ' + itemName(outId) + (sk ? ' — ' + skinName(sk) : ''),
+        'Скрафчено: ' + made + ' × ' + itemName(outId) + (sk ? ' — ' + skinName(sk) : '')), 4);
       sfx('click');
     } else if (madeRuns === 0) {
       // не хватило с первого же раза — называем первый недостающий ресурс
@@ -415,7 +568,10 @@ window.BrixCraft = (function () {
   function close() {
     if (!open) return;
     open = false;
-    if (root) root.classList.add('hidden');
+    if (root) {
+      root.classList.add('hidden');
+      closeSkinMenu();   // ✅ v0.4.60: список скинов не переживает панель
+    }
     // возврат мыши в игру (с повторами — после Esc браузер даёт lock не сразу)
     var tries = 0;
     var retry = function () {
@@ -448,6 +604,8 @@ window.BrixCraft = (function () {
     // клавиатура кодового замка/перелаза — Q вводит текст, не открывает крафт
     if (window.BrixBuilding && BrixBuilding.isUiBlocked && BrixBuilding.isUiBlocked()) return;
     if (e.code === 'KeyQ') {
+      /* ✅ v0.4.64 ПВП-АРЕНА: крафта на арене НЕТ — Q молчит */
+      if (window.BRIX_PVP) return;
       // инвентарь/лут/меню/панель открыты — Q молчит (Q там может быть кодом)
       if (!open && blockedByOtherUi()) return;
       e.preventDefault();
@@ -469,6 +627,7 @@ window.BrixCraft = (function () {
     shutdown: function () {
       close();
       qty = 1;
+      selSkin = null;   // ✅ v0.4.59: сброс выбора скина
       if (root) root.classList.add('hidden');
     }
   };

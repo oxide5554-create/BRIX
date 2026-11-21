@@ -44,10 +44,9 @@ window.BrixLootMenu = (function () {
     return (window.BrixState && BrixState.data.lang === 'en') ? (d.nameEn || d.name) : d.name;
   }
   function itemIcon(id) {
+    /* ✅ v0.4.58: скинутый предмет — отдельный предмет со своей иконкой */
     var d = (window.BrixItems && BrixItems[id]) || {};
-    /* ✅ v0.4.25: если на предмет надет СКИН — иконка скина */
-    var sk = window.BrixWeaponSkins ? BrixWeaponSkins.iconFor(id) : null;
-    return sk || d.icon || '';
+    return d.icon || '';
   }
   /* лимит стека предмета (BrixItems: stackable + stack) */
   function stackLimit(id) {

@@ -142,6 +142,13 @@ window.BrixFriends = (function () {
       respond(aid, name, 'accept');
     } else if (res === 'in') {
       toast(name + ' ' + BrixState.t('fr.requestIn'));
+      /* ✅ v0.4.62: заявка — в КОЛОКОЛЬЧИК (просьба игрока: «сообщение
+         приходит игроку в вкладку где колокольчик — «вам предложили
+         дружить» и там игнорировать или принят») */
+      try {
+        BrixState.socialNotif({ kind: 'invite', name: name,
+          text: BrixState.t('fr.notifInvite', { name: name }) });
+      } catch (eN) {}
       try { menuAudio.click(); } catch (e) {}
     }
     emitChange();
@@ -295,6 +302,63 @@ window.BrixFriends = (function () {
     return 'offline';
   }
 
+  /* ================= ВСЕ ИГРОКИ (✅ v0.4.62) ================= */
+
+  /** «в сети сейчас» / «был(а) N мин/ч/дн назад» — для вкладки ВСЕ ИГРОКИ */
+  function lastSeenText(p) {
+    if (p.on) return BrixState.t('fr.onlineNow');
+    var d = Math.max(0, Date.now() - (Number(p.ls) || 0));
+    var mins = Math.floor(d / 60000);
+    if (mins < 60) return BrixState.t('fr.lastSeenMin', { n: Math.max(1, mins) });
+    var hrs = Math.floor(mins / 60);
+    if (hrs < 48) return BrixState.t('fr.lastSeenH', { n: hrs });
+    return BrixState.t('fr.lastSeenD', { n: Math.floor(hrs / 24) });
+  }
+
+  var allPlayers = [];       // реестр сервера: [{id, name, on, ls}] — ls = был в сети
+  function requestAll() {
+    if (window.BrixNet && BrixNet.mode === 'server') {
+      try { BrixNet.send({ t: 'plist' }); } catch (e) {}
+    }
+  }
+
+  /** все игроки, которые ИГРАЛИ или ИГРАЮТ: реестр сервера
+     (social.json: aid, имя, «был в сети») + живые вкладки + ростер.
+     Онлайн-статус живых перекрывает «был в сети» из реестра */
+  function allPlayersList() {
+    var out = {};
+    (allPlayers || []).forEach(function (p) {
+      if (p && p.id) out[p.id] = { id: p.id, name: p.name || 'Игрок',
+        on: p.on ? 1 : 0, ls: Number(p.ls) || 0 };
+    });
+    // живой ростер сервера — «в сети сейчас», точное имя
+    if (serverInfo.ok && serverInfo.names) {
+      serverInfo.names.forEach(function (n) {
+        var key = 'srv-' + n;
+        var ex = null;
+        for (var k in out) {
+          if (out[k].name.toLowerCase() === String(n).toLowerCase()) { ex = out[k]; break; }
+        }
+        if (ex) { ex.on = 1; ex.ls = Date.now(); }
+        else out[key] = { id: key, name: n, on: 1, ls: Date.now() };
+      });
+    }
+    // вкладки этого браузера — тоже живые игроки
+    for (var pk in peers) {
+      var p2 = peers[pk];
+      var key2 = p2.aid || ('srv-' + p2.name);
+      var ex2 = null;
+      for (var k3 in out) {
+        if (out[k3].name.toLowerCase() === String(p2.name).toLowerCase()) { ex2 = out[k3]; break; }
+      }
+      if (ex2) { ex2.on = 1; ex2.ls = Date.now(); }
+      else out[key2] = { id: key2, name: p2.name, on: 1, ls: Date.now() };
+    }
+    var arr = Object.keys(out).map(function (k) { return out[k]; });
+    arr.sort(function (a, b) { return (b.on - a.on) || (b.ls - a.ls); });
+    return arr;
+  }
+
   /* ================= ИГРОКИ ДЛЯ ПОИСКА ================= */
 
   /** все известные живые игроки (вкладки этого браузера + сервер) */
@@ -316,26 +380,55 @@ window.BrixFriends = (function () {
 
   /* ================= ОНЛАЙН СЕРВЕРА (/status) ================= */
 
-  function statusUrl() {
+  /* ✅ v0.4.64: /status ОБОИХ серверов (BrixLand 8787, BrixPvP 8788) —
+     у вкладки «СЕРВЕРА» свой живой счётчик у каждого. Опрос всех портов
+     из BrixData.SERVERS одним таймером; serverInfo(port) отдаёт кэш. */
+  function statusUrl(port) {
+    var p = Number(port) || 8787;
     try {
-      if (location.port === '8787') return location.origin + '/status';
+      if (location.port === String(p)) return location.origin + '/status';
     } catch (e) {}
-    return 'http://localhost:8787/status';
+    return 'http://' + (location.hostname || 'localhost') + ':' + p + '/status';
   }
 
+  var statusCache = {};    // port -> {ok, players, max, inGame, names, ts, adminIds}
+
   function pollStatus() {
-    fetch(statusUrl(), { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) {
-        if (j && j.ok) {
-          var changed = serverInfo.players !== j.players || serverInfo.ok !== true;
-          serverInfo = { ok: true, players: j.players, max: j.max, inGame: j.inGame, names: j.names || [], ts: Date.now() };
-          if (changed) emitChange();
-        } else throw new Error('bad');
-      })
-      .catch(function () {
-        if (serverInfo.ok) { serverInfo = { ok: false, players: 0, names: [], ts: Date.now() }; emitChange(); }
+    var ports = [8787];
+    if (window.BrixData && BrixData.SERVERS) {
+      BrixData.SERVERS.forEach(function (s) {
+        var p = Number(s.port) || 8787;
+        if (ports.indexOf(p) === -1) ports.push(p);
       });
+    }
+    ports.forEach(function (port) {
+      fetch(statusUrl(port), { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          if (j && j.ok) {
+            var prev = statusCache[port] || serverInfo;
+            var changed = prev.players !== j.players || prev.ok !== true;
+            statusCache[port] = {
+              ok: true, players: j.players, max: j.max, inGame: j.inGame,
+              names: j.names || [], ts: Date.now(),
+              /* adminIds — для «магазин скинами только у админов» */
+              adminIds: j.adminIds || null,
+              mode: j.mode || null
+            };
+            if (port === 8787) {
+              serverInfo = statusCache[port];   // старые потребители (дом, друзья)
+              if (changed) emitChange();
+            }
+          } else throw new Error('bad');
+        })
+        .catch(function () {
+          var prev = statusCache[port];
+          if (prev && prev.ok) {
+            statusCache[port] = { ok: false, players: 0, names: [], ts: Date.now() };
+            if (port === 8787) { serverInfo = statusCache[port]; emitChange(); }
+          }
+        });
+    });
   }
 
   /* ================= ИНИЦИАЛИЗАЦИЯ ================= */
@@ -348,12 +441,18 @@ window.BrixFriends = (function () {
     setInterval(tick, 2000);          // присутствие каждые 2 с
     pollStatus();
     setInterval(pollStatus, 3000);    // онлайн сервера каждые 3 с
+    requestAll();
+    setInterval(requestAll, 12000);   // ✅ v0.4.62: реестр игроков каждые 12 с
     window.addEventListener('beforeunload', function () {
       if (bc) try { bc.postMessage({ t: 'pres', st: 'bye', sid: SID }); } catch (e) {}
     });
 
     // входящие с сервера
     if (window.BrixNet) {
+      BrixNet.on('plist', function (msg) {
+        allPlayers = (msg && Array.isArray(msg.list)) ? msg.list : [];
+        emitChange();
+      });
       BrixNet.on('social', function (msg) {
         if (msg.kind === 'finvite') {
           onInvite({ aid: msg.fromId, fromName: msg.from }, true);
@@ -380,8 +479,27 @@ window.BrixFriends = (function () {
     resend: resend,
     statusOf: statusOf,
     knownPlayers: knownPlayers,
+    allPlayersList: allPlayersList,   // ✅ v0.4.62: все игравшие/играющие
+    lastSeenText: lastSeenText,       // ✅ v0.4.62: «был N ч назад»
     peers: function () { return peers; },
-    serverInfo: function () { return serverInfo; },
+    /* ✅ v0.4.64: online КОНКРЕТНОГО сервера — serverInfo(порт) без
+       аргумента = BrixLand 8787 (как раньше) */
+    serverInfo: function (port) {
+      if (port === undefined || port === null || Number(port) === 8787) return serverInfo;
+      return statusCache[Number(port)] || { ok: false, players: 0, names: [] };
+    },
+    /* ✅ v0.4.64: ЭТОТ аккаунт — админ? (по adminIds из /status; до
+       ответа сервера считаем админом и после adminon в игре) */
+    isAdminAccount: function () {
+      if (window.BrixAdmin && BrixAdmin.enabled) return true;
+      var aid = myAid();
+      if (!aid) return false;
+      for (var k in statusCache) {
+        var c = statusCache[k];
+        if (c.ok && c.adminIds && c.adminIds.indexOf(aid) !== -1) return true;
+      }
+      return false;
+    },
     selfStatus: function () { return selfStatus; },
     sessionId: function () { return SID; },
     fmtDate: fmtDate,

@@ -506,12 +506,46 @@ window.BrixWorld = (function () {
     await yieldProgress(0.3);
     await nextFrame();
 
-    /* ---- 1. деревья: расстановка (как раньше) ---- */
+    /* ---- 0c. ✅ v0.4.64 ПВП-АРЕНА «ПЕПЕЛ» (сервер BrixPvP) ----
+       Не лес, а ЛОКАЦИЯ: детерминированный поиск ровной площадки у
+       центра карты → там арена ~78 м без единого дерева, с кольцами
+       валунов-укрытий (ниже, после руды). Точка запоминается в
+       window.__brixArena — gameworld спавнит игроков в центре. */
+    var arena = null;
+    if (window.BRIX_PVP) {
+      var bestSlope = 1e9, bestX = 0, bestZ = 0;
+      for (var ai = 0; ai < 260; ai++) {
+        var ax = (rng() - 0.5) * 320;
+        var az = (rng() - 0.5) * 320;
+        var ah = T.heightAt(ax, az);
+        if (ah < 4 || ah > 30) continue;
+        var asl = slopeAt(ax, az);
+        /* ровность всей площадки: сама точка + 4 точки по кольцу 40 м */
+        var worst = asl;
+        for (var ak = 0; ak < 4; ak++) {
+          var aa = ak * Math.PI / 2 + 0.4;
+          worst = Math.max(worst,
+            slopeAt(ax + Math.cos(aa) * 40, az + Math.sin(aa) * 40));
+        }
+        if (worst < bestSlope) { bestSlope = worst; bestX = ax; bestZ = az; }
+      }
+      arena = { x: Math.round(bestX), z: Math.round(bestZ), r: 78 };
+      window.__brixArena = arena;
+      console.log('[BrixWorld] арена «Пепел»: центр ' + arena.x + ' : ' + arena.z +
+        ' (наклон ' + bestSlope.toFixed(2) + ')');
+    }
+
+    /* ---- 1. деревья: расстановка ---- */
     var trees = [];
-    var treeTries = 3200;
-    for (i = 0; i < treeTries && trees.length < 340; i++) {
+    var treeTries = window.BRIX_PVP ? 1600 : 3200;   // арена: «не лес»
+    for (i = 0; i < treeTries && trees.length < (window.BRIX_PVP ? 150 : 340); i++) {
       var x = (rng() - 0.5) * T.WORLD_SIZE * 0.94;
       var z = (rng() - 0.5) * T.WORLD_SIZE * 0.94;
+      /* ✅ v0.4.64: на ПВП-арене деревьев нет вообще */
+      if (arena) {
+        var dxa = x - arena.x, dza = z - arena.z;
+        if (dxa * dxa + dza * dza < arena.r * arena.r) continue;
+      }
       var h = T.heightAt(x, z);
       var forest = N.fbm(x * 0.008 + 50, z * 0.008 + 80, 909, 3);
       if (forest < 0.5) continue;
@@ -682,6 +716,61 @@ window.BrixWorld = (function () {
     }
     await yieldProgress(0.86);
     await nextFrame();
+
+    /* ---- 2b. ✅ v0.4.64 УКРЫТИЯ АРЕНЫ «ПЕПЕЛ» ----
+       Кольца валунов + «стены» из камней на площадке арены: декоративные
+       инстансы модели камня (не руда — не ломается, но с коллайдерами).
+       Детерминированно по rng — у всех игроков одинаково. */
+    if (arena) {
+      var rockModel = oreModel.stone;
+      var rockK = 2.0 / Math.max(rockModel.size.y, 0.01);
+      var rockPts = [];
+      // два кольца укрытий + 4 «стены» поперёк арены
+      for (var ri = 0; ri < 2; ri++) {
+        var rr = 16 + ri * 24;
+        var rn = 7 + ri * 5;
+        for (var rj = 0; rj < rn; rj++) {
+          var ra = (rj / rn) * Math.PI * 2 + ri * 0.35;
+          var rx = arena.x + Math.cos(ra) * (rr + (rng() - 0.5) * 4);
+          var rz = arena.z + Math.sin(ra) * (rr + (rng() - 0.5) * 4);
+          if (slopeAt(rx, rz) > 0.5) continue;
+          rockPts.push({ x: rx, z: rz, s: 0.8 + rng() * 1.1, rot: rng() * Math.PI * 2 });
+        }
+      }
+      for (var wi = 0; wi < 4; wi++) {
+        var wa = wi * Math.PI / 2 + 0.35;
+        var wdx = Math.cos(wa), wdz = Math.sin(wa);
+        for (var wj = 0; wj < 6; wj++) {
+          var wx = arena.x + wdx * (6 + wj * 2.2) - wdz * (5 + rng() * 1.5);
+          var wz = arena.z + wdz * (6 + wj * 2.2) + wdx * (5 + rng() * 1.5);
+          if (slopeAt(wx, wz) > 0.5) continue;
+          rockPts.push({ x: wx, z: wz, s: 0.65 + rng() * 0.7, rot: wa + rng() * 0.4 });
+        }
+      }
+      rockPts.forEach(function (rp) {
+        rockModel.parts.forEach(function (part) {
+          var m = new THREE.InstancedMesh(part.geo, part.mat, 1);
+          dummy.position.set(rp.x,
+            (T.meshHeightAt ? T.meshHeightAt(rp.x, rp.z) : T.heightAt(rp.x, rp.z)) -
+              ORE_SINK_K * ORE_TOP_H * rp.s * 0.9, rp.z);
+          dummy.rotation.set(0, rp.rot, 0);
+          dummy.scale.setScalar(rp.s * rockK);
+          dummy.updateMatrix();
+          m.setMatrixAt(0, dummy.matrix);
+          m.castShadow = true;
+          m.receiveShadow = true;
+          scene.add(m);
+          decorDisposables.push(m);
+        });
+        // коллайдер валуна (цилиндр) — пули/игроки не проходят
+        colliders.push({
+          x: rp.x, z: rp.z,
+          r: 0.9 * rp.s * rockK,
+          kind: 'rock', active: true
+        });
+      });
+      console.log('[BrixWorld] укрытий арены: ' + rockPts.length);
+    }
 
     /* ---- 3. ✅ ТРАВА (v0.2.8): иконка grass.png → билборды по миру ----
        Текстуру делаем из иконки пользователя (assets/textures/grass.png),

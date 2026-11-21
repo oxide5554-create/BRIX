@@ -33,8 +33,10 @@ window.BrixState = (function () {
     lang: 'ru',
     settings: Object.assign({}, defaultSettings),
     coins: 2500,
-    ownedSkinIds: ['hatchet-rusty', 'pants-camo'],
-    equippedSkinIds: ['hatchet-rusty'],
+    /* ✅ v0.4.59: магазин скинов УДАЛЁН — скины теперь выбираются прямо
+       в крафт-меню (Q) при создании оружия; предметы-скины не нужны */
+    ownedSkinIds: [],
+    equippedSkinIds: [],
     removedFriendIds: [],
     extraFriends: [],
     newsSeenIds: [],
@@ -124,21 +126,18 @@ window.BrixState = (function () {
     setQuitOpen: function (v) { data.quitOpen = v; emit(); },
     setQuitDone: function (v) { data.quitDone = v; emit(); },
 
-    buySkin: function (id, price) {
-      if (data.ownedSkinIds.indexOf(id) !== -1) return false;
+    /* ✅ v0.4.60 СКИНЫ — КОСТЮМЫ НА АККАУНТЕ: покупка списывает монеты и
+       помечает скин купленным (ownedSkinIds). В инвентарь НИЧЕГО не
+       кладётся — скин применяется в крафт-меню (Q): клик по иконке
+       предмета → список скинов → выбрал купленный → СКАФТ. Скин не
+       тратится и не теряется */
+    buySkin: function (skinId, price) {
       if (data.coins < price) return false;
+      if (data.ownedSkinIds.indexOf(skinId) !== -1) return true;   // уже куплен
       data.coins -= price;
-      data.ownedSkinIds.push(id);
+      data.ownedSkinIds.push(skinId);
       emit();
       return true;
-    },
-
-    toggleEquipSkin: function (id) {
-      if (data.ownedSkinIds.indexOf(id) === -1) return;
-      var i = data.equippedSkinIds.indexOf(id);
-      if (i !== -1) data.equippedSkinIds.splice(i, 1);
-      else data.equippedSkinIds.push(id);
-      emit();
     },
 
     removeFriend: function (id) {

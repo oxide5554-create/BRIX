@@ -28,6 +28,12 @@ window.BrixTerrain = (function () {
   var S_TRANS = 7079;
   var S_PATCH = 8081;
 
+  /* ✅ v0.4.64 СВОЙ РЕЛЬЕФ НА КАЖДОМ СЕРВЕРЕ: гамма-смещение сидов.
+     BrixPvP ставит window.BRIX_TERRAIN_SEED = 77701 ДО генерации —
+     арена «Пепел» получает ПОЛНОСТЬЮ другой ландшафт (холмы, горы,
+     озеро, биомы), а не копию BrixLand. 0 — стандартный Brixland */
+  function seedOff() { return (window.BRIX_TERRAIN_SEED || 0) * 7919; }
+
   /** Гауссова «шапка» отдельной горы */
   function peak(x, z, cx, cz, sigma, amp) {
     return amp * N.gauss(x, z, cx, cz, sigma);
@@ -38,19 +44,28 @@ window.BrixTerrain = (function () {
    * и для физики игрока (высота пола под ногами).
    */
   function heightAt(x, z) {
+    /* ✅ v0.4.65 ПВП-АРЕНА: плоская локация вместо рельефа — бетонная
+       равнина 0.8 м с лёгкой детализацией, море остаётся за краем.
+       Никаких холмов/гор/озера — арена «ПОЛИГОН» строится поверх. */
+    if (window.BRIX_PVP_FLAT) {
+      var flatR = Math.sqrt(x * x + z * z) / WORLD_HALF;
+      var flatEdge = N.smoothstep(0.88, 1.02, flatR);
+      /* 3.2 — ВЫШЕ уровня моря (2.2), иначе арена «тонет» и на карте вода */
+      return N.lerp(3.2 + (N.fbm(x * 0.05, z * 0.05, S_DETAIL + seedOff(), 2) - 0.5) * 0.22, -7, flatEdge);
+    }
     var r = Math.sqrt(x * x + z * z) / WORLD_HALF;
 
     // плато спавна в центре
     var spawnBlend = N.smoothstep(0.14, 0.3, r);
 
     // холмы
-    var hills = (N.fbm(x * 0.012, z * 0.012, S_HILLS, 4) - 0.45) * 30;
-    var detail = (N.fbm(x * 0.05, z * 0.05, S_DETAIL, 3) - 0.5) * 3.5;
+    var hills = (N.fbm(x * 0.012, z * 0.012, S_HILLS + seedOff(), 4) - 0.45) * 30;
+    var detail = (N.fbm(x * 0.05, z * 0.05, S_DETAIL + seedOff(), 3) - 0.5) * 3.5;
 
     // маска горного кольца у краёв карты
     var mountMask = N.smoothstep(0.55, 0.82,
-      r + (N.fbm(x * 0.005 + 7.3, z * 0.005 + 2.9, S_MOUNT_MASK, 3) - 0.5) * 0.55);
-    var ridge = Math.pow(N.ridged(x * 0.006, z * 0.006, S_MOUNT, 4), 1.3) * 72;
+      r + (N.fbm(x * 0.005 + 7.3, z * 0.005 + 2.9, S_MOUNT_MASK + seedOff(), 3) - 0.5) * 0.55);
+    var ridge = Math.pow(N.ridged(x * 0.006, z * 0.006, S_MOUNT + seedOff(), 4), 1.3) * 72;
 
     // отдельные заметные пики
     var peaks =
@@ -140,11 +155,11 @@ window.BrixTerrain = (function () {
      Результат пишется в общий пул _ks (без аллокаций в цикле). */
   var _ks = { moist: 0, dirtK: 0, rockK: 0, snowK: 0, sandK: 0, deepK: 0 };
   function biomeKsAt(h, ny, x, z) {
-    var moist = N.fbm(x * 0.02, z * 0.02, S_MOIST, 3);
+    var moist = N.fbm(x * 0.02, z * 0.02, S_MOIST + seedOff(), 3);
     // крупное возмущение границ: двигает высотные пороги биомов
-    var wobble = (N.fbm(x * 0.013, z * 0.013, S_TRANS, 3) - 0.5) * 9.0;
+    var wobble = (N.fbm(x * 0.013, z * 0.013, S_TRANS + seedOff(), 3) - 0.5) * 9.0;
     // мелкие пятна: рвут край на лоскуты
-    var patch = N.fbm(x * 0.09, z * 0.09, S_PATCH, 2);
+    var patch = N.fbm(x * 0.09, z * 0.09, S_PATCH + seedOff(), 2);
 
     // трава: от сочной к сухой по влажности (с пятнистостью тона)
     _ks.moist = Math.min(1, Math.max(0, moist + (patch - 0.5) * 0.35));

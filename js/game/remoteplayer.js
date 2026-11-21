@@ -438,6 +438,7 @@ window.BrixRemotePlayer = (function () {
     this.tgt = { x: 0, y: 0, z: 0, yaw: 0, a: 'idle', tool: '', ph: 0 };
     this.lastPh = 0;
     this.curTool = '';
+    this.curSkin = '';     // ✅ v0.4.58: скинутый предмет в руках (si)
     this._pendingTool = false;
 
     this.group = g;
@@ -448,8 +449,10 @@ window.BrixRemotePlayer = (function () {
   RemotePlayer.prototype._applyTool = function (force) {
     if (!this.tgt) return;                 // конструктор ещё не дочистил поля
     var want = this.tgt.tool || 'axe';     // пусто — держит каменный топор
-    if (!force && want === this.curTool) return;
+    var wantSkin = this.tgt.si || '';      // ✅ v0.4.58: скинутый предмет в руках
+    if (!force && want === this.curTool && wantSkin === this.curSkin) return;
     this.curTool = want;
+    this.curSkin = wantSkin;
     var self = this;
     ['L', 'R'].forEach(function (s) {
       var h = self.arms[s].holder;
@@ -460,6 +463,7 @@ window.BrixRemotePlayer = (function () {
     var proto = TOOLS[want];
     if (!proto) return;
     var m = proto.clone(true);
+    this._applyToolSkin(m, wantSkin, want);   // ✅ v0.4.58: обёртка скина
     if (want === 'revolver' || want === 'shotgun' || want === 'rifle' || want === 'smg' ||
         want === 'rev3x') {
       // ✅ v0.4.5: револьвер держится СВОЕЙ стороной — ствол вперёд
@@ -483,6 +487,47 @@ window.BrixRemotePlayer = (function () {
     m.position.set(0.01, -0.02, -0.03);
     this.arms.R.holder.add(m);
     this._pendingTool = false;
+  };
+
+  /* ✅ v0.4.58 СКИНЫ КАК ПРЕДМЕТЫ: обёртка на оружии ЧУЖОГО игрока.
+     itemId — id скинутого предмета (si из состояния), want — tool.
+     ВАЖНО: proto.clone(true) ДЕЛИТ материалы между всеми клонами —
+     перед сменой map клонируем материал, иначе скин одного игрока
+     перекрасит револьверы у ВСЕХ. Скин применяем только если предмет
+     в BrixItems существует и его tool совпадает с tool в руках */
+  RemotePlayer.prototype._applyToolSkin = function (mesh, itemId, want) {
+    if (!itemId || !window.BrixWeaponSkins || !window.BrixData) return;
+    /* ✅ v0.4.63 ФИКС: si — id СКИНА ('exkimo'…), а не предмета. Раньше
+       его искали в BrixItems (базовые предметы) — там скинов НЕТ, guard
+       всегда возвращал наружу: ЧУЖИЕ игроки никогда не видели обёртку.
+       Теперь: скин по id (BrixData.skinById) + проверка, что скин
+       принадлежит предмету этого tool (skins.item → BrixItems[item].tool) */
+    var sk = BrixData.skinById ? BrixData.skinById(itemId) : null;
+    if (!sk) return;
+    var base = window.BrixItems ? BrixItems[sk.item] : null;
+    if (want && base && base.tool && base.tool !== want) return;
+    var url = BrixWeaponSkins.wrapFor(itemId);
+    if (!url) return;
+    BrixWeaponSkins.getTex(url, function (tex) {
+      mesh.traverse(function (o) {
+        if (!o.isMesh || !o.material) return;
+        /* ✅ v0.4.63 витринный материал — как в руках и 3D-осмотре:
+           металл/глянец модели не «съедают» окрас обёртки */
+        var fix = function (c) {
+          c.map = tex;
+          if (c.color) c.color.setHex(0xffffff);
+          if ('roughnessMap' in c) { c.roughnessMap = null; c.roughness = 0.6; }
+          if ('metalnessMap' in c) { c.metalnessMap = null; c.metalness = 0.15; }
+          c.needsUpdate = true;
+          return c;
+        };
+        if (Array.isArray(o.material)) {
+          o.material = o.material.map(fix);
+        } else {
+          o.material = fix(o.material.clone());
+        }
+      });
+    });
   };
 
   /** поворот сегмента: капсула свисает ИЗ сустава A в направлении B

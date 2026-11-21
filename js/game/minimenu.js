@@ -202,10 +202,14 @@ window.BrixMiniMenu = (function () {
      ============================================================ */
 
   function paintServer() {
-    var srv = (window.BrixData && BrixData.ADMIN_SERVER) || {};
+    /* ✅ v0.4.64: имя ТЕКУЩЕГО сервера (brixland/brixpvp), не только
+       «админ-сервер»: смотрим serverId, на который подключились */
+    var srv = (window.BrixData && BrixData.serverById && window.BrixGame)
+      ? BrixData.serverById(BrixGame.state.serverId) : null;
+    if (!srv) srv = (window.BrixData && BrixData.ADMIN_SERVER) || {};
     var nameEl = root.querySelector('#brixMmSrvName');
     var onlineEl = root.querySelector('#brixMmSrvOnline');
-    nameEl.textContent = srv.name || 'BRIX Test Server';
+    nameEl.textContent = srv.name || 'BRIX';
     var n = 0;
     if (window.BrixNet) {
       var roster = BrixNet.getRoster();
@@ -524,6 +528,14 @@ window.BrixMiniMenu = (function () {
     // сама карта
     ctx.drawImage(mapImage, M, M, mapS, mapS);
 
+    /* ✅ v0.4.65 ПВП-АРЕНА: ЛОКАЦИЯ «ПОЛИГОН» рисуется поверх рельефа —
+       стены, бункеры, платформа, ящики + КРАСНЫЕ ТОЧКИ ботов */
+    if (window.BRIX_PVP && window.BrixArena && BrixArena.isBuilt()) {
+      var toX = function (wx) { return M + ((wx + HALF) / (HALF * 2)) * mapS; };
+      var toZ = function (wz) { return M + ((wz + HALF) / (HALF * 2)) * mapS; };
+      BrixArena.drawMap(ctx, toX, toZ);
+    }
+
     // границы карты и клетки
     ctx.strokeStyle = 'rgba(255,255,255,0.16)';
     ctx.lineWidth = 1;
@@ -633,7 +645,12 @@ window.BrixMiniMenu = (function () {
 
   return {
     /** gameworld.js при спавне: { getPos: () => {x, z, yaw}, onExit: fn } */
-    init: function (o) { opts = o || {}; },
+    init: function (o) {
+      opts = o || {};
+      /* ✅ v0.4.65: новый мир (BrixLand ↔ арена) — карта строится заново */
+      mapImage = null;
+      mapBuilding = false;
+    },
     toggle: toggle,
     open: open,
     /** закрыть всё и вернуть мышь в игру (ПРОДОЛЖИТЬ) */

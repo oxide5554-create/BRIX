@@ -339,6 +339,11 @@ window.BrixNet = (function () {
       case 'snd':
         if (handlers.snd) handlers.snd(msg);
         break;
+      /* --- ✅ v0.4.57 трассер чужого выстрела (сервер-режим: relay
+             server.js; режим вкладок: BroadcastChannel напрямую) --- */
+      case 'trc':
+        if (handlers.trc) handlers.trc(msg);
+        break;
       case 'phit':
         if (handlers.phit) handlers.phit(msg);
         break;
@@ -408,10 +413,14 @@ window.BrixNet = (function () {
 
   /* ---------- подключение ---------- */
 
+  /* ✅ v0.4.64: порт задаётся ВЫБРАННЫМ СЕРВЕРОМ (BrixLand 8787,
+     BrixPvP 8788) — BrixNet.useServer(srv) перед connect */
+  var targetPort = 8787;
+
   function tryWebSocket(onDone) {
     var host = location.hostname || 'localhost';
     var sock;
-    try { sock = new WebSocket('ws://' + host + ':8787'); }
+    try { sock = new WebSocket('ws://' + host + ':' + targetPort); }
     catch (e) { onDone(null); return; }
     var settled = false;
     var timer = setTimeout(function () {
@@ -579,6 +588,17 @@ window.BrixNet = (function () {
       x: pos ? +pos.x.toFixed(1) : 0, z: pos ? +pos.z.toFixed(1) : 0 });
   }
 
+  /* ✅ v0.4.57 ТРАССЕР ВЫСТРЕЛА: o — «внешнее дуло» стрелка (м.б. видно
+     другим), e — точка попадания, k — вид оружия (rev/rev3/tp/ak/sg).
+     Сервер ретранслирует остальным (case 'trc'), они рисуют болт —
+     трассеры видны ВСЕМ игрокам, особенно в ночи */
+  function sendTracer(o, e, k) {
+    if (mode === 'off') return;
+    send({ t: 'trc', k: String(k || 'rev'),
+      o: [+o.x.toFixed(2), +o.y.toFixed(2), +o.z.toFixed(2)],
+      e: [+e.x.toFixed(2), +e.y.toFixed(2), +e.z.toFixed(2)] });
+  }
+
   /* ✅ v0.4.6 СТРОИТЕЛЬСТВО: заявка установки постройки.
      ty: 'f' фундамент | 'w' стена | 'c' потолок;
      gx/gz — клетка сетки 3 м, e — край (стены), top — высота
@@ -680,6 +700,11 @@ window.BrixNet = (function () {
     get NAME() { return NAME; },   // ✅ v0.3.4: живой ник (не снимок на момент загрузки)
     COLOR: COLOR,
     connect: connect,
+    /* ✅ v0.4.64: выбрать сервер — WS пойдёт на его порт */
+    useServer: function (srv) {
+      targetPort = (srv && Number(srv.port)) || 8787;
+    },
+    get port() { return targetPort; },
     disconnect: disconnect,
     tick: tick,
     sendState: sendState,
@@ -695,6 +720,7 @@ window.BrixNet = (function () {
     sendCbPut: sendCbPut,
     /* ✅ v0.4.5: бой — звук/попадание/возрождение */
     sendSnd: sendSnd,
+    sendTracer: sendTracer,
     sendPhit: sendPhit,
     sendRespawn: sendRespawn,
     /* ✅ v0.4.6: строительство — заявка установки */

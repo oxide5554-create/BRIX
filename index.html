@@ -20,7 +20,78 @@
 (function () {
   var V = '091';
   window.BRIX_V = V;
-  window.BRIX_VER = '0.4.52';   /* ✅ v0.4.52 (СИГНАЛЫ СЕРВЕРУ + ПЛАВНЫЕ ПЕРЕХОДЫ):
+  window.BRIX_VER = '0.4.66';   /* ✅ v0.4.64 ДВА СЕРВЕРА (BrixLand + BrixPvP арена): + ХП ПОСТРОЕК ПРОВЕРКА + 3D-ФИКС + СТАРЫЕ ИГРОКИ:
+   (BRIX_VER НЕ поднимаем — SRV_VER=0.4.52, баннера «СЕРВЕР СТАРЫЙ» нет.
+   server.js обновлён — ЗАМЕНИТЬ И ПЕРЕЗАПУСТИТЬ, см. README-FIX-v0.4.63.txt.
+   ВНИМАНИЕ: ПОЛНЫЙ архив v0.4.63 БОЛЬШЕ НЕ СОДЕРЖИТ файлы мира
+   (world-objs.json, players.json, social.json, admins.json, world-env.json,
+   world-epoch.json) — распаковка поверх сервера больше не затирает
+   твой мир и админов!)
+   1) АДМИН-ПАНЕЛЬ (9): секция «МОНЕТЫ — НАЧИСЛИТЬ СЕБЕ» — вводишь
+      количество, жмёшь НАЧИСЛИТЬ (баланс рядом, сразу видно).
+      Плюс прежний топ-ап админа до 10000 при входе.
+   2) ХП ПОСТРОЕК — ПРОВЕРЕНА ВСЯ ЦЕПОЧКА (WS-тест с настоящим
+      протоколом): удар → bhp всем → сохранение на диск сразу →
+      перезаход → welcome.objs.bd несёт hp/max каждой детали —
+      новички и перезашедшие видят повреждённые постройки. Дыр нет.
+   4) ДВА СЕРВЕРА (v0.4.64): BRIX • BrixLand (выживание, 8787) и
+      BRIX • BrixPvP (пвп-арена «Пепел», 8788) — вкладка СЕРВЕРА
+      переделана в СПИСОК СЕРВЕРОВ с живыми счётчиками онлайна
+      у каждого, у каждого свои сейвы (data/<realm>/) и свои игроки;
+      на арене: без хотбара и крафта, E — список всего оружия
+      (булава, револьвер, 3×, дробовик, калаш, томпсон, С4),
+      патроны бесконечные (перезарядка на месте), свой рельеф
+      (другой сид террейна), арена без леса с валунами-укрытиями;
+      карточки «СЛУЖЕБНЫЙ СЕРВЕР»/«Последний сервер» и надписи
+      ADMIN убраны; магазин скинов (вкладка СКИНЫ) — только для
+      админов (по admins.json сервера).
+   3) СКИНЫ — ПОЛНЫЙ ФИКС (3D-осмотр + В РУКАХ + У ЧУЖИХ):
+      · в РУКАХ железный топор «Ледяные руны» и железная кирка «Ретро»
+        вообще не надевали скин (у скинов не было держателей в списке,
+        «Ретро» был приписан каменной кирке) — теперь надеваются;
+      · «криво» в руках у револьвера/томпсона/С4/кам. топора: у моделей
+        metalness=1 (умолчание glTF), у Экскимо свои карты с шероховатостью
+        ≈0.2 («жидкий» глянец) — теперь у всех скинов единый витринный
+        материал (metalness 0.15 / roughness 0.6), как в 3D-осмотре;
+      · у ЧУЖИХ игроков скины не показывались ВООБЩЕ (id скина искали в
+        BrixItems, где скинов нет) — исправлено, тот же витринный вид;
+      · снятие скина возвращает и факторы материала (без остаточного
+        глянца).
+   4) «ВСЕ ИГРОКИ» ТЕПЕРЬ ПОКАЗЫВАЕТ И СТАРЫХ ИГРОКОВ (с 1-го релиза):
+      сервер собирает имена из мира — builds[].by (кто строил) и
+      corpses[].n (кто погиб, труп-лутбокс) с датами — в реестр
+      social.json; добирает новые имена раз в 60 с. У каждого
+      «в сети сейчас» / «был(а) N мин/ч/дн назад», профиль с
+      ПРИГЛАСИТЬ работает как у живых.
+   —— История v0.4.62 (СИНХРОН ПОСТРОЕК + МАГАЗИН 3D + ДРУЗЬЯ):
+   (BRIX_VER НЕ поднимаем — SRV_VER=0.4.52, иначе баннер «СЕРВЕР СТАРЫЙ».
+   НО: server.js ОБНОВЛЁН (надгробия построек + реестр игроков + 'plist') —
+   ЗАМЕНИТЬ И ПЕРЕЗАПУСТИТЬ СЕРВЕР, см. README-FIX-v0.4.62.txt.)
+   1) ПОСТРОЙКИ (фикс «сломанное воскресает»): бэкап localStorage чистится
+      при сломании (removeRecord → saveLocal) + сервер хранит НАДГРОБИЯ
+      сломанных (world-objs.json btomb, 600 шт.) — badopt больше не добирает
+      сломанное обратно после перезапуска и перезахода игроков.
+   2) СКИН «РЕТРО» теперь на ЖЕЛЕЗНОЙ кирке (обёртка рисовалась по её UV).
+   3) СУТКИ = 47 МИНУТ (рассвет 198 с, день ~19.8 мин, закат 297 с,
+      сумерки 148 с, ночь 16.5 мин) — сервер + клиент, 1:1.
+   4) АДМИНАМ 10000 МОНЕТ при подтверждении админа (если меньше 10000).
+   5) Вкладка «СКИНЫ» → «МАГАЗИН». Клик по картинке скина — 3D-ОСМОТР:
+      настоящая модель без рук, крутится мышью/пальцем, кнопка КУПИТЬ.
+   6) ПУЛИ ЛЕТЯТ: урон и хит-маркер приходят, когда трассер ДОЛЕТЕЛ
+      (дистанция/скорость); скорости пуль чуть выше (240/300/300/400/170 →
+      300/370/370/480/210).
+   7) ДРУЗЬЯ: вкладки «ДРУЗЬЯ» и «ВСЕ ИГРОКИ» (все, кто играл/играет,
+      «был N ч назад», клик по игроку → ПРОФИЛЬ с ПРИГЛАСИТЬ/УДАЛИТЬ).
+      Заявка приходит в КОЛОКОЛЬЧИК — «вам предложили дружить» +
+      Принять/Игнорировать. Сервер ведёт реестр игроков (social.json).
+   —— История v0.4.61 (СКИН ЖЕЛЕЗНОГО ТОПОРА «ЛЕДЯНЫЕ РУНЫ»):
+   1) НОВЫЙ СКИН (арт игрока): железный топор «Ледяные руны» — лёд со
+      светящимися рунами по развёртке iron_axe.glb. Магазин (400 монет,
+      редкий) + крафт-меню (Q): иконка предмета → список скинов.
+      Иконка скина — 3D-рендер модели с обёрткой (форма как у оригинала).
+   2) ФИКС ОРИЕНТАЦИИ ОБЁРТОК: weaponskins.js getTex — flipY=false
+      (конвенция glTF, как в glb.js); раньше обёртка ложилась вверх ногами.
+   —— История v0.4.52 (СИГНАЛЫ СЕРВЕРУ + ПЛАВНЫЕ ПЕРЕХОДЫ):
    1) АДМИН-ПАНЕЛЬ (9): ПОГОДА И ВРЕМЯ — СИГНАЛЫ СЕРВЕРУ (ЯСНО/ХМУРО,
       РАССВЕТ/ДЕНЬ/ЗАКАТ/СУМЕРКИ/НОЧЬ) — сервер меняет envState и сразу
       рассылает всем 'dnc' + объявление 'atoast'; state в world-env.json.
@@ -96,15 +167,15 @@
 })();
 </script>
 <meta name="theme-color" content="#101312">
-<title>BRIX v0.4.52 — сигналы серверу · гроза и радуга · плавные переходы — Главное меню</title>
+<title>BRIX v0.4.66 — арена «ПОЛИГОН» СЕКТОР-9 — Главное меню</title>
 <link rel="icon" href="assets/icon.png">
 <!-- Стили (перенос старой версии 1:1) -->
 <link rel="stylesheet" href="css/fonts.css?v=091">
 <link rel="stylesheet" href="css/base.css?v=091">
-<link rel="stylesheet" href="css/menu.css?v=091">
-<link rel="stylesheet" href="css/screens.css?v=091">
+<link rel="stylesheet" href="css/menu.css?v=105">
+<link rel="stylesheet" href="css/screens.css?v=092">
 <link rel="stylesheet" href="css/modals.css?v=091">
-<link rel="stylesheet" href="css/game.css?v=091">
+<link rel="stylesheet" href="css/game.css?v=101">
 <link rel="stylesheet" href="css/minimenu.css?v=091">
 <link rel="stylesheet" href="css/admin.css?v=091">
 </head>
@@ -200,7 +271,7 @@
 
 <!-- Скрипты: порядок важен! -->
 <script src="js/lib/three.min.js?v=091"></script>
-<script src="js/core/i18n.js?v=093"></script>
+<script src="js/core/i18n.js?v=105"></script>
 <script>
 /* ✅ v0.4.22 ЗАЩИТА ОТ ПАДЕНИЯ МЕНЮ: если js/core/i18n.js не скопирован
    на сервер (404 — самый частый пропуск при установке обновлений),
@@ -218,52 +289,55 @@ if (!window.BrixI18N) {
   };
 }
 </script>
-<script src="js/core/state.js?v=091"></script>
+<script src="js/core/state.js?v=102"></script>
 <script src="js/core/audio.js?v=091"></script>
-<script src="js/core/icons.js?v=091"></script>
-<script src="js/data/servers.js?v=091"></script>
+<script src="js/core/icons.js?v=104"></script>
+<script src="js/data/servers.js?v=104"></script>
 <script src="js/data/friends.js?v=091"></script>
-<script src="js/data/skins.js?v=091"></script>
-<script src="js/data/news.js?v=091"></script>
+<script src="js/data/news.js?v=103"></script>
 <script src="js/data/itemicons.js?v=091"></script>
-<script src="js/data/weaponskins.js?v=091"></script>
+<script src="js/data/skins.js?v=102"></script>
+<script src="js/data/weaponskins.js?v=102"></script>
 <script src="js/ui/toast.js?v=091"></script>
 <script src="js/ui/modals.js?v=091"></script>
-<script src="js/ui/topbar.js?v=091"></script>
-<script src="js/ui/sidebar.js?v=091"></script>
-<script src="js/ui/screens.js?v=091"></script>
+<script src="js/ui/topbar.js?v=102"></script>
+<script src="js/ui/sidebar.js?v=104"></script>
+<script src="js/ui/screens.js?v=104"></script>
 <script src="js/ui/loading.js?v=091"></script>
 <script src="js/game/noise.js?v=091"></script>
 <script src="js/game/embeddata.js?v=091"></script>
 <script src="js/game/glb.js?v=091"></script>
 <script src="js/game/sfx.js?v=091"></script>
-<script src="js/game/terrain.js?v=091"></script>
+<script src="js/game/terrain.js?v=105"></script>
 <script src="js/game/terrainlook.js?v=091"></script>
 <script src="js/game/lighthouse.js?v=091"></script>
-<script src="js/game/world.js?v=091"></script>
-<script src="js/game/environment.js?v=091"></script>
+<script src="js/game/world.js?v=104"></script>
+<script src="js/game/environment.js?v=106"></script>
 <script src="js/game/precipitation.js?v=091"></script>
 <script src="js/game/storm.js?v=091"></script>
 <script src="js/game/road.js?v=091"></script>
 <script src="js/game/footprints.js?v=091"></script>
 <script src="js/game/controls.js?v=091"></script>
 <script src="js/game/props.js?v=091"></script>
-<script src="js/game/firstperson.js?v=092"></script>
-<script src="js/game/inventory.js?v=093"></script>
+<script src="js/game/firstperson.js?v=103"></script>
+<script src="js/game/inventory.js?v=106"></script>
 <script src="js/game/lootmenu.js?v=093"></script>
 <script src="js/game/background.js?v=091"></script>
-<script src="js/net/net.js?v=091"></script>
-<script src="js/social/social.js?v=091"></script>
-<script src="js/game/remoteplayer.js?v=092"></script>
+<script src="js/net/net.js?v=104"></script>
+<script src="js/social/social.js?v=104"></script>
+<script src="js/game/remoteplayer.js?v=103"></script>
 <script src="js/game/corpses.js?v=093"></script>
 <script src="js/game/furnace.js?v=091"></script>
 <script src="js/game/hitmarker.js?v=091"></script>
-<script src="js/game/minimenu.js?v=091"></script>
-<script src="js/game/adminpanel.js?v=091"></script>
-<script src="js/game/craft.js?v=091"></script>
-<script src="js/game/building.js?v=091"></script>
-<script src="js/game/gameworld.js?v=093"></script>
+<script src="js/game/minimenu.js?v=105"></script>
+<script src="js/game/adminpanel.js?v=103"></script>
+<script src="js/game/craft.js?v=105"></script>
+<script src="js/game/building.js?v=105"></script>
+<script src="js/game/arena-tex.js?v=106"></script>
+<script src="js/game/arena.js?v=107"></script>
+<script src="js/game/pvpweapons.js?v=106"></script>
+<script src="js/game/gameworld.js?v=108"></script>
 <script src="js/game/touch.js?v=091"></script>
-<script src="js/main.js?v=091"></script>
+<script src="js/main.js?v=092"></script>
 </body>
 </html>

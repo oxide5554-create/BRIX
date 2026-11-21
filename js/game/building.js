@@ -1219,8 +1219,10 @@ window.BrixBuilding = (function () {
 
   function removeRecord(rec) {
     if (!rec) return;
-    /* ✅ v0.4.22: сундук; ✅ v0.4.44: печка — свой реестр, в сеточные
-       индексы не входят */
+    /* ✅ v0.4.62: ПОСЛЕ ЛОМАНИЯ БЭКАП ЧИСТИТСЯ СРАЗУ. Раньше removeRecord
+       не пересохранял localStorage — сломанная деталь оставалась в бэкапе,
+       при перезаходе клиент «добирал» её серверу (badopt) и СЛОМАННАЯ
+       ПОСТРОЙКА ВОСКРЕСАЛА у всех. Теперь сломанное уходит и из бэкапа */
     if (rec.ty === 'ch') {
       var cen = chestRecs.get(rec.id);
       if (cen && _scene) _scene.remove(cen.group);
@@ -1229,6 +1231,7 @@ window.BrixBuilding = (function () {
       var cgi = hitGroups.indexOf(cen && cen.group);
       if (cgi >= 0) hitGroups.splice(cgi, 1);
       pieceById.delete(rec.id); pieceHp.delete(rec.id);
+      saveLocal();
       return;
     }
     if (rec.ty === 'fu') {
@@ -1238,6 +1241,7 @@ window.BrixBuilding = (function () {
       var fgi = hitGroups.indexOf(fen && fen.group);
       if (fgi >= 0) hitGroups.splice(fgi, 1);
       pieceById.delete(rec.id); pieceHp.delete(rec.id);
+      saveLocal();
       return;
     }
     var cellKey = key(rec.gx, rec.gz);
@@ -1262,6 +1266,7 @@ window.BrixBuilding = (function () {
       }
     }
     rebuildAux();
+    saveLocal();
   }
 
   function allRecords() {
@@ -1584,6 +1589,9 @@ window.BrixBuilding = (function () {
   }
 
   function loadLocal() {
+    /* ✅ v0.4.65 ПВП-АРЕНА: локальный бэкап построек BrixLand из
+       localStorage на арену НЕ ВОССТАНАВЛИВАЕТСЯ — там своя локация */
+    if (window.BRIX_PVP) return;
     try {
       var a = JSON.parse(localStorage.getItem(LS_KEY));
       if (!a) return;

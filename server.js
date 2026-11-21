@@ -28,15 +28,47 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 8787;
+/* ✅ v0.4.64 ДВА СЕРВЕРА ОДНИМ КОДОМ: BRIX_REALM решает, КТО этот процесс.
+   Запуск (см. START-GAME.bat):
+     node server.js                                → BrixLand  (порт 8787, выживание)
+     BRIX_REALM=brixpvp BRIX_PORT=8788 node server.js → BrixPvP (порт 8788, пвп-арена)
+   У каждого реалма СВОЯ папка data/<realm>/ — свои миры, свои сохранения
+   игроков, свои регистры соцсети и свой счётчик онлайна (/status).
+   admins.json и bans.json — ОБЩИЕ (в корне): админ/бан — на весь BRIX */
+const REALM = (process.env.BRIX_REALM || 'brixland').toLowerCase() === 'brixpvp'
+  ? 'brixpvp' : 'brixland';
+const PORT = Number(process.env.BRIX_PORT) || (REALM === 'brixpvp' ? 8788 : 8787);
 const ROOT = __dirname;
+
+/* ✅ v0.4.64 метаданные реалма: имя и режим едут в /status и welcome —
+   по ним клиент включает вкладку серверов и ПВП-режим интерфейса */
+const SRV_NAME = REALM === 'brixpvp' ? 'BRIX • BrixPvP' : 'BRIX • BrixLand';
+const SRV_MODE = REALM === 'brixpvp' ? 'pvp' : 'vanilla';
+
+/* ✅ v0.4.64 ПАПКА ДАННЫХ РЕАЛМА: data/brixland/ и data/brixpvp/.
+   Старые файлы из корня (до v0.4.64) переезжают в data/brixland —
+   мир, сохранения и соцсеть BrixLand НЕ ТЕРЯЮТСЯ */
+const DATA_DIR = path.join(ROOT, 'data', REALM);
+fs.mkdirSync(DATA_DIR, { recursive: true });
+if (REALM === 'brixland') {
+  ['world-objs.json', 'world-epoch.json', 'players.json', 'social.json']
+    .forEach(function (f) {
+      var from = path.join(ROOT, f), to = path.join(DATA_DIR, f);
+      try {
+        if (fs.existsSync(from) && !fs.existsSync(to)) {
+          fs.renameSync(from, to);
+          console.log('[data] миграция ' + f + ' → data/brixland/');
+        }
+      } catch (eMig) { console.log('[data] миграция ' + f + ' не удалась: ' + eMig.message); }
+    });
+}
 
 /* ✅ v0.4.17: версия СЕРВЕРА — едет в welcome.sv и /status. Клиент по ней
    видит: подключился ли он вообще к НОВОМУ серверу (старый server.js
    версии не присылает — и панель на 9 молчит). В консоли при старте
    печатается ПОЛНЫЙ ПУТЬ папки сервера — чтобы admins.json правился
    именно там, где сервер РЕАЛЬНО запущен */
-const SRV_VER = '0.4.52';   /* ✅ v0.4.52 — ЗАМЕНИ server.js И ПЕРЕЗАПУСТИ:
+const SRV_VER = '0.4.66';   /* ✅ v0.4.52 — ЗАМЕНИ server.js И ПЕРЕЗАПУСТИ:
    1) СИГНАЛЫ СЕРВЕРУ ИЗ АДМИН-ПАНЕЛИ: op 'wx' (погода ЯСНО/ХМУРО) и
       op 'phase' (РАССВЕТ/ДЕНЬ/ЗАКАТ/СУМЕРКИ/НОЧЬ) — сервер меняет
       envState, сразу рассылает 'dnc' всем + объявление 'atoast'
@@ -288,7 +320,10 @@ function serveFile(req, res, urlPath) {
     });
     res.end(JSON.stringify({
       ok: true, players: players.size, max: 64, inGame: countInGame(),
-      names: names, map: 'Brixland',
+      names: names, map: REALM === 'brixpvp' ? 'Полигон (СЕКТОР-9)' : 'Brixland',
+      /* ✅ v0.4.64: КТО этот сервер — для вкладки «СЕРВЕРА» (список
+         серверов с живыми счётчиками) и ПВП-режима клиента */
+      realm: REALM, mode: SRV_MODE, name: SRV_NAME,
       /* ✅ v0.4.17: диагностика панели разработчика — открой в браузере
          http://<адрес>:8787/status и видно: версию сервера, ПАПКУ,
          откуда он запущен, и какие ID он считает админами */
@@ -423,7 +458,9 @@ function rosterFor() {
    1 предмет-декорация (стиралка / холодильник / ЭЛТ-телевизор) +
    2-3 ЛОМАЮЩИЕСЯ бочки (одна лежит, с разливом) + ящик с лутом + мусор.
    HP бочек, разбитие, дропы и лут ящиков — АВТОРИТЕТНО у сервера. */
-const OBJ_SEED = 20261114;
+/* ✅ v0.4.64: раскладка чекблоков — СВОЙ сид у каждого реалма
+   (BrixPvP — арена с лутом в своих точках, не как в BrixLand) */
+const OBJ_SEED = REALM === 'brixpvp' ? 77702 : 20261114;
 function makeObjRng(seed) {
   let a = (seed === undefined ? OBJ_SEED : seed) | 0;
   return () => {
@@ -529,13 +566,14 @@ function rollLoot(mil) {
    для надёжности и при остановке сервера (Ctrl+C) — ничего не теряется.
    «Перезагрузил игру — ресурсы те же» работает, потому что состояние
    вообще не у клиента: клиент при входе получает снимок сервера */
-const OBJS_FILE = path.join(ROOT, 'world-objs.json');
+/* ✅ v0.4.64: файлы реалма — в своей папке data/<realm>/ */
+const OBJS_FILE = path.join(DATA_DIR, 'world-objs.json');
 /* ✅ v0.4.14: поколение мира дублируем в отдельный файл world-epoch.json.
    Если world-objs.json потерялся/удалили вручную — эпоха выживает, и
    сервер НЕ примет старые бэкапы браузеров («воскресшие 32 постройки
    из бэка» после ручной чистки). Пишется при каждом сохранении мира,
    читается при старте (в т.ч. для свежего мира) */
-const EPOCH_FILE = path.join(ROOT, 'world-epoch.json');
+const EPOCH_FILE = path.join(DATA_DIR, 'world-epoch.json');
 
 function readEpochSidecar() {
   try {
@@ -651,6 +689,9 @@ function writeWorldNow() {
       // ✅ v0.4.6/0.4.7: ПОСТРОЙКИ (фундаменты/стены/потолки) — переживают
       //    перезапуск сервера, как и весь остальной мир
       builds: worldObjs.builds,
+      /* ✅ v0.4.62: надгробия сломанных (последние 600) — бэкап клиента
+         их больше не доберёт */
+      btomb: (worldObjs.btomb || []).slice(-600),
       // ✅ v0.4.43: живые С4 и трупы-лутбоксы — тоже переживают перезапуск
       c4: worldObjs.c4.map((c) => ({ id: c.id, x: c.x, y: c.y, z: c.z,
         n: c.n || [0, 1, 0], by: c.by, at: c.at })),
@@ -705,7 +746,7 @@ process.on('exit', () => { try { saveOnExit(); } catch (e) {} });
    выдаёт вещи. УМЕР → сохранение СТИРАЕТСЯ (pdeath): весь инвентарь
    уходит в труп-лутбокс, задвоение вещей невозможно
    ============================================================ */
-const PLAYERS_FILE = path.join(ROOT, 'players.json');
+const PLAYERS_FILE = path.join(DATA_DIR, 'players.json');   /* ✅ v0.4.64: свой на реалм */
 const playerSaves = new Map();     // aid -> {x,y,z,yaw,hp,hot,inv:[{id,n,mag}],at}
 let playersDirty = false;
 let playersTimer = null;
@@ -737,11 +778,70 @@ setInterval(() => { if (playersDirty) writePlayersNow(); }, 20000);
 function savePlayersOnExit() {
   try { if (playersTimer) { clearTimeout(playersTimer); playersTimer = null; } writePlayersNow(); } catch (e) {}
 }
+
+/* ============================================================
+   ✅ v0.4.62 РЕЕСТР ВСЕХ ИГРОКОВ (вкладка «ВСЕ ИГРОКИ» в друзьях):
+   aid -> { name, ls — был в сети (мс), on — в сети сейчас 0/1 }.
+   Пишется в social.json (переживает рестарт). Наполняется, когда
+   игрок заходит/выходит/сохраняется. Клиент запрашивает op 'plist'.
+   ============================================================ */
+const SOCIAL_FILE = path.join(DATA_DIR, 'social.json');   /* ✅ v0.4.64: свой на реалм */
+const socialReg = new Map();      // aid -> { name, ls, on }
+let socialDirty = false;
+let socialTimer = null;
+function loadSocialReg() {
+  try {
+    if (fs.existsSync(SOCIAL_FILE)) {
+      const j = JSON.parse(fs.readFileSync(SOCIAL_FILE, 'utf8'));
+      if (j && typeof j === 'object') {
+        Object.keys(j).forEach((k) => socialReg.set(String(k).slice(0, 16), j[k]));
+      }
+      socialReg.forEach((v) => { v.on = 0; });   // после рестарта все офлайн
+      console.log('[social] реестр игроков: ' + socialReg.size);
+    }
+  } catch (e) { console.log('[social] не прочитал social.json: ' + e.message); }
+}
+function writeSocialNow() {
+  try {
+    const o = {};
+    socialReg.forEach((v, k) => { o[k] = v; });
+    fs.writeFileSync(SOCIAL_FILE, JSON.stringify(o));
+    socialDirty = false;
+  } catch (e) { console.log('[social] не сохранил social.json: ' + e.message); }
+}
+function markSocialDirty() {
+  socialDirty = true;
+  if (socialTimer) return;
+  socialTimer = setTimeout(() => { socialTimer = null; writeSocialNow(); }, 1500);
+}
+/** игрок зашёл/вышел/сохраняется — обновляем запись реестра */
+function touchSocial(p, online) {
+  if (!p.aid) return;
+  const rec = socialReg.get(p.aid) || { name: p.name, ls: 0, on: 0 };
+  rec.name = String(p.name || rec.name || 'Игрок').slice(0, 16);
+  rec.on = online ? 1 : 0;
+  rec.ls = Date.now();
+  socialReg.set(p.aid, rec);
+  markSocialDirty();
+}
+/* ✅ v0.4.62: social.json пишется при остановке вместе с players.json
+   (saveOnExit ниже вызывает writeSocialNow тоже) */
+function savePlayersOnExit() {
+  try { if (playersTimer) { clearTimeout(playersTimer); playersTimer = null; } writePlayersNow(); } catch (e) {}
+  try { writeSocialNow(); } catch (e) {}
+}
 process.on('SIGINT', savePlayersOnExit);
 process.on('SIGTERM', savePlayersOnExit);
 process.on('exit', () => { try { savePlayersOnExit(); } catch (e) {} });
 
 function freshWorldObjs() {
+  /* ✅ v0.4.65 ПВП-АРЕНА: чекблоков/бочек/лута НЕТ — там локация
+     «ПОЛИГОН» с ботами, F на арене не работает. BrixLand без изменений */
+  if (REALM === 'brixpvp') {
+    return { cb: [], drops: new Map(), dropSeq: 0, builds: [],
+      c4: [], corpses: [], corpseSeq: 0, btomb: [],
+      epoch: readEpochSidecar() };
+  }
   const cb = buildCheckblockLayout(OBJ_SEED);
   cb.forEach((c) => { c.gone = false; c.loot = rollLoot(c.mil); });
   /* ✅ v0.4.13: epoch — поколение мира. CLEAR-BUILDS.bat повышает его
@@ -752,6 +852,8 @@ function freshWorldObjs() {
   return { cb, drops: new Map(), dropSeq: 0, builds: [],
     /* ✅ v0.4.43: живые С4 и трупы — в свежем мире пусто */
     c4: [], corpses: [], corpseSeq: 0,
+    /* ✅ v0.4.62: надгробий сломанных в свежем мире нет */
+    btomb: [],
     /* ✅ v0.4.14: свежий мир ВСЁ РАВНО помнит поколение (сайдкар) —
        старые бэкапы браузеров не примутся даже после потери файла */
     epoch: readEpochSidecar() };
@@ -824,6 +926,8 @@ function loadWorldObjs() {
       };
     }
     return { cb: j.cb, drops, dropSeq: j.dropSeq || 0, builds, c4, corpses, world,
+      /* ✅ v0.4.62: надгробия сломанных — читаем, последние 600 */
+      btomb: Array.isArray(j.btomb) ? j.btomb.map(String).slice(-600) : [],
       corpseSeq: corpses.reduce((m, c) => Math.max(m, Number(String(c.id).slice(1)) || 0), 0),
       /* ✅ v0.4.14: берём МАКСИМУМ из файла и сайдкара — откат файла
          в прошлое поколение невозможен */
@@ -833,8 +937,46 @@ function loadWorldObjs() {
 
 const _loaded = loadWorldObjs();
 loadPlayerSaves();   // ✅ v0.4.46: сохранения игроков (позиция/инвентарь/слот)
+loadSocialReg();     // ✅ v0.4.62: реестр всех игроков (social.json)
 const worldObjs = _loaded || freshWorldObjs();
 if (_loaded) console.log('[objs] мир загружен из world-objs.json (лут/бочки как были)');
+
+/* ============================================================
+   ✅ v0.4.63 СТАРЫЕ ИГРОКИ ВО «ВСЕ ИГРОКИ» (просьба игрока:
+   «покажет игроков, которые играли ещё до этой функции, хоть с
+   1 релиза»). Имена игроков всё это время писались в МИР:
+   builds[].by — кто поставил постройку, corpses[].n — кто погиб
+   (труп-лутбокс), у обоих есть метка времени at. Собираем их в
+   реестр (social.json) с id 'srv-<имя>' — профиль открывается,
+   приглашение уходит по нику. Новые имена добираются раз в 60 с.
+   ============================================================ */
+function harvestHistoricalPlayers() {
+  const found = {};
+  const bump = (nm, at) => {
+    const name = String(nm || '').trim().slice(0, 16);
+    if (!name || name === 'Игрок' || /^Игрок-/.test(name)) return;
+    const t = Number(at) || 0;
+    if (!found[name] || found[name] < t) found[name] = t;
+  };
+  (worldObjs.builds || []).forEach((b) => bump(b.by, b.at));
+  (worldObjs.corpses || []).forEach((c) => bump(c.n, c.at));
+  const known = new Set();
+  socialReg.forEach((v) => known.add(String(v.name || '').toLowerCase()));
+  players.forEach((t2) => known.add(String(t2.name || '').toLowerCase()));
+  let added = 0;
+  Object.keys(found).forEach((nm) => {
+    if (known.has(nm.toLowerCase())) return;
+    socialReg.set('srv-' + nm, { name: nm, ls: found[nm] || Date.now(), on: 0 });
+    added++;
+  });
+  if (added) {
+    markSocialDirty();
+    console.log('[social] из мира добавлено игроков, игравших раньше: ' + added +
+      ' (всего в реестре: ' + socialReg.size + ')');
+  }
+}
+harvestHistoricalPlayers();
+setInterval(harvestHistoricalPlayers, 60000);
 /* ✅ v0.4.44: запасы деревьев/руд ПЕРЕЖИВАЮТ РЕСТАРТ — если в файле они
    есть, initWorld() от первого клиента НЕ перезапишет их (мир детерминированный,
    позиции одинаковы, «воскресших» руд у новичков больше не будет) */
@@ -912,6 +1054,7 @@ function c4BoomDamage(bx, by, bz, byId) {
     if (b.hp <= 0) {
       worldObjs.builds.splice(worldObjs.builds.indexOf(b), 1);
       removeBuildIndexes(b);
+      tombstone(b.id);   // ✅ v0.4.62: сломанное С4 не воскреснет из бэкапа
       broadcast({ t: 'brem', id: b.id, by: byId }, null);
       /* ✅ v0.4.43: обломки — разрушенная деталь распадается на 5×5 кусков
          у ВСЕХ игроков (сд определяет одинаковый разлёт у всех) */
@@ -1164,6 +1307,18 @@ let buildSeq = worldObjs.builds.reduce((m, b) => Math.max(m, Number(String(b.id)
    из worldObjs.builds, а buildCell/buildEdge продолжали её «помнить» до
    перезапуска сервера: на сломанный фундамент можно было поставить стену,
    сломанный потолок занимал клетку. Теперь клетка/край освобождаются СРАЗУ */
+/* ✅ v0.4.62 НАДГРОБИЯ СЛОМАННЫХ ПОСТРОЕК: id всего сломанного хранится
+   в world-objs.json (btomb, последние 600). badopt (добор бэкапа клиента)
+   надгробия ИГНОРИРУЕТ — сломанное игроком не воскресает после
+   перезапуска сервера и перезахода игроков, при этом «спасение» дома,
+   которого сервер не знает (потеря файла), работает как раньше */
+function tombstone(id) {
+  const s = String(id || '');
+  if (!s) return;
+  if (!Array.isArray(worldObjs.btomb)) worldObjs.btomb = [];
+  if (worldObjs.btomb.indexOf(s) === -1) worldObjs.btomb.push(s);
+  if (worldObjs.btomb.length > 600) worldObjs.btomb = worldObjs.btomb.slice(-600);
+}
 function removeBuildIndexes(b) {
   if (!b || b.ty === 'ch' || b.ty === 'fu') return;   /* ✅ v0.4.44: печка — свободная */
   if (b.ty === 'w' || b.ty === 'wi' || b.ty === 'dw' || b.ty === 'dr') {
@@ -1679,6 +1834,8 @@ const dist2 = (ax, az, bx, bz) => (ax - bx) * (ax - bx) + (az - bz) * (az - bz);
 
 function dropPlayer(p, reason) {
   if (!players.has(p.id)) return;
+  /* ✅ v0.4.62: реестр игроков — вышел (ls = время выхода, on = 0) */
+  touchSocial(p, false);
   players.delete(p.id);
   pushCount();   // ✅ v0.3.6: счётчик уменьшился — сразу всем
   try { p.sock.destroy(); } catch (e) {}
@@ -1973,6 +2130,8 @@ server.on('upgrade', (req, sock) => {
         // в мини-меню (M). Присылаются клиентом, сервер только хранит
         p.lvl = Math.max(1, Math.min(9999, Number(msg.lvl) || 1));
         p.aid = String(msg.aid || '').slice(0, 16);
+        /* ✅ v0.4.62: реестр всех игроков — зашёл (on = 1, ls = сейчас) */
+        touchSocial(p, true);
         p.send = (obj2) => { try { sock.write(wsEncodeText(JSON.stringify(obj2))); } catch (e) {} };
         players.set(p.id, p);
         /* ✅ v0.4.46: СОХРАНЕНИЕ ИГРОКА по BRIX-ID — позиция/хп/инвентарь/
@@ -1993,6 +2152,9 @@ server.on('upgrade', (req, sock) => {
              от старого), adm — подтвердил ли сервер ЭТОГО игрока админом
              (для диагностики; панель включается по adminon) */
           sv: SRV_VER,
+          /* ✅ v0.4.64: realm/mode/имя сервера — клиент включает
+             ПВП-режим (без хотбара/крафта, E = список оружия) */
+          realm: REALM, mode: SRV_MODE, sname: SRV_NAME,
           /* ✅ v0.4.29: папка сервера в welcome — если версии не совпали,
              клиент покажет в баннере, из какой папки сервер работает,
              и игрок сразу увидит, что заменил server.js не там */
@@ -2040,14 +2202,16 @@ server.on('upgrade', (req, sock) => {
         case 's':           // состояние игрока: запоминаем + ретранслируем другим
           // ✅ v0.4.1: первое состояние = игрок вышел в игру — пушим
           // счётчики (иначе «В ИГРЕ» у других остаётся 0 до следующего пуша)
+          // ✅ v0.4.58: si — id скинутого предмета в руках (для обёртки у других)
           if (!p.state) pushCount();
           p.state = {
             x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw,
-            a: msg.a, tool: msg.tool, ph: msg.ph, n: p.name,
+            a: msg.a, tool: msg.tool, si: String(msg.si || '').slice(0, 24), ph: msg.ph, n: p.name,
             c: msg.c ? 1 : 0   /* ✅ v0.4.28: присед — для чужих игроков */
           };
           broadcast({ t: 's', id: p.id, x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw,
-            a: msg.a, tool: msg.tool, ph: msg.ph, c: msg.c ? 1 : 0, n: p.name }, p.id);
+            a: msg.a, tool: msg.tool, si: String(msg.si || '').slice(0, 24),
+            ph: msg.ph, c: msg.c ? 1 : 0, n: p.name }, p.id);
           break;
         case 'hit': {       // ЗАПРОС удара: решает сервер
           const res = applyHit(p, msg);
@@ -2136,6 +2300,10 @@ server.on('upgrade', (req, sock) => {
             /* ✅ v0.4.31: сломанное уходит И ИЗ ИНДЕКСОВ сервера — клетка/
                край свободны СРАЗУ, на сломанный фундамент стену не поставить */
             removeBuildIndexes(b);
+            /* ✅ v0.4.62 НАДГРОБИЕ: id сломанного ПОМНИМ и после перезапуска —
+               клиентский бэкап localStorage больше не «доберёт» сломанное
+               обратно через badopt (сломанное навсегда удалено из мира) */
+            tombstone(b.id);
             broadcast({ t: 'brem', id: b.id, by: p.id }, null);
             writeWorldNow();   // снос — на диск СРАЗУ (перезапуск ничего не вернёт)
             console.log('[objs] ' + p.name + ' сломал постройку ' + b.id +
@@ -2449,6 +2617,16 @@ server.on('upgrade', (req, sock) => {
             x: Number(msg.x) || 0, z: Number(msg.z) || 0 }, p.id);
           break;
         }
+        /* ✅ v0.4.57 ТРАССЕР ВЫСТРЕЛА: o — «внешнее дуло» стрелка,
+           e — точка попадания, k — вид оружия. Ретранслируем всем
+           остальным — трассеры чужих выстрелов видят все игроки */
+        case 'trc': {
+          if (!Array.isArray(msg.o) || !Array.isArray(msg.e)) break;
+          broadcast({ t: 'trc', by: p.id, k: String(msg.k || 'rev'),
+            o: msg.o.map(function (v) { return +(+v || 0).toFixed(2); }),
+            e: msg.e.map(function (v) { return +(+v || 0).toFixed(2); }) }, p.id);
+          break;
+        }
         /* ============================================================
            ✅ v0.4.43: С4 ТИКАЕТ В СЕРВЕРЕ (а не у игрока). Блок прилип →
            бросавший шлёт 'c4place' {x,y,z,n}; сервер СОЗДАЁТ СУЩНОСТЬ
@@ -2720,10 +2898,14 @@ server.on('upgrade', (req, sock) => {
           const sx = Number(msg.x), sy = Number(msg.y), sz = Number(msg.z);
           if (!Number.isFinite(sx) || !Number.isFinite(sy) || !Number.isFinite(sz) ||
               Math.abs(sx) > 5000 || Math.abs(sz) > 5000) break;
+          /* ✅ v0.4.60: sk — скин слота («костюм» с аккаунта) доезжает
+             вместе с вещами; некупленный/неизвестный отбрасывается ниже,
+             в клиенте (BrixWeaponSkins.isSkinned) */
           const inv = Array.isArray(msg.inv) ? msg.inv.slice(0, 26).map((it) => ({
             id: String((it && it.id) || '').slice(0, 24),
             n: Math.max(1, Math.min(9999, Math.floor(Number(it && it.n) || 1))),
-            mag: Math.max(0, Math.min(999, Math.floor(Number(it && it.mag) || 0)))
+            mag: Math.max(0, Math.min(999, Math.floor(Number(it && it.mag) || 0))),
+            sk: (it && it.sk) ? String(it.sk).slice(0, 24) : undefined
           })).filter((it) => it.id) : [];
           playerSaves.set(p.aid, {
             x: Math.round(sx * 100) / 100, y: Math.round(Math.max(-50, Math.min(500, sy)) * 100) / 100,
@@ -2733,7 +2915,29 @@ server.on('upgrade', (req, sock) => {
             hot: Math.max(0, Math.min(5, Math.floor(Number(msg.hot) || 0))),
             inv: inv, at: Date.now()
           });
+          touchSocial(p, true);   // ✅ v0.4.62: реестр — «был в сети только что»
           markPlayersDirty();
+          break;
+        }
+        /* ✅ v0.4.62 СПИСОК ВСЕХ ИГРОКОВ (вкладка «ВСЕ ИГРОКИ» в друзьях):
+           реестр social.json + кто в сети сейчас. Ответ 'plist':
+           list [{ id, name, on, ls }] — ls = был в сети (мс) */
+        case 'plist': {
+          const seen = {};
+          const list = [];
+          players.forEach((t) => {
+            if (t.aid) {
+              seen[t.aid] = true;
+              list.push({ id: t.aid, name: t.name, on: 1, ls: Date.now() });
+            }
+          });
+          socialReg.forEach((v, k) => {
+            if (seen[k]) return;
+            list.push({ id: k, name: v.name || 'Игрок', on: 0,
+              ls: Math.min(Date.now(), Number(v.ls) || 0) });
+          });
+          list.sort((a, b2) => b2.ls - a.ls);
+          p.send({ t: 'plist', list: list.slice(0, 300) });
           break;
         }
         /* ✅ v0.4.5: жертва сама сообщает о своей смерти (надёжнее, чем
@@ -2911,6 +3115,22 @@ server.on('upgrade', (req, sock) => {
           }
           const list = Array.isArray(msg.list) ? msg.list.slice(0, 400) : [];
           if (!list.length) break;
+          /* ✅ v0.4.62: надгробия — сломанное игроком из бэкапа НЕ добирается.
+             Раньше: бэкап localStorage не чистился при brem, при перезаходе
+             клиент предлагал сломанное назад — постройка воскресала у всех */
+          const tombBefore = list.length;
+          const aliveList = list.filter((r) =>
+            !r || !Array.isArray(worldObjs.btomb) ||
+            worldObjs.btomb.indexOf(String(r.id || '')) === -1);
+          if (!aliveList.length) {
+            console.log('[build] ' + p.name + ': бэкап целиком из надгробий (' +
+              tombBefore + ' шт.) — сломанное не воскресает');
+            break;
+          }
+          if (aliveList.length !== tombBefore) {
+            console.log('[build] ' + p.name + ': отброшено сломанных из бэкапа: ' +
+              (tombBefore - aliveList.length) + ' (надгробия)');
+          }
           /* ✅ порядок добора: сначала фундаменты, потом краевые детали,
              потом потолки/лестницы — СТРОГО (нельзя order[ty] || 9: ноль «фундамент»
              фальсив и улетал в конец — дверь добиралась раньше фундамента
@@ -2919,9 +3139,9 @@ server.on('upgrade', (req, sock) => {
              свободные, в конце); lv1-детали добираются в общем порядке */
           const order = { f: 0, w: 1, wi: 1, dw: 1, dr: 1, c: 2, ld: 2, fu: 3 };
           const rank = (ty) => Object.prototype.hasOwnProperty.call(order, ty) ? order[ty] : 9;
-          list.sort((a, b2) => rank(a.ty) - rank(b2.ty));
+          aliveList.sort((a, b2) => rank(a.ty) - rank(b2.ty));
           let adopted = 0;
-          for (const raw of list) {
+          for (const raw of aliveList) {
             const ty2 = String(raw.ty || '');
             const gx2 = Math.round(Number(raw.gx) | 0);
             const gz2 = Math.round(Number(raw.gz) | 0);
@@ -3235,15 +3455,17 @@ setInterval(() => {
 
 const ENV_FILE = path.join(ROOT, 'world-env.json');
 
-/* фазы суток (секунды) — 1:1 с js/game/environment.js */
+/* фазы суток (секунды) — 1:1 с js/game/environment.js
+   ✅ v0.4.62: сутки = 47 минут (просьба игрока), фазы пропорциональны
+   старым: рассвет 198, день ~19.8 мин, закат 297, сумерки 148, ночь 990 */
 const ENV_PHASES = [
-  { id: 'dawn',   dur: 120 },   // рассвет — малая фаза
-  { id: 'day',    dur: 720 },   // день — 12 минут
-  { id: 'sunset', dur: 180 },   // закат — 3 минуты
-  { id: 'dusk',   dur: 90 },    // сумерки — малая фаза
-  { id: 'night',  dur: 600 }    // ночь — 10 минут
+  { id: 'dawn',   dur: 198 },   // рассвет — малая фаза
+  { id: 'day',    dur: 1187 },  // день — ~19.8 минут
+  { id: 'sunset', dur: 297 },   // закат — ~5 минут
+  { id: 'dusk',   dur: 148 },   // сумерки — малая фаза
+  { id: 'night',  dur: 990 }    // ночь — 16.5 минут
 ];
-const ENV_CYCLE_LEN = ENV_PHASES.reduce((s, p) => s + p.dur, 0);   // 1710 с
+const ENV_CYCLE_LEN = ENV_PHASES.reduce((s, p) => s + p.dur, 0);   // 2820 с = 47 минут
 
 /* погода (секунды) */
 const ENV_WX = [

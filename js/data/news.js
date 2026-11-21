@@ -7,6 +7,182 @@ window.BrixData = window.BrixData || {};
 
 window.BrixData.NEWS = [
   {
+    id: 'n-arena-v66-fixes',
+    date: '21.11.2026',
+    tag: 'fix',
+    title: {
+      ru: 'Патч 0.4.66 — арена целиком из СЕКТОР-9 + Бот-Студия',
+      en: 'Patch 0.4.66 — the full SECTOR-9 arena + Bot Studio'
+    },
+    excerpt: {
+      ru: 'Локация «ПОЛИГОН» теперь 1-в-1 из референса: ВСЕ текстуры (бетон, кирпич, металлопанели, ящики «7.62×39», знамёна СТАЛЬ/ПЛАМЯ, эмблема СЕКТОР-9) и все детали (AC, трубы, пыль, колышущиеся знамёна). Исправлены: спавн вне арены, каменный топор в руках, невидимые боты, дробовик/револьвер-карабин не выбирались. На арене всегда ДЕНЬ, бот — один, трассеры как у игроков. Новая Бот-Студия: анимации, хваты, пальцы, наш кала́ш на боте.',
+      en: 'The “POLYGON” location is now 1:1 from the reference: ALL textures (concrete, brick, metal panels, “7.62×39” crates, STAL/PLAMYA banners, SECTOR-9 emblem) and every detail (AC units, pipes, dust, waving banners). Fixed: spawning outside the arena, stone axe in hands, invisible bots, shotgun/revolver-3x not selectable. The arena is always at DAY, one bot, player-style tracers. New Bot Studio: animations, grips, fingers, our AK on the bot.'
+    },
+    body: {
+      ru: [
+        'ЛОКАЦИЯ БЕЗ УРЕЗАНИЙ: полный порт текстурной фабрики СЕКТОР-9 — бетонный пол с швами/пятнами/трещинами, стены с опалубкой и потёками, кирпич бункеров с перевязкой и сколами, металлопанели с болтами и трафаретами, сигнальные полосы со сколами краски, рифлёный металл, ящики «7.62×39 БОЕПРИПАСЫ» с трафаретами, ткань/разгрузка бота. Все декали на месте: эмблема «СЕКТОР-9» на платформе, зоны «БАЗА · СТАЛЬ/ПЛАМЯ», трафарет «09 ЗАКРЫТЫЙ ПЕРИМЕТР», знамёна отрядов (колышутся), кондиционеры, трубы, ящики-боеприпасы со светящейся кромкой, пыль в лучах прожекторов.',
+        'ИСПРАВЛЕННЫЕ БАГИ: 1) спавн был не в локации — сохранение игрока (позиция/вещи BrixLand) на арену больше не применяется, ты появляешься ПРЯМО в зоне «БАЗА · СТАЛЬ»; 2) каменный топор в руках — стартовый набор из конструктора инвентаря тоже убран, руки пустые; 3) НЕВИДИМЫЕ БОТЫ — арена и боты оставались в старой сцене при повторном входе, теперь локация пересобирается в новый мир; сами боты ещё и стояли на 3.45 м под полом — исправлено; 4) дробовик и револьвер-карабин 3× не выбирались при полном инвентаре — оружие кладётся в текущий слот принудительно.',
+        'ПРАВИЛА: на арене ВСЕГДА ДЕНЬ (погода остаётся своей), бот — ОДИН (ВИПЕР-1), трассеры бота — НАША система (как у игроков), вспышка — из текстур СЕКТОР-9.',
+        'Бот-Studia (tools/bot-studio.html — открой http://адрес:8787/tools/bot-studio.html): твоя модель учёного (ScientistRigged.fbx) грузится автоматически, наш кала́ш (ak47.glb) крепится к правой руке с нормализацией размера, пресеты хвата (две руки/одна/опущен), слайдеры смещения и поворота, сжатие пальцев, ручное кручение ЛЮБОЙ кости, базовые анимации IDLE/WALK/AIM/SHOOT/DEATH (строятся по костям автоматически), скелет и сетка. Кнопка «Выгрузить bot-anim.json» сохраняет конфиг хвата/поз для игры.'
+      ],
+      en: [
+        'LOCATION WITHOUT CUTS: full port of the SECTOR-9 texture factory — concrete floor with seams/stains/cracks, walls with formwork and streaks, bunker brick with bond and chips, metal panels with bolts and stencils, hazard stripes with chipped paint, treadplate, “7.62×39 AMMO” crates with stencils, bot fabric/vest. All decals: the “SECTOR-9” emblem on the platform, “BASE · STAL/PLAMYA” zones, the “09 CLOSED PERIMETER” stencil, team banners (waving), AC units, pipes, ammo boxes with glowing edges, dust in the floodlight beams.',
+        'FIXED BUGS: 1) spawn outside the location — the player save (position/items from BrixLand) is no longer applied on the arena, you appear right in the “BASE · STAL” zone; 2) stone axe in hands — the starter kit baked into the inventory constructor is removed too, hands are empty; 3) INVISIBLE BOTS — the arena and bots stayed in the old scene on re-entry, the location now rebuilds into the new world; bots also stood 3.45 m under the floor — fixed; 4) shotgun and revolver-3x were not selectable with a full inventory — the weapon is force-placed into the current slot.',
+        'RULES: the arena is ALWAYS AT DAY (weather stays its own), ONE bot (VIPER-1), bot tracers use OUR system (like players), muzzle flash from SECTOR-9 textures.',
+        'Bot Studio (tools/bot-studio.html — open http://host:8787/tools/bot-studio.html): your scientist model (ScientistRigged.fbx) auto-loads, our AK (ak47.glb) attaches to the right hand with size normalization, grip presets (two hands/one/lowered), offset and rotation sliders, finger curl, manual rotation of ANY bone, base animations IDLE/WALK/AIM/SHOOT/DEATH (auto-built from bones), skeleton and grid helpers. “Export bot-anim.json” saves the grip/pose config for the game.'
+      ]
+    }
+  },
+  {
+    id: 'n-arena-poligon-bots',
+    date: '21.11.2026',
+    tag: 'new',
+    title: {
+      ru: 'Патч 0.4.65 — Арена «ПОЛИГОН» с ботами: новая локация вместо рельефа',
+      en: 'Patch 0.4.65 — The “POLYGON” arena with bots: a location instead of terrain'
+    },
+    excerpt: {
+      ru: 'BrixPvP теперь — ЛОКАЦИЯ «ПОЛИГОН» из СЕКТОР-9: бетонная площадка 62×46 со стенами, бункерами, центральной платформой и ящиками. Шесть ботов красной команды ходят, ищут и стреляют по-настоящему. С4 и булава убраны, ящики/лут отключены, постройки BrixLand не приезжают, цифры 1–6 не работают, время отличается на 10 игровых часов, карта (M) показывает локацию и ботов.',
+      en: 'BrixPvP is now the “POLYGON” location from SECTOR-9: a 62×46 concrete floor with walls, bunkers, a central platform and crates. Six red-team bots patrol, hunt and shoot for real. C4 and mace removed, loot crates disabled, BrixLand builds never arrive, keys 1–6 disabled, time differs by 10 in-game hours, the map (M) shows the location and bots.'
+    },
+    body: {
+      ru: [
+        'ЛОКАЦИЯ «ПОЛИГОН» (порт из СЕКТОР-9): больше НЕ рельеф — плоская бетонная локация 62×46: периметр-стены с пилонами и светящимися полосами, 4 кирпичных бункера с крышами, ЦЕНТРАЛЬНАЯ ПЛАТФОРМА 14×10 со ступенями, опорные столбы, кластеры ящиков, джерси-барьеры, топливные баки, паллеты, трубы, прожекторные вышки с объёмными конусами света, зоны спавна. По платформе, ступеням, крышам бункеров и ящикам можно ХОДИТЬ, пули останавливаются стенами.',
+        'БОТЫ (6, красная команда): ВИПЕР, ПРИЗРАК, КОБРА, ШАКАЛ, ГРОМ, ЗУБР — с никами и полосками ХП. ИИ как в СЕКТОР-9: патруль по нав-графу, поиск по последнему месту, бой со стрейфом и удержанием дистанции, очереди с разбросом и реакцией, перезаход пути при застревании, падение при смерти и респавн через 5 с. Боты стреляют по-настоящему (трассеры, вспышки, звук по дистанции), урон — локальный. В голову — крит. Счётчик убийств — тостом.',
+        'ПРАВИЛА АРЕНЫ ужесточены: С4 и БУЛАВА убраны из списка оружия (только огнестрелы), ящики/лут/подбор отключены (F молчит), постройки BrixLand НЕ ПРИЕЗЖАЮТ на арену (ни с сервера, ни из локального бэкапа браузера), клавиши 1–6 (хотбар) не работают — только E, стартового набора после смерти нет.',
+        'ВРЕМЯ И ПОГОДА: арена живёт в СВОЁМ часовом поясе — время суток отличается от Brixland на 10 ИГРОВЫХ ЧАСОВ (когда на BrixLand день — на арене вечер/ночь).',
+        'КАРТА (M) ПОКАЗЫВАЕТ ЛОКАЦИЮ: стены, бункеры, платформа, ящики и красные точки ботов рисуются поверх карты мира. Карта перестраивается при смене сервера.'
+      ],
+      en: [
+        'THE “POLYGON” LOCATION (port of SECTOR-9): no more terrain — a flat concrete location 62×46: perimeter walls with pilasters and glowing strips, 4 brick bunkers with roofs, a CENTRAL PLATFORM 14×10 with steps, pillars, crate clusters, jersey barriers, fuel tanks, pallets, pipes, floodlight towers with volumetric cones, spawn zones. You can WALK on the platform, steps, bunker roofs and crates; bullets stop at the walls.',
+        'BOTS (6, red team): VIPER, PRIZRAK, KOBRA, SHAKAL, GROM, ZUBR — with name tags and HP bars. SECTOR-9 AI: patrol on a nav-graph, seek last seen, combat with strafing and range keeping, bursts with spread and reaction, re-pathing when stuck, fall on death and respawn after 5 s. Bots shoot for real (tracers, muzzle flash, distance-based sound), damage is local. Headshots crit. Kill counter as toasts.',
+        'ARENA RULES tightened: C4 and MACE removed from the weapon list (guns only), loot crates/pickups disabled (F is silent), BrixLand builds NEVER arrive at the arena (neither from the server nor the browser backup), keys 1–6 (hotbar) disabled — E only, no starter kit after death.',
+        'TIME AND WEATHER: the arena lives in its OWN time zone — the time of day differs from BrixLand by 10 IN-GAME HOURS (when BrixLand has day, the arena has evening/night).',
+        'MAP (M) SHOWS THE LOCATION: walls, bunkers, platform, crates and red bot dots are drawn over the world map. The map rebuilds when you switch servers.'
+      ]
+    }
+  },
+  {
+    id: 'n-two-servers-pvp',
+    date: '21.11.2026',
+    tag: 'new',
+    title: {
+      ru: 'Патч 0.4.64 — ДВА СЕРВЕРА: BrixLand и ПВП-арена «Пепел»',
+      en: 'Patch 0.4.64 — TWO SERVERS: BrixLand and the “Ashen” PVP arena'
+    },
+    excerpt: {
+      ru: 'Вкладка «СЕРВЕРА» теперь — СПИСОК СЕРВЕРОВ с живыми счётчиками игроков у каждого: BRIX • BrixLand (выживание) и BRIX • BrixPvP (пвп-арена). У каждого свои мир, сохранения и игроки. На арене: только оружие (E — список всего оружия), без хотбара и крафта, патроны бесконечные (перезарядка на месте), свой рельеф и арена без леса. Магазин скинов — только для админов.',
+      en: 'The SERVERS tab is now a SERVER LIST with a live player counter for each: BRIX • BrixLand (survival) and BRIX • BrixPvP (pvp arena). Each has its own world, saves and players. In the arena: guns only (E opens the full weapon list), no hotbar or crafting, infinite ammo (reload still matters), its own terrain and a treeless arena. The skin shop is admins-only.'
+    },
+    body: {
+      ru: [
+        'СПИСОК СЕРВЕРОВ: вкладка «СЕРВЕРА» переделана полностью. Два официальных сервера — BRIX • BrixLand (ВЫЖИВАНИЕ: крафт, постройки, лес и руда) и BRIX • BrixPvP (ПВП АРЕНА «ПЕПЕЛ») — карточками с живым счётчиком онлайна и составом игроков у КАЖДОГО (опрос каждые 4 с). Карточки «СЛУЖЕБНЫЙ СЕРВЕР» и «Последний сервер» убраны, надписей ADMIN больше нет.',
+        'СВОИ СОХРАНЕНИЯ И ИГРОКИ У КАЖДОГО: сервер запускается в двух реалмах — data/brixland/ и data/brixpvp/ (мир, сохранения игроков, соцсеть и счётчик отдельно). Файлы BrixLand переехали в data/brixland/ автоматически — ничего не потерялось. admins.json и бан-лист общие: админ и бан действуют на обоих. Запуск: START-MULTIPLAYER.bat поднимает ОБА сервера (8787 и 8788).',
+        'ПВП-АРЕНА «ПЕПЕЛ»: свой рельеф — у арены ДРУГОЙ сид ландшафта (другие горы, долины, биомы, озеро). Это не лес, а ЛОКАЦИЯ: ровная площадка ~78 м в центре без единого дерева, с двумя кольцами валунов-укрытий и каменными «стенами», лес вокруг прорежен вдвое. Спавн — в центре арены. Раскладка лута (чекблоки) у арены своя.',
+        'ТОЛЬКО ОРУЖИЕ: на арене нет хотбара, крафт-меню (Q молчит) и инвентаря. Клавиша E открывает СПИСОК ВСЕГО ОРУЖИЯ: булава, револьвер, револьвер-карабин 3×, дробовик, калаш, томпсон, С4 — инструментов (кирка, топоры) нет. Клик по оружию — оно у тебя в руках. Патроны БЕСКОНЕЧНЫЕ: обойма заправляется при перезарядке, запас не тратится — но перезарядка занимает своё время, спринт-стрельба по-прежнему невозможна.',
+        'МАГАЗИН СКИНОВ — ТОЛЬКО ДЛЯ АДМИНОВ: вкладка СКИНЫ скрыта у обычных игроков. Админ определяется по admins.json сервера (через /status) или по adminon в игре. Серверные надписи «ADMIN» в заголовке вкладки серверов тоже убраны.'
+      ],
+      en: [
+        'SERVER LIST: the SERVERS tab is fully rebuilt. Two official servers — BRIX • BrixLand (SURVIVAL: crafting, building, forest and ore) and BRIX • BrixPvP (PVP ARENA “ASHEN”) — as cards with a live online counter and player roster for EACH (polled every 4 s). The “SERVICE SERVER” and “Last server” cards are gone; no more ADMIN labels.',
+        'OWN SAVES AND PLAYERS PER SERVER: the server runs in two realms — data/brixland/ and data/brixpvp/ (world, player saves, social registry and counter are separate). BrixLand files moved into data/brixland/ automatically — nothing is lost. admins.json and the ban list are shared: admin and bans apply to both. START-MULTIPLAYER.bat now launches BOTH servers (8787 and 8788).',
+        'THE “ASHEN” ARENA: its own terrain — a DIFFERENT landscape seed (different mountains, valleys, biomes, lake). Not a forest but a LOCATION: a flat ~78 m clearing in the middle with no trees at all, two rings of boulder cover and stone “walls”, the surrounding forest thinned by half. You spawn at the arena center. Loot crate layout is its own.',
+        'GUNS ONLY: the arena has no hotbar, no crafting menu (Q is silent) and no inventory. Key E opens the FULL WEAPON LIST: mace, revolver, scoped revolver 3×, shotgun, AK, Thompson, C4 — no tools (picks, axes). Click a weapon — it is in your hands. Ammo is INFINITE: the magazine refills on reload, the reserve is never spent — but reloading still takes its time and you still cannot shoot while sprinting.',
+        'SKIN SHOP — ADMINS ONLY: the SKINS tab is hidden from regular players. Admin status comes from the server admins.json (via /status) or the in-game adminon. The “ADMIN” labels in the servers tab header are gone too.'
+      ]
+    }
+  },
+  {
+    id: 'n-admin-coins-old-players',
+    date: '21.11.2026',
+    tag: 'new',
+    title: {
+      ru: 'Патч 0.4.63 — Монеты админу, проверка ХП построек, фикс 3D-осмотра, все игроки с 1-го релиза',
+      en: 'Patch 0.4.63 — Admin coins, build HP verified, 3D inspect fix, all players since day one'
+    },
+    excerpt: {
+      ru: 'АДМИН-ПАНЕЛЬ (9): секция «МОНЕТЫ — НАЧИСЛИТЬ СЕБЕ» (ввёл число — нажал НАЧИСЛИТЬ). ХП ПОСТРОЕК: вся цепочка проверена настоящим тестом — урон синхронен всем, пишется на диск сразу, новички видят повреждённое с правильным хп. ФИКС 3D-ОСМОТРА: обёртка скина больше не «съедается» металлом — револьвер «Экскимо» и остальные смотрятся правильно. «ВСЕ ИГРОКИ» ТЕПЕРЬ ПОКАЗЫВАЕТ ИГРОКОВ С 1-го РЕЛИЗА: сервер собирает имена из мира (кто строил, кто погибал) с датами.',
+      en: 'ADMIN PANEL (9): “COINS — ADD TO MYSELF” section (type amount, press ADD). BUILD HP: the whole chain is verified with a real protocol test — damage syncs to everyone, hits disk instantly, newcomers see damaged builds with correct HP. 3D INSPECT FIX: the wrap is no longer swallowed by metalness — “Eskimo” revolver and the rest now look right. “ALL PLAYERS” NOW SHOWS PLAYERS SINCE DAY ONE: the server harvests names from the world (who built, who died) with dates.'
+    },
+    body: {
+      ru: [
+        'МОНЕТЫ АДМИНУ: в панели разработчика (клавиша 9) появилась секция «МОНЕТЫ — НАЧИСЛИТЬ СЕБЕ»: вводишь количество (по умолчанию 1000), жмёшь НАЧИСЛИТЬ — баланс рядом и обновляется сразу, всё сохраняется на аккаунте. Топ-ап админа до 10000 монет при входе тоже остался.',
+        'ХП ПОСТРОЕК — ПРОВЕРКА ВСЕЙ ЦЕПОЧКИ: прогнал настоящий сетевой тест (клиент по протоколу сервера): поставил фундамент → 3 удара булавой → «bhp» с остатком пришёл всем (350→260) → перезаход — постройка на месте с тем же хп → доломал до 0 → «brem» у всех, клетка освободилась, «надгробие» записано. Снапшот для новичков (welcome.objs.bd) несёт hp/max КАЖДОЙ детали — сохранение и синхронизация хп всех построек работают полностью; дыр не нашлось.',
+        'ФИКС СКИНОВ (3D-осмотр + РУКИ + ЧУЖИЕ ИГРОКИ): нашёл причины «обёртка криво/не надевается». 1) В руках железный топор «Ледяные руны» и железная кирка «Ретро» ВООБЩЕ не надевали скин — у этих скинов не было держателей в списке рук («Ретро» по ошибке был приписан каменной кирке); теперь надеваются. 2) «Криво» у револьвера/томпсона/С4/кам. топора в руках: у большинства моделей metalness=1 (умолчание glTF) — металл «съедал» окрас обёртки (тёмное зеркало), а у «Экскимо» свои карты с шероховатостью ≈0.2 («жидкий» глянец). Теперь у всех скинов единый витринный материал (metalness 0.15, roughness 0.6) — и в 3D-осмотре, и в руках: окрас виден ровно как на арте, размер и разрешение обёртки ни при чём. 3) У ЧУЖИХ игроков скины не показывались вовсе (id скина искался в базовых предметах, где скинов нет) — исправлено. 4) Снятие скина возвращает материал полностью (без остаточного глянца). Револьвер «Экскимо» — шоколадно-кремовый, томпсон «Леденцовый» — в карамельных полосках, железный топор — с ледяными рунами.',
+        'ВСЕ ИГРОКИ С 1-го РЕЛИЗА: имена игроков всё это время сохранялись в мире — кто поставил постройку (builds.by) и кто погиб (труп-лутбоксы, corpses.n), у обоих есть дата. Сервер теперь собирает эти имена в реестр при запуске и добирает новые раз в 60 с. Во вкладке «ВСЕ ИГРОКИ» появляются и давние игроки: «в сети сейчас» или «был(а) N мин/ч/дн назад» (по дате последней постройки/смерти в мире). Клик по любому — профиль с ПРИГЛАСИТЬ.',
+        'ВАЖНО ПРО АРХИВЫ: полный архив v0.4.63 больше НЕ содержит файлы мира (world-objs.json, players.json, social.json, admins.json, world-env.json, world-epoch.json) — распаковка «поверх» сервера больше не затрёт твой мир, сохранения игроков и список админов. Файлы кода (server.js и js/) заменяй смело.'
+      ],
+      en: [
+        'ADMIN COINS: the developer panel (key 9) has a new “COINS — ADD TO MYSELF” section: type an amount (1000 by default), press ADD — the balance sits right there and updates instantly, saved on the account. The admin top-up to 10000 coins on join is still there too.',
+        'BUILD HP — FULL CHAIN VERIFIED: ran a real network test (a client speaking the server protocol): placed a foundation → 3 mace hits → the “bhp” remainder reached everyone (350→260) → rejoined — the build is there with the same HP → broke it to 0 → “brem” to everyone, the cell freed, a tombstone recorded. The newcomer snapshot (welcome.objs.bd) carries hp/max of EVERY piece — saving and syncing of all build HP works completely; no holes found.',
+        'SKIN FIX (3D inspect + HANDS + OTHER PLAYERS): found the causes of “the wrap sits wrong / does not show”. 1) In hands the “Icy Runes” iron axe and the “Retro” iron pickaxe NEVER wore their skins — those skins had no holder in the hands list (“Retro” was wrongly attached to the stone pickaxe); now they do. 2) The “wrong look” of the revolver/Thompson/C4/stone axe in hands: most models default to metalness=1 (glTF default) — metal swallowed the wrap color (dark mirror), and “Eskimo” had its own maps with roughness ≈0.2 (“wet” gloss). Every skin now uses one showcase material (metalness 0.15, roughness 0.6) — in the 3D inspect and in hands alike: the paint shows exactly as drawn; wrap size/resolution was never the issue. 3) OTHER players never saw your skin at all (the skin id was looked up in the base-items registry, where skins do not exist) — fixed. 4) Removing a skin restores the material completely (no leftover gloss). The “Eskimo” revolver is chocolate-and-cream, the “Candy” Thompson shows caramel stripes, the iron axe glows with icy runes.',
+        'ALL PLAYERS SINCE DAY ONE: player names have been saved inside the world all along — who placed a build (builds.by) and who died (corpse lootboxes, corpses.n), both with dates. The server now harvests those names into the registry on startup and picks up new ones every 60 s. Veteran players appear in the “ALL PLAYERS” tab: “online now” or “seen N min/h/d ago” (by the date of their last build/death in the world). Tap any of them — profile with INVITE.',
+        'IMPORTANT ABOUT ARCHIVES: the v0.4.63 full archive no longer contains world files (world-objs.json, players.json, social.json, admins.json, world-env.json, world-epoch.json) — unpacking it “over” your server will no longer wipe your world, player saves, or the admin list. Code files (server.js and js/) are safe to replace.'
+      ]
+    }
+  },
+  {
+    id: 'n-sync-shop3d-friends',
+    date: '21.11.2026',
+    tag: 'new',
+    title: {
+      ru: 'Патч 0.4.62 — Фикс построек, магазин 3D, пули летят, друзья и все игроки',
+      en: 'Patch 0.4.62 — Build fix, 3D shop, flying bullets, friends & all players'
+    },
+    excerpt: {
+      ru: 'ПОСТРОЙКИ: сломанное больше не воскресает — бэкап клиента чистится при сломании, сервер хранит «надгробия» и отвергает добор сломанного (server.js заменить + перезапустить). СКИН «Ретро» — теперь на ЖЕЛЕЗНОЙ кирке. СУТКИ = 47 МИНУТ. АДМИНАМ 10000 монет. «СКИНЫ» → «МАГАЗИН»: клик по скину — 3D-ОСМОТР без рук, крутится, кнопка КУПИТЬ. ПУЛИ ЛЕТЯТ — урон приходит с пулей, скорости чуть выше. ДРУЗЬЯ: вкладки «Друзья» и «Все игроки» (кто играл/играет, «был N ч назад»), профиль игрока, заявки в колокольчике — Принять/Игнорировать.',
+      en: 'BUILDS: broken pieces no longer resurrect — client backup clears on break, the server keeps tombstones and rejects re-adopting broken builds (replace server.js + restart). The “Retro” skin now belongs to the IRON pickaxe. A FULL DAY = 47 MINUTES. ADMINS get 10000 coins. “SKINS” → “SHOP”: tap a skin for a 3D INSPECT view — the real model without hands, spin it, with a BUY button. BULLETS FLY — damage arrives with the bullet, speeds slightly up. FRIENDS: “Friends” and “All players” tabs (who played/is playing, “seen N h ago”), player profiles, invites in the bell — Accept/Ignore.'
+    },
+    body: {
+      ru: [
+        'СЛОМАННЫЕ ПОСТРОЙКИ — СИНХРОНИЗАЦИЯ И СОХРАНЕНИЕ: нашёл настоящую причину «сломанное воскресает». Бэкап построек в localStorage НЕ чистился при сломании — при перезаходе клиент «добирал» сломанное серверу (badopt), и руины возвращались у всех. Теперь: клиент чистит бэкап при каждом удалении, а сервер хранит «НАДГРОБИЯ» — последние 600 id сломанного в world-objs.json; badopt такие записи игнорирует. Сломанное удалено из мира НАВСЕГДА: brem всем игрокам, из индексов, и на диск сразу. ВАЖНО: заменить server.js и ПЕРЕЗАПУСТИТЬ сервер.',
+        'СКИН «РЕТРО» — ЖЕЛЕЗНАЯ КИРКА: обёртка рисовалась по развёртке pickaxe.glb (проверил наложением UV-контура — совпадение точное), поэтому скин переехал с каменной кирки на железную: в магазине теперь «Железная кирка «Ретро»», и в руках железной кирки окрас садится правильно.',
+        'СУТКИ = 47 МИНУТ: полный цикл (рассвет → день → закат → сумерки → ночь) длится 47 минут: рассвет 198 с, день ~19.8 мин, закат ~5 мин, сумерки 148 с, ночь 16.5 мин. Часы авторитетно ведёт сервер — у всех игроков время одинаковое.',
+        'АДМИНАМ 10000 МОНЕТ: когда сервер подтверждает админа, его баланс добирается до 10000 (если было меньше; больше — не трогаем).',
+        'МАГАЗИН С 3D-ОСМОТРОМ: вкладка «СКИНЫ» переименована в «МАГАЗИН». Нажми на КАРТИНКУ скина — откроется 3D-просмотр: настоящая модель предмета (iron_axe.glb, revolver.glb, c4.glb...) с надетой обёрткой скина, БЕЗ РУК. Тяни мышью или пальцем — крутится; отпустишь — медленно вращается сам. Внутри кнопки КУПИТЬ / КУПЛЕНО / ЗАКРЫТЬ — осмотрел и купил, не выходя из окна.',
+        'ПУЛИ ЛЕТЯТ: раньше при попадании с 200 метров урон снимался мгновенно, хотя трассер ещё летел. Теперь урон и хит-маркер приходят РОВНО когда пуля долетела (время = дистанция / скорость). Пули стали чуть быстрее: револьвер 300, карабин и томпсон 370, калаш 480, дробь 210 м/с. За время полёта цель может отойти — пуля «догоняет».',
+        'ДРУЗЬЯ И ВСЕ ИГРОКИ: вкладка «Друзья» переделана — две вкладки: «ДРУЗЬЯ» (все твои друзья, клик по другу → профиль) и «ВСЕ ИГРОКИ» (все, кто играл или играет сейчас: имя, «в сети сейчас» или «был(а) N ч/дн назад»). Клик по игроку открывает ПРОФИЛЬ: аватар, ник, ID аккаунта, статус и кнопки ПРИГЛАСИТЬ / УДАЛИТЬ ИЗ ДРУЗЕЙ. Нажал ПРИГЛАСИТЬ — игроку в КОЛОКОЛЬЧИК приходит сообщение «вам предложили дружить» с кнопками ПРИНЯТЬ / ИГНОРИРОВАТЬ. Сервер ведёт реестр всех игроков (social.json) и отдаёт список по запросу.'
+      ],
+      en: [
+        'BROKEN BUILDS — SYNC & SAVE: found the real cause of “broken pieces resurrect”. The localStorage build backup was NOT cleared on break — on rejoin the client re-adopted broken pieces to the server (badopt) and the ruins came back for everyone. Now: the client clears its backup on every removal, and the server keeps “tombstones” — the last 600 broken ids in world-objs.json; badopt ignores those. A broken piece is removed from the world FOREVER: brem to everyone, out of the indexes, written to disk immediately. IMPORTANT: replace server.js and restart the server.',
+        'THE “RETRO” SKIN — IRON PICKAXE: the wrap was painted against the pickaxe.glb UV layout (verified with a UV contour overlay — exact match), so the skin moved from the stone pickaxe to the iron one: the shop now shows “Iron Pickaxe “Retro””, and it sits correctly on the iron pickaxe in your hands.',
+        'A FULL DAY = 47 MINUTES: the whole cycle (dawn → day → sunset → dusk → night) lasts 47 minutes: dawn 198 s, day ~19.8 min, sunset ~5 min, dusk 148 s, night 16.5 min. The server is the clock authority — every player sees the same time.',
+        'ADMINS GET 10000 COINS: when the server confirms an admin, their balance is topped up to 10000 (only if it was lower; higher balances are untouched).',
+        'SHOP WITH 3D INSPECT: the “SKINS” tab is now “SHOP”. Tap the skin PICTURE — a 3D view opens: the real item model (iron_axe.glb, revolver.glb, c4.glb...) wearing the skin wrap, WITHOUT hands. Drag with mouse or finger to spin; release it and it slowly rotates by itself. Inside: BUY / OWNED / CLOSE — inspect and buy without leaving the window.',
+        'BULLETS FLY: before, a hit from 200 m applied damage instantly while the tracer was still flying. Now the damage and the hitmarker arrive exactly when the bullet lands (time = distance / speed). Bullets are slightly faster: revolver 300, carbine and Thompson 370, AK 480, pellets 210 m/s. The target can move during the flight — the bullet “catches up”.',
+        'FRIENDS & ALL PLAYERS: the “Friends” tab is reworked — two tabs: “FRIENDS” (all your friends, tap a friend → profile) and “ALL PLAYERS” (everyone who played or is playing now: name, “online now” or “seen N h/d ago”). Tapping a player opens their PROFILE: avatar, nick, account ID, status and INVITE / REMOVE buttons. Press INVITE — the player gets a bell message “wants to be friends” with ACCEPT / IGNORE. The server keeps a registry of all players (social.json) and serves the list on request.'
+      ]
+    }
+  },
+  {
+    id: 'n-ice-runes-ironaxe',
+    date: '21.11.2026',
+    tag: 'new',
+    title: {
+      ru: 'Патч 0.4.61 — Железный топор «Ледяные руны» + фикс обёрток',
+      en: 'Patch 0.4.61 — Iron Axe “Ice Runes” + wrap orientation fix'
+    },
+    excerpt: {
+      ru: 'НОВЫЙ СКИН (арт игрока): железный топор «Ледяные руны» — лёд со светящимися рунами. Магазин — 400 монет (редкий). В крафт-меню (Q) выбери чертёж железного топора и нажми на большую иконку предмета — откроется список скинов. ИКОНКА скина — настоящий 3D-рендер модели топора с обёрткой: форма точь-в-точь как у оригинала. ФИКС: обёртки больше не ложатся вверх ногами (flipY=false, конвенция glTF) — «Замороженое дерево» и остальные скины сели ровно.',
+      en: 'NEW SKIN (player art): Iron Axe “Ice Runes” — ice with glowing runes. Shop — 400 coins (rare). In the craft menu (Q) pick the iron axe blueprint and press the big item icon — the skin list opens. The skin ICON is a true 3D render of the axe model with the wrap: the shape matches the original exactly. FIX: weapon wraps no longer apply upside down (flipY=false, glTF convention) — “Frozen Wood” and the other skins now sit straight.'
+    },
+    body: {
+      ru: [
+        'ЖЕЛЕЗНЫЙ ТОПОР «ЛЕДЯНЫЕ РУНЫ»: новый скин по арту игрока — ледяная развёртка со светящимися рунами-завихрениями на лезвии и древке. Покупается в МАГАЗИНЕ один раз (400 монет, редкость «редкий») и хранится на аккаунте, как остальные скины.',
+        'НАДЕТЬ: крафт-меню (Q) → чертёж ЖЕЛЕЗНОГО ТОПОРА → нажми на БОЛЬШУЮ ИКОНКУ ПРЕДМЕТА в превью → список скинов этого предмета → «Ледяные руны» → СКАФТ. Топор создастся сразу со скином: обёртка в руках и ледяная иконка в хотбаре. Скин не тратится и не теряется.',
+        'ИКОНКА СКИНА — 3D-РЕНДЕР: иконка сгенерирована с настоящей модели iron_axe.glb с надетой обёрткой, в позе базовой иконки (голова справа-сверху, рукоять влево-вниз) — форма точь-в-точь как у оригинала, только в ледяном окрасе.',
+        'ФИКС ОРИЕНТАЦИИ ОБЁРТОК: TextureLoader по умолчанию переворачивает текстуру (flipY=true), а UV моделей — в конвенции glTF (flipY=false, как в glb.js). Из-за этого обёртки ложились вверх ногами. Теперь weaponskins.js ставит flipY=false — «Замороженое дерево», «Ретро», «Экскимо» и остальные скины сели на модели ровно; действует и на скины у удалённых игроков.',
+        'СЕРВЕР НЕ МЕНЯЛСЯ: достаточно заменить файлы клиента (patch-zip поверх папки BRIX) и обновить страницу.'
+      ],
+      en: [
+        'IRON AXE “ICE RUNES”: a new skin from the player’s art — an icy UV wrap with glowing rune swirls on the blade and the handle. Bought once in the SHOP (400 coins, rare) and kept on the account, like every other skin.',
+        'HOW TO WEAR: craft menu (Q) → the IRON AXE blueprint → press the BIG ITEM ICON in the preview → the skin list for this item → “Ice Runes” → CRAFT. The axe is created with the skin right away: the wrap in your hands and the icy icon in the hotbar. The skin is never spent or lost.',
+        'SKIN ICON — 3D RENDER: the icon was generated from the actual iron_axe.glb model wearing the wrap, in the pose of the base icon (head top-right, handle to the bottom-left) — the shape matches the original exactly, only in icy colors.',
+        'WRAP ORIENTATION FIX: TextureLoader flips textures by default (flipY=true), while model UVs follow the glTF convention (flipY=false, as in glb.js). Because of that wraps applied upside down. weaponskins.js now sets flipY=false — “Frozen Wood”, “Retro”, “Eskimo” and the rest now sit straight on their models; the same applies to skins on remote players.',
+        'SERVER UNCHANGED: just replace the client files (patch-zip over the BRIX folder) and refresh the page.'
+      ]
+    }
+  },
+  {
     id: 'n-syringe-psave-c4stack',
     date: '20.11.2026',
     tag: 'new',

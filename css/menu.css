@@ -265,3 +265,79 @@
     linear-gradient(180deg, rgba(8, 9, 8, 0.52) 0%, rgba(8, 9, 8, 0.22) 42%, rgba(8, 9, 8, 0.62) 100%),
     url('../assets/menu/bg.jpg') center / cover no-repeat;
 }
+
+/* ============================================================
+   ✅ v0.4.64 ПВП-АРЕНА (BrixPvP): интерфейс только для боя
+   ============================================================ */
+body.brix-pvp #bxHotbar,
+body.brix-pvp .bx-inv-btn,
+body.brix-pvp .bxc-hint,
+body.brix-pvp .bx-build-hint {
+  display: none !important;
+}
+
+/* ---- панель «ВЫБОР ОРУЖИЯ» (E на арене) ---- */
+.brix-pvpw {
+  position: fixed; inset: 0;
+  background: rgba(8, 9, 10, 0.72);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1600;
+}
+.brix-pvpw.hidden { display: none; }
+.brix-pvpw-panel {
+  width: min(720px, 94vw);
+  max-height: 86vh; overflow-y: auto;
+  background: #17181a;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+  padding: 18px 20px 16px;
+}
+.brix-pvpw-panel .head {
+  display: flex; align-items: baseline; gap: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 10px; margin-bottom: 14px;
+  position: relative;
+}
+.brix-pvpw-panel .title { font-size: 22px; color: var(--rust-bright, #cd412f); letter-spacing: 1px; }
+.brix-pvpw-panel .sub { color: rgba(214, 217, 212, 0.6); font-size: 12px; }
+.brix-pvpw-panel .close {
+  margin-left: auto; background: rgba(255,255,255,0.08);
+  color: rgba(214,217,212,0.8); border: 1px solid rgba(255,255,255,0.16);
+  padding: 4px 10px; cursor: pointer; font-size: 11px;
+}
+.brix-pvpw-panel .close:hover { background: rgba(255,255,255,0.16); }
+/* ✅ v0.4.65: колонки-КАТЕГОРИИ как на фото (Valorant-стиль) */
+.brix-pvpw-panel .cols {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+}
+@media (max-width: 640px) {
+  .brix-pvpw-panel .cols { grid-template-columns: 1fr; }
+}
+.brix-pvpw-panel .col-head {
+  background: linear-gradient(90deg, #2e5c3f, #1e3a2a);
+  color: #cfe8cf; font-size: 11px; letter-spacing: 0.18em;
+  padding: 6px 10px; border: 1px solid #3e6d4e;
+  text-align: center;
+}
+.brix-pvpw-panel .col-cards { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.brix-pvpw-panel .grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.brix-pvpw-card {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  background: linear-gradient(165deg, #20262e, #14181d);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 14px 8px 10px; cursor: pointer;
+  color: inherit; text-align: center;
+}
+.brix-pvpw-card .ic { width: 76px; height: 52px; display: grid; place-items: center; }
+.brix-pvpw-card .ic img { max-width: 100%; max-height: 100%; filter: brightness(1.25); }
+.brix-pvpw-card:hover { background: rgba(205, 65, 47, 0.16); border-color: rgba(205, 65, 47, 0.6); }
+.brix-pvpw-card .nm { font-size: 13px; }
+.brix-pvpw-card .meta { font-size: 10px; color: rgba(214, 217, 212, 0.55); }
+.brix-pvpw-panel .hint { margin-top: 12px; font-size: 11px; color: rgba(214, 217, 212, 0.55); }
+
+/* ---- подпись под списком серверов ---- */
+.srv-pick { margin-top: 14px; font-size: 12px; color: rgba(214, 217, 212, 0.5); }
+.srv-desc { margin-top: 10px; font-size: 12.5px; color: rgba(214, 217, 212, 0.7); line-height: 1.45; }

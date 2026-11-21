@@ -1,8 +1,10 @@
 @echo off
-rem BRIX v0.3.0 — запуск МУЛЬТИПЛЕЕРА (сервер + игра)
-rem Требуется Node.js (https://nodejs.org). Если node не установлен —
-rem игра всё равно запустится двойным щелчком по START-GAME.bat,
-rem а мультиплеер будет работать между вкладками одного браузера.
+rem BRIX v0.4.64 — запуск МУЛЬТИПЛЕЕРА: ДВА СЕРВЕРА ОДНОВРЕМЕННО
+rem   BRIX • BrixLand  (выживание)  — http://localhost:8787  (node server.js)
+rem   BRIX • BrixPvP   (пвп-арена)  — http://localhost:8788  (BRIX_REALM=brixpvp)
+rem У каждого сервера СВОИ сохранения (data/brixland/ и data/brixpvp/),
+rem свои игроки и свой счётчик онлайна. admins.json/bans.json — общие.
+rem Требуется Node.js (https://nodejs.org).
 
 cd /d "%~dp0"
 
@@ -17,10 +19,13 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Запускаю сервер мультиплеера...
-start "BRIX сервер" cmd /c "node server.js & pause"
+echo Запускаю BRIX • BrixLand (выживание, порт 8787)...
+start "BRIX • BrixLand" cmd /c "node server.js & pause"
+timeout /t 1 >nul
+echo Запускаю BRIX • BrixPvP (пвп-арена, порт 8788)...
+start "BRIX • BrixPvP" cmd /c "set BRIX_REALM=brixpvp&& set BRIX_PORT=8788&& node server.js & pause"
 timeout /t 1 >nul
 start "" http://localhost:8787
-echo Готово! Открывай http://localhost:8787 в нескольких окнах —
-echo каждое окно будет отдельным игроком.
+echo Готово! Открывай http://localhost:8787 — вкладка СЕРВЕРА покажет
+echo оба сервера с живыми счётчиками игроков.
 timeout /t 4 >nul

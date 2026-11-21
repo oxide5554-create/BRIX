@@ -299,6 +299,12 @@ window.BrixGameWorld = (function () {
         var lf = BrixLighthouse.floorAt(x, z, feetY);
         if (lf !== null && lf > h) h = lf;
       }
+      /* ✅ v0.4.65 ПВП-АРЕНА: по платформе, ступеням, ящикам и бункерам
+         арены можно ХОДИТЬ (BrixArena.floorAt считает свои солиды) */
+      if (window.BrixArena && BrixArena.isBuilt()) {
+        var af = BrixArena.floorAt(x, z, feetY);
+        if (af !== null && af > h) h = af;
+      }
       return h;
     };
     var controls = new BrixControls.FpsController(renderer.domElement, groundAt);
@@ -459,6 +465,7 @@ window.BrixGameWorld = (function () {
     var dead = false;
     var deathKiller = '';
     var spawnPoint = null;    // {x, z, yaw} — для возрождения
+    var pvpMode = false;      // ✅ v0.4.64: сервер brixpvp — арена (без хотбара/крафта)
 
     /* ✅ v0.4.34 ХОЛОД (зимний апдейт): шкала холода 0..100.
        На сервере — авторитет (server.js считает по высоте рельефа и пушит
@@ -513,7 +520,8 @@ window.BrixGameWorld = (function () {
     };
 
     // выбор в хотбаре → показать/спрятать руки с нужным инструментом
-    inventory.onSelect = function (item) {
+    // ✅ v0.4.60: третий аргумент — СКИН слота («костюм»), обёртка в руках
+    inventory.onSelect = function (item, idx, skin) {
       var tool = (item && item.tool) || null;
       // ✅ v0.4.6: 'plan' — план строителя (синий ватман в руках)
       // ✅ v0.4.19: 'shotgun' — дробовик в руках
@@ -528,6 +536,12 @@ window.BrixGameWorld = (function () {
         tool === 'mace' || tool === 'c4' || tool === 'plan' || tool === 'torch' ||
         /* ✅ v0.4.46: шприц — руки держат его наготове (модель шприца) */
         tool === 'syringe' ? tool : null);
+      /* ✅ v0.4.60 СКИНЫ — КОСТЮМЫ: обёртка в руках — по СКИНУ слота
+         (slot.skin = 'exkimo' → шоколадный «Экскимо» и т.д.), null — обычная */
+      try {
+        hands.setSkinItem(skin && window.BrixWeaponSkins &&
+          BrixWeaponSkins.isSkinned(skin) ? skin : null);
+      } catch (eSk1) {}
       // смена оружия сбрасывает прицеливание (у огнестрелов — оставляем выбор игроку:
       // с револьвера на дробовик/калаш можно перескакивать с прицелом)
       if (tool !== 'revolver' && tool !== 'shotgun' && tool !== 'rifle' &&
@@ -580,8 +594,16 @@ window.BrixGameWorld = (function () {
     // стартовое состояние: слот 0 — каменный топор
     // ✅ v0.4.53: слот 0 — ФАКЕЛ (клавиша 1, держится как топор), топор и
     // кирка сдвинулись на клавиши 2 и 3; факел сразу в руках на спавне
+    // ✅ v0.4.59: магазин скинов удалён — скины выбираются при крафте (Q)
+
     var startSel = inventory.slots[0];
     hands.setWeapon(startSel && startSel.item.tool ? startSel.item.tool : 'axe');
+    /* ✅ v0.4.60: у стартового слота может быть скин (из psave) — сразу обёртка */
+    try {
+      hands.setSkinItem(startSel && startSel.skin &&
+        window.BrixWeaponSkins && BrixWeaponSkins.isSkinned(startSel.skin)
+        ? startSel.skin : null);
+    } catch (eSk0) {}
 
     // ✅ v0.3.0: чужие игроки и строка статуса сети (уровень start(),
     // чтобы их видели и отладочный хук, и stop() при выходе)
@@ -619,7 +641,18 @@ window.BrixGameWorld = (function () {
         return true;
       },
       c4Fuse: c4Fuse,
-      touch: function () { return window.BrixTouch; }
+      touch: function () { return window.BrixTouch; },
+      /* ✅ v0.4.57: tryShoot — автотестам выстрел текущим оружием
+         (трассеры: spawn из дула + сетевое событие trc) */
+      tryShoot: tryShoot,
+      /* ✅ v0.4.57: renderOnce — один кадр вручную (автотесты в
+         headless/фоне: RAF заморожен, трассер есть в сцене, но кадр
+         не обновляется — рендерим по требованию и возвращаем снимок
+         canvas (dataURL) — DOM-оверлеи (пауза и т.п.) в него не входят */
+      renderOnce: function () {
+        renderer.render(scene, camera);
+        try { return renderer.domElement.toDataURL('image/jpeg', 0.92); } catch (e) { return ''; }
+      }
     };
 
     /* ---------- ЛКМ — удар топором ---------- */
@@ -1065,6 +1098,8 @@ window.BrixGameWorld = (function () {
     document.addEventListener('keydown', function (e) {
       // ✅ v0.4.3: мини-меню/карта открыты — F не подбирает лут
       if (isMiniOpen()) return;
+      /* ✅ v0.4.65 ПВП-АРЕНА: ящиков/лута на арене НЕТ — F молчит */
+      if (pvpMode && e.code === 'KeyF') return;
       /* ✅ v0.4.10: F — сначала ДВЕРЬ/ЗАМОК (BrixBuilding.interact вернёт
          true, если навели на дверь — открыли/закрыли/ввели код);
          иначе — обычный подбор лута */
@@ -1250,6 +1285,27 @@ window.BrixGameWorld = (function () {
         if (msg.k === 'tpshot') sndName = tpShots[Math.floor(Math.random() * tpShots.length)];
         BrixSfx.play(sndName,
           { volume: 0.9 * vol, jitter: 0.04 });
+      });
+      /* ✅ v0.4.57 ТРАССЕРЫ ЧУЖИХ ВЫСТРЕЛОВ: стрелок шлёт «внешнее дуло» и
+         точку попадания — у нас рисуется такой же болт, как у своего
+         выстрела (видно КУДА и ОТКУДА стреляют другие, особенно ночью).
+         Дробовик: одно событие → 3 болта с лёгким разбросом концов. */
+      BrixNet.on('trc', function (msg) {
+        if (!msg || !msg.o || !msg.e) return;
+        if ((msg.by || msg.id) === BrixNet.id) return;
+        var ov = new THREE.Vector3(msg.o[0], msg.o[1], msg.o[2]);
+        var ev = new THREE.Vector3(msg.e[0], msg.e[1], msg.e[2]);
+        if (msg.k === 'sg') {
+          for (var ti = 0; ti < 3; ti++) {
+            var jv = ev.clone();
+            jv.x += (Math.random() - 0.5) * 1.8;
+            jv.y += (Math.random() - 0.5) * 1.4;
+            jv.z += (Math.random() - 0.5) * 1.8;
+            addTracer(ov, jv, 'sg');
+          }
+        } else {
+          addTracer(ov, ev, msg.k || 'rev');
+        }
       });
       BrixNet.on('phit', onPlayerHit);
       /* ✅ v0.4.28: остаток хп детали дома (после удара) — звук/плашка «133 / 200» */
@@ -2180,6 +2236,8 @@ window.BrixGameWorld = (function () {
         var nm = '';
         var ros = BrixNet.getRoster();
         for (var i = 0; i < ros.length; i++) if (ros[i].id === deathKiller) nm = ros[i].n || '';
+        /* ✅ v0.4.65: убил БОТ арены — его имя не из ростера */
+        if (!nm && info && info.botName) nm = info.botName;
         /* ✅ v0.4.28: статистика как в Rust — выжил / убил / оружие / дистанция */
         if (combatHud.aliveEl) combatHud.aliveEl.textContent =
           BrixState.t('death.alive', { t: fmtAlive(Date.now() - aliveSince) });
@@ -2209,9 +2267,12 @@ window.BrixGameWorld = (function () {
       // другие видят мою смерть (вкладки/серо-режим: сообщаем сами)
       BrixNet.send({ t: 'pdeath', tid: BrixNet.id, by: deathKiller });
       /* ✅ v0.4.43: ВЕСЬ инвентарь уходит в ТРУП-ЛУТБОКС (синхрон +
-         сохранение на сервере), свой инвентарь опустошаем */
-      try { dropCorpseOnDeath(); } catch (eCorpse) {
-        console.warn('[corpse] не создал труп:', eCorpse && eCorpse.message);
+         сохранение на сервере), свой инвентарь опустошаем
+         ✅ v0.4.65: на арене трупа НЕТ (лут-ящиков там не существует) */
+      if (!pvpMode) {
+        try { dropCorpseOnDeath(); } catch (eCorpse) {
+          console.warn('[corpse] не создал труп:', eCorpse && eCorpse.message);
+        }
       }
       setMyHp(0);
     }
@@ -2240,16 +2301,20 @@ window.BrixGameWorld = (function () {
       aliveSince = Date.now();   // время выживания — заново
       /* ✅ v0.4.44: после смерти выдаём СТАРТОВЫЙ НАБОР — каменный топор и
          каменная кирка (просьба игрока). Весь инвентарь остался в трупе.
-         ✅ v0.4.53: факел — в слот 1 (клавиша 1), как в стартовом наборе */
-      try {
-        inventory.slots[0] = { item: BrixItems.torch, count: 1 };
-        inventory.slots[1] = { item: BrixItems.stoneAxe, count: 1 };
-        inventory.slots[2] = { item: BrixItems.stonePickaxe, count: 1 };
-        inventory.renderAll();
-        if (inventory._notifySelect) inventory._notifySelect();
-      } catch (eKit) {}
-      /* ✅ v0.4.43: подсказка — вещи остались в трупе, можно вернуть */
-      try { if (window.BrixHud) BrixHud.toast(BrixState.t('death.loot'), 6); } catch (eT2) {}
+         ✅ v0.4.53: факел — в слот 1 (клавиша 1), как в стартовом наборе
+         ✅ v0.4.65: на АРЕНЕ стартового набора НЕТ (инструментов там не
+         бывает) — оружие берётся на E, патроны бесконечные */
+      if (!pvpMode) {
+        try {
+          inventory.slots[0] = { item: BrixItems.torch, count: 1 };
+          inventory.slots[1] = { item: BrixItems.stoneAxe, count: 1 };
+          inventory.slots[2] = { item: BrixItems.stonePickaxe, count: 1 };
+          inventory.renderAll();
+          if (inventory._notifySelect) inventory._notifySelect();
+        } catch (eKit) {}
+        /* ✅ v0.4.43: подсказка — вещи остались в трупе, можно вернуть */
+        try { if (window.BrixHud) BrixHud.toast(BrixState.t('death.loot'), 6); } catch (eT2) {}
+      }
       if (window.menuAudio) menuAudio.click();
     }
 
@@ -2397,7 +2462,8 @@ window.BrixGameWorld = (function () {
         .normalize();
     }
 
-    /** «дуло» револьвера для трассера (чуть правее и ниже камеры) */
+    /** «дуло» револьвера для трассера (чуть правее и ниже камеры) —
+        ФОЛБЭК, если руки ещё не собрались (обычно не нужен) */
     var _muzzleFwd = new THREE.Vector3(), _muzzleRight = new THREE.Vector3();
     function muzzleWorldPos(out) {
       camera.getWorldDirection(_muzzleFwd);
@@ -2409,28 +2475,180 @@ window.BrixGameWorld = (function () {
       return out;
     }
 
-    var tracers = [];
-    function addTracer(from, to) {
-      var geo = new THREE.BufferGeometry().setFromPoints([from.clone(), to.clone()]);
-      var mat = new THREE.LineBasicMaterial({
-        color: 0xffd9a0, transparent: true, opacity: 0.9, depthWrite: false
-      });
-      var line = new THREE.Line(geo, mat);
-      line.frustumCulled = false;
-      scene.add(line);
-      tracers.push({ line: line, geo: geo, mat: mat, t: 0.09 });
+    /* =====================================================================
+       ✅ v0.4.57 ТРАССЕРЫ — ПОЛНАЯ ПЕРЕДЕЛКА.
+       Было: статичная тонкая линия на 0.09 c из точки возле КАМЕРЫ —
+       выглядело как случайная летящая точка, «тупо вылетает со ствола».
+       Стало: СВЕТЯЩИЙСЯ БОЛТ, который РЕАЛЬНО ЛЕТИТ от дульного среза
+       к точке попадания: голова — аддитивный спрайт-вспышка, хвост —
+       лента-градиент вдоль траектории. У КАЖДОГО ОРУЖИЯ свой облик
+       (скорость/цвет/длина хвоста/размер головы) — TRACER_CFG.
+       Ночью болты автоматически ЯРЧЕ (изометропия: isNight() → буст
+       яркости и размера при спавне). Чужие выстрелы рисуют такой же
+       трассер (событие trc через сеть — см. net.js / server.js).
+       Пул объектов: спрайты/геометрии переиспользуются, мусора нет. */
+    var TRACER_CFG = {
+      /* ✅ v0.4.62: пули ЧУТЬ БЫСТРЕЕ (просьба игрока), было
+         240/300/300/400/170 — теперь 300/370/370/480/210 */
+      rev:  { spd: 300, col: 0xffc36b, len: 3.5, size: 0.30 },  // револьвер
+      rev3: { spd: 370, col: 0xffd36b, len: 5.0, size: 0.32 },  // револьвер-карабин 3×
+      tp:   { spd: 370, col: 0xffd98a, len: 4.5, size: 0.30 },  // томпсон
+      ak:   { spd: 480, col: 0xfff3a6, len: 6.5, size: 0.34 },  // калаш
+      sg:   { spd: 210, col: 0xffb46b, len: 2.2, size: 0.20 }   // дробь дробовика
+    };
+    var tracers = [], tracerFree = [];
+    /* ✅ v0.4.62 ПУЛЯ ЛЕТИТ — УРОН ПРИХОДИТ С ПУЛЕЙ (просьба игрока:
+       «когда с 200 метров попал — урон сразу, надо чтобы пуля по нему
+       попала»). pendingShots — отложенные попадания: время полёта =
+       дистанция / скорость пули. Тикают ВМЕСТЕ с трассерами (тот же
+       зажатый dt) — хит-маркер и урон приходят РОВНО когда болт долетел.
+       Цель за время полёта может отойти/спрятаться — пуля «догоняет» */
+    var pendingShots = [];
+    function scheduleHit(delay, fn) {
+      pendingShots.push({ t: delay, fn: fn });
     }
+    var _trTex = null;
+    function tracerTexture() {
+      // радиальная вспышка на канвасе (без внешних ассетов)
+      if (_trTex) return _trTex;
+      var cv = document.createElement('canvas');
+      cv.width = cv.height = 64;
+      var g = cv.getContext('2d');
+      var gr = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+      gr.addColorStop(0, 'rgba(255,255,255,1)');
+      gr.addColorStop(0.25, 'rgba(255,240,210,0.85)');
+      gr.addColorStop(0.6, 'rgba(255,210,140,0.28)');
+      gr.addColorStop(1, 'rgba(255,190,120,0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, 64, 64);
+      _trTex = new THREE.CanvasTexture(cv);
+      return _trTex;
+    }
+    var TRACER_SEG = 6;                      // сегментов в хвосте
+    function tracerColor(base, nightBoost) {
+      var c = new THREE.Color(base);
+      if (nightBoost > 1) c.lerp(new THREE.Color(0xffffff), 0.22);  // ночью чуть светлее
+      return c;
+    }
+    function acquireTracer(col, nightBoost) {
+      var tr = tracerFree.pop();
+      if (!tr) {
+        var tailGeo = new THREE.BufferGeometry();
+        tailGeo.setAttribute('position',
+          new THREE.BufferAttribute(new Float32Array((TRACER_SEG + 1) * 3), 3));
+        var cols = new Float32Array((TRACER_SEG + 1) * 3);
+        var c = tracerColor(col, nightBoost);
+        for (var i = 0; i <= TRACER_SEG; i++) {
+          var k = 1 - i / TRACER_SEG;        // 1 у головы → 0 в конце хвоста
+          cols[i * 3] = c.r * k; cols[i * 3 + 1] = c.g * k; cols[i * 3 + 2] = c.b * k;
+        }
+        tailGeo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+        var tailMat = new THREE.LineBasicMaterial({
+          vertexColors: true, transparent: true, opacity: 0.95,
+          blending: THREE.AdditiveBlending, depthWrite: false
+        });
+        var headMat = new THREE.SpriteMaterial({
+          map: tracerTexture(), transparent: true, depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          color: tracerColor(col, nightBoost)
+        });
+        tr = {
+          line: new THREE.Line(tailGeo, tailMat),
+          head: new THREE.Sprite(headMat),
+          /* ореол: спрайт ×2.6 с низкой непрозрачностью — болт виден издалека */
+          glow: new THREE.Sprite(headMat.clone()),
+          geo: tailGeo, cols: cols, col: col
+        };
+        tr.glow.material.opacity = 0.36;
+        tr.line.frustumCulled = false;
+        tr.head.frustumCulled = false;
+        tr.glow.frustumCulled = false;
+      }
+      if (nightBoost > 1) {
+        // ночной буст: светлее и крупнее (спрайт заметнее на тёмном фоне)
+        var c2 = tracerColor(col, nightBoost);
+        tr.head.material.color.copy(c2);
+        tr.glow.material.color.copy(c2);
+        tr.head.material.opacity = Math.min(1, 0.8 * nightBoost);
+        tr._nb = nightBoost;
+      } else {
+        tr.head.material.color.setHex(col);
+        tr.glow.material.color.setHex(col);
+        tr.head.material.opacity = 0.9;
+        tr._nb = 1;
+      }
+      tr.line.material.opacity = 0.95;
+      return tr;
+    }
+    function releaseTracer(tr) {
+      scene.remove(tr.line);
+      scene.remove(tr.head);
+      scene.remove(tr.glow);
+      tracerFree.push(tr);
+    }
+    function addTracer(from, to, kind) {
+      var cfg = TRACER_CFG[kind] || TRACER_CFG.rev;
+      var dist = from.distanceTo(to);
+      if (dist < 0.5) return;                       // выстрел в упор в стену — не рисуем
+      var nightBoost = (window.BrixEnvironment && BrixEnvironment.isNight()) ? 1.45 : 1;
+      var tr = acquireTracer(cfg.col, nightBoost);
+      tr.dir = to.clone().sub(from).normalize();
+      tr.from = from.clone();
+      tr.total = dist;
+      tr.traveled = 0;
+      tr.spd = cfg.spd;
+      tr.size = cfg.size * (nightBoost > 1 ? 1.3 : 1);
+      tr.len = Math.min(cfg.len, dist);
+      tr.head.scale.setScalar(tr.size);
+      tr.glow.scale.setScalar(tr.size * 2.6);
+      tr.head.position.copy(from);
+      tr.glow.position.copy(from);
+      tr.line.visible = tr.len > 0.2;
+      scene.add(tr.line);
+      scene.add(tr.head);
+      scene.add(tr.glow);
+      tracers.push(tr);
+    }
+    var _tailDir = new THREE.Vector3(), _trHead = new THREE.Vector3();
     function tickTracers(dt) {
+      /* ✅ dt зажат до 50 мс: при лаге/alt-tab болт не «телепортируется»
+         и не исчезает мгновенно (getDelta после паузы — секунды) */
+      var d = Math.min(dt, 0.05);
+      /* ✅ v0.4.62: пули долетели — отложенный урон/хит-маркер */
+      for (var ps = pendingShots.length - 1; ps >= 0; ps--) {
+        var psH = pendingShots[ps];
+        psH.t -= d;
+        if (psH.t <= 0) {
+          pendingShots.splice(ps, 1);
+          try { psH.fn(); } catch (ePs) { console.log('[SHOT] ' + ePs.message); }
+        }
+      }
       for (var i = tracers.length - 1; i >= 0; i--) {
         var tr = tracers[i];
-        tr.t -= dt;
-        if (tr.t <= 0) {
-          scene.remove(tr.line);
-          tr.geo.dispose(); tr.mat.dispose();
+        tr.traveled += tr.spd * d;
+        if (tr.traveled >= tr.total) {              // долетел — тир, в пул
           tracers.splice(i, 1);
-        } else {
-          tr.mat.opacity = 0.9 * tr.t / 0.09;
+          releaseTracer(tr);
+          continue;
         }
+        _trHead.copy(tr.from).addScaledVector(tr.dir, tr.traveled);
+        tr.head.position.copy(_trHead);
+        tr.glow.position.copy(_trHead);
+        /* хвост: от головы назад ПО ТРАЕКТОРИИ (не длиннее пройденного,
+           чтобы у дула болт «вырастал», а не торчал сквозь стрелка) */
+        var back = Math.min(tr.len, tr.traveled) / TRACER_SEG;
+        var pos = tr.geo.attributes.position.array;
+        for (var s = 0; s <= TRACER_SEG; s++) {
+          pos[s * 3] = _trHead.x - tr.dir.x * back * s;
+          pos[s * 3 + 1] = _trHead.y - tr.dir.y * back * s;
+          pos[s * 3 + 2] = _trHead.z - tr.dir.z * back * s;
+        }
+        tr.geo.attributes.position.needsUpdate = true;
+        /* последние 20% полёта болт плавно тает (долетел — исчез без щелчка) */
+        var fade = Math.min(1, (tr.total - tr.traveled) / (tr.total * 0.2 + 1e-4));
+        tr.head.material.opacity = (tr._nb > 1 ? Math.min(1, 0.8 * tr._nb) : 0.85) * fade;
+        tr.glow.material.opacity = 0.36 * fade;
+        tr.line.material.opacity = 0.95 * fade;
       }
     }
 
@@ -2519,6 +2737,7 @@ window.BrixGameWorld = (function () {
         raycaster.set(camera.position, sampleSpreadDir(fwd, currentSpread()));
         raycaster.far = SHOOT_RANGE;
         var end = null, victimId = null, endD = Infinity;
+        var botVictim = null;   // ✅ v0.4.65: попал в БОТА арены
         if (pids.length) {
           var ph = raycaster.intersectObjects(pids, true);
           if (ph.length) {
@@ -2539,6 +2758,18 @@ window.BrixGameWorld = (function () {
           end = blk.p;
           endD = blk.d;
         }
+        /* ✅ v0.4.65 ПВП-АРЕНА: стены/ящики/платформа арены останавливают
+           пулю, боты «ПОЛИГОНА» принимают урон (в голову — крит) */
+        if (pvpMode && window.BrixArena && BrixArena.isBuilt()) {
+          var ablk = BrixArena.bulletBlock(camera.position, raycaster.ray.direction, SHOOT_RANGE);
+          if (ablk && ablk.d < endD) { victimId = null; end = ablk.p; endD = ablk.d; }
+          var bh = BrixArena.botHit(camera.position, raycaster.ray.direction, SHOOT_RANGE);
+          if (bh && bh.d < endD) {
+            victimId = null;
+            end = bh.point; endD = bh.d;
+            botVictim = bh;
+          }
+        }
         if (!end && terrain) {
           var th = raycaster.intersectObject(terrain, false);
           if (th.length) {
@@ -2551,8 +2782,17 @@ window.BrixGameWorld = (function () {
             : camera.position.clone()
                 .addScaledVector(raycaster.ray.direction, SHOOT_RANGE);
         }
-        var mz = muzzleWorldPos(new THREE.Vector3());
-        addTracer(mz, end);
+        /* ✅ v0.4.57: трассер из РЕАЛЬНОГО дульного среза (hands.muzzleWorld)
+           и свой облик для каждого оружия; чужим игрокам шлём событие
+           trc (внешнее дуло ≈ у груди стрелка — так его видят другие) */
+        var trKind = isTp ? 'tp' : isAk ? 'ak' : isR3 ? 'rev3' : 'rev';
+        try {
+          var mz = hands.muzzleWorld(new THREE.Vector3()) ||
+                   muzzleWorldPos(new THREE.Vector3());
+          addTracer(mz, end, trKind);
+        } catch (e) { console.log('[TRC] ERROR: ' + e.message); }
+        var extMz = muzzleWorldPos(new THREE.Vector3());
+        BrixNet.sendTracer(extMz, end, trKind);
         if (victimId) {
           // ✅ v0.4.21: у калаша свой урон AK_DMG (у револьвера REV_DMG)
           // ✅ v0.4.35: у томпсона свой TP_DMG
@@ -2567,9 +2807,27 @@ window.BrixGameWorld = (function () {
           var shotBase = isTp ? TP_DMG : isAk ? AK_DMG : isR3 ? RV3X_DMG : REV_DMG;
           var shotDmg = dmgByZone(shotBase, shotZone);
           var shotWpn = isTp ? 'thompson' : isAk ? 'ak' : isR3 ? 'rev3x' : 'revolver';
-          BrixNet.sendPhit(victimId, shotDmg, 'shot', shotWpn,   // сервер решает ХП
-            shotZone === 'head' ? 1 : 0);
-          if (window.BrixHitmarker) BrixHitmarker.show(shotZone, { big: shotZone === 'head' });
+          /* ✅ v0.4.62: урон и хит-маркер — КОГДА ПУЛЯ ДОЛЕТЕЛА
+             (время = дистанция / скорость пули, синхронно с трассером) */
+          var hitDelay = endD / (TRACER_CFG[trKind] || TRACER_CFG.rev).spd;
+          scheduleHit(hitDelay, function () {
+            if (dead) return;                    // стрелок умер — попадание не уходит
+            BrixNet.sendPhit(victimId, shotDmg, 'shot', shotWpn,   // сервер решает ХП
+              shotZone === 'head' ? 1 : 0);
+            if (window.BrixHitmarker) BrixHitmarker.show(shotZone, { big: shotZone === 'head' });
+          });
+        } else if (botVictim) {
+          /* ✅ v0.4.65: урон БОТУ — локальный (боты живут у каждого игрока
+             свои): зоны как у игроков — в голову полный, в тело половина */
+          var bvShot = isTp ? TP_DMG : isAk ? AK_DMG : isR3 ? RV3X_DMG : REV_DMG;
+          var bvZone = botVictim.hs ? 'head' : 'body';
+          var bvDmg = dmgByZone(bvShot, bvZone);
+          var bvBot = botVictim.bot;
+          scheduleHit(endD / (TRACER_CFG[trKind] || TRACER_CFG.rev).spd, function () {
+            if (dead) return;
+            BrixArena.damageBot(bvBot, bvDmg, botVictim.hs);
+            if (window.BrixHitmarker) BrixHitmarker.show(bvZone, { big: bvZone === 'head' });
+          });
         }
       } else {
         /* — ДРОБЬ дробовика (v0.4.19): 8 дробин конусом SG_SPREAD.
@@ -2587,6 +2845,11 @@ window.BrixGameWorld = (function () {
           ? BrixBuilding.bulletBlock(camera.position, fwd, SHOOT_RANGE)
           : null;
         var capD = blkS ? blkS.d : SHOOT_RANGE;
+        /* ✅ v0.4.65: стены арены ограничивают дальность дроби */
+        if (pvpMode && window.BrixArena && BrixArena.isBuilt()) {
+          var ablkS = BrixArena.bulletBlock(camera.position, fwd, SHOOT_RANGE);
+          if (ablkS && ablkS.d < capD) capD = ablkS.d;
+        }
         if (terrain) {
           raycaster.set(camera.position, fwd);
           raycaster.far = SHOOT_RANGE;
@@ -2597,7 +2860,10 @@ window.BrixGameWorld = (function () {
           }
         }
         var hits = {};      // vpid -> { hd, bd, hp, bp } — урон/дробины по зонам
-        var mzS = muzzleWorldPos(new THREE.Vector3());
+        var botHits = {};   // ✅ v0.4.65: дробина в бота — botIdx -> {d, hd, bd, hs, bot}
+        /* ✅ v0.4.57: дробь летит из РЕАЛЬНОГО дула ствола (было — точка у камеры) */
+        var mzS = hands.muzzleWorld(new THREE.Vector3()) ||
+                  muzzleWorldPos(new THREE.Vector3());
         var pelletSpread = SG_SPREAD + currentSpread() * 0.35;
         for (var pi = 0; pi < SG_PELLETS; pi++) {
           var pdir = sampleSpreadDir(fwd, pelletSpread);
@@ -2614,7 +2880,8 @@ window.BrixGameWorld = (function () {
                 var pzone = hitZone(vp, remotes[vpid]);
                 var pdmg = sgPelletDmg(camera.position.distanceTo(vp), pzone);
                 if (pdmg > 0) {
-                  if (!hits[vpid]) hits[vpid] = { hd: 0, bd: 0, hp: 0, bp: 0 };
+                  if (!hits[vpid]) hits[vpid] = { hd: 0, bd: 0, hp: 0, bp: 0,
+                    d: camera.position.distanceTo(vp) };   // ✅ v0.4.62: дистанция — время полёта дроби
                   if (pzone === 'head') { hits[vpid].hd += pdmg; hits[vpid].hp++; }
                   else { hits[vpid].bd += pdmg; hits[vpid].bp++; }
                 }
@@ -2622,8 +2889,31 @@ window.BrixGameWorld = (function () {
             }
           }
           var ep = vp || camera.position.clone().addScaledVector(pdir, capD);
-          if (pi < 4) addTracer(mzS, ep);   // трассеры только у половины дробин — читаемо и не дорого
+          /* ✅ v0.4.65: дробина в БОТА арены (ближайший по лучу) */
+          if (pvpMode && window.BrixArena && BrixArena.isBuilt()) {
+            var pbh = BrixArena.botHit(camera.position, pdir, capD);
+            if (pbh) {
+              var bi2 = BrixArena.getBots().indexOf(pbh.bot);
+              if (bi2 >= 0) {
+                if (!botHits[bi2]) botHits[bi2] = { bot: pbh.bot, d: pbh.d, hd: 0, bd: 0, hs: 0 };
+                var pdmgB = sgPelletDmg(camera.position.distanceTo(pbh.point), pbh.hs ? 'head' : 'body');
+                if (pdmgB > 0) {
+                  if (pbh.hs) { botHits[bi2].hd += pdmgB; botHits[bi2].hs++; }
+                  else botHits[bi2].bd += pdmgB;
+                  ep = pbh.point;
+                }
+              }
+            }
+          }
+          /* ✅ v0.4.57: трассеры дробин — тоже из РЕАЛЬНОГО дула, свой облик
+             'sg' (медленнее, короче, тусклее пули); у половины дробин —
+             читаемо и не дорого */
+          if (pi < 4) addTracer(mzS, ep, 'sg');
         }
+        /* ✅ v0.4.57: чужим игрокам — ОДНО событие трассера дробовика
+           (центральный луч по capD; на их стороне он распадётся на 3 болта) */
+        BrixNet.sendTracer(mzS,
+          camera.position.clone().addScaledVector(fwd, capD), 'sg');
         for (var hv in hits) {
           var vH = hits[hv];
           var vTotal = vH.hd + vH.bd;
@@ -2631,10 +2921,29 @@ window.BrixGameWorld = (function () {
           // ✅ v0.4.28: + 'shotgun' — в меню смерти жертвы (как в Rust)
           // ✅ v0.4.40: + hs — «В ГОЛОВУ» в меню смерти (≥2 дробины в голову)
           var sgHs = vH.hp >= 2 ? 1 : 0;
-          BrixNet.sendPhit(hv, Math.round(vTotal * 10) / 10, 'shot', 'shotgun', sgHs);
-          if (window.BrixHitmarker) {
-            BrixHitmarker.show(sgHs ? 'head' : 'body', { big: sgHs === 1 && vH.hp >= 3 });
-          }
+          /* ✅ v0.4.62: дробь тоже летит — урон по времени полёта до жертвы */
+          (function (vid, tot, hs, big, dist) {
+            scheduleHit(dist / TRACER_CFG.sg.spd, function () {
+              if (dead) return;
+              BrixNet.sendPhit(vid, tot, 'shot', 'shotgun', hs);
+              if (window.BrixHitmarker) {
+                BrixHitmarker.show(hs ? 'head' : 'body', { big: big });
+              }
+            });
+          })(hv, Math.round(vTotal * 10) / 10, sgHs, sgHs === 1 && vH.hp >= 3, vH.d || 0);
+        }
+        /* ✅ v0.4.65: урон ботам от дроби — копился по каждому боту */
+        for (var bhK in botHits) {
+          var bH = botHits[bhK];
+          var bTot = bH.hd + bH.bd;
+          if (bTot <= 0) continue;
+          (function (bBot, tot, hs, dist) {
+            scheduleHit(dist / TRACER_CFG.sg.spd, function () {
+              if (dead) return;
+              BrixArena.damageBot(bBot, tot, hs > 0);
+              if (window.BrixHitmarker) BrixHitmarker.show(hs ? 'head' : 'body', { big: hs >= 3 });
+            });
+          })(bH.bot, Math.round(bTot * 10) / 10, bH.hs, bH.d || 0);
         }
       }
     }
@@ -3324,10 +3633,13 @@ window.BrixGameWorld = (function () {
           // ✅ fix v0.4.20: страховка от mag = undefined/NaN (старые слоты огнестрела)
           if (s && (typeof s.mag !== 'number' || isNaN(s.mag))) s.mag = 0;
           if (s && s.mag < gunMagSize()) {
-            var have = inventory.countItem(gunAmmoId());
+            /* ✅ v0.4.64 ПВП-АРЕНА: патроны БЕСКОНЕЧНЫЕ — обойма заправляется
+               полностью, запас НЕ тратится (но перезарядка занимает своё
+               время, как в выживании) */
+            var have = pvpMode ? 999 : inventory.countItem(gunAmmoId());
             var need = Math.min(gunMagSize() - s.mag, have);
             if (need > 0) {
-              inventory.removeCountByItem(gunAmmoId(), need);
+              if (!pvpMode) inventory.removeCountByItem(gunAmmoId(), need);
               s.mag += need;
               inventory.renderAll();
             }
@@ -3336,6 +3648,10 @@ window.BrixGameWorld = (function () {
       }
       if (syrCd > 0) syrCd -= dt;   // ✅ v0.4.46: кулдаун шприца
       tickTracers(dt);
+      /* ✅ v0.4.65 ПВП-АРЕНА: боты ходят/стреляют, эффекты живут */
+      if (pvpMode && window.BrixArena && BrixArena.isBuilt()) {
+        BrixArena.tick(dt, camera);
+      }
       tickC4(dt);          // ✅ v0.4.41: полёт/тыки/взрывы С4
       tickDebris(dt);      // ✅ v0.4.43: обломки разрушенных построек
       if (window.BrixCorpses) BrixCorpses.tick(dt);   // ✅ v0.4.43: пульс колец трупов
@@ -3400,6 +3716,36 @@ window.BrixGameWorld = (function () {
         };
       };
 
+      /* ✅ v0.4.64 ПВП-РЕАЛМ: сервер brixpvp — мир «Арена «Пепел»»:
+         · СВОЙ сид рельефа (ставится ДО генерации ландшафта);
+         · интерфейс без хотбара/крафта (body.brix-pvp);
+         · E — список всего оружия (BrixPvpWeapons);
+         · патроны бесконечные, перезарядка на месте. */
+      var pvpSrv = (window.BrixData && BrixData.serverById)
+        ? BrixData.serverById(BrixGame.state.serverId) : null;
+      pvpMode = !!(pvpSrv && pvpSrv.mode === 'pvp');
+      window.BRIX_PVP = pvpMode;
+      if (pvpMode) {
+        /* ✅ v0.4.65: арена — ПЛОСКАЯ локация (не рельеф) */
+        window.BRIX_PVP_FLAT = true;
+        window.BRIX_TERRAIN_SEED = 0;
+      } else {
+        window.BRIX_PVP_FLAT = false;
+        window.BRIX_TERRAIN_SEED = 0;
+      }
+      /* ✅ v0.4.66: арена из ПРОШЛОГО мира не должна «переезжать» —
+         сброс (иначе локация/боты невидимы после повторного входа) */
+      if (window.BrixArena) BrixArena.reset();
+      if (window.BrixNet && pvpSrv) BrixNet.useServer(pvpSrv);
+      document.body.classList.toggle('brix-pvp', pvpMode);
+      /* ✅ v0.4.66 ПВП-АРЕНА: ПУСТЫЕ РУКИ — инвентарь (и стартовый
+         набор из конструктора, и вещи BrixLand) на арене не выдаётся */
+      if (pvpMode && window.BrixInventory) {
+        for (var iClr = 0; iClr < inventory.slots.length; iClr++) inventory.slots[iClr] = null;
+        inventory.renderAll();
+        if (inventory._notifySelect) inventory._notifySelect();
+      }
+
       try {
         /* 1 — подключение (короткая сетевая пауза) */
         setStage('load.step.connect', 3);
@@ -3457,14 +3803,23 @@ window.BrixGameWorld = (function () {
           }
         }
 
-        /* 3 — растительность и камни */
+        /* 3 — растительность и камни
+           ✅ v0.4.65 ПВП-АРЕНА: леса/руды/травы НЕТ — вместо них ЛОКАЦИЯ
+           «ПОЛИГОН» (порт из СЕКТОР-9) с коллайдерами и ботами */
         setStage('load.step.flora', 53);
-        decor = await BrixWorld.buildDecor(scene, yieldStage('load.step.flora', 53, 30));
+        if (pvpMode) {
+          decor = { trees: [], ores: { iron: [], sulfur: [], stone: [] },
+            colliders: [], treeMeshes: [], trunkMeshes: [], oreTargets: [],
+            lighthouseBoxes: [], tick: function () {} };   // пустой стаб: арена вместо леса
+          if (window.BrixArena) BrixArena.build(scene);
+        } else {
+          decor = await BrixWorld.buildDecor(scene, yieldStage('load.step.flora', 53, 30));
+        }
 
         /* ✅ v0.4.38 ЕДИНСТВЕННАЯ ГРУНТОВАЯ ДОРОГА — лента по рельефу
            (маршрут проверен по heightAt: без воды и снега; см. road.js).
            Деревья/трава её уже обошли (world.js спрашивает BrixRoad.near) */
-        if (window.BrixRoad) {
+        if (window.BrixRoad && !pvpMode) {   /* ✅ v0.4.65: на арене дороги нет */
           try {
             var road = BrixRoad.build(scene, T);
             /* ✅ v0.4.44 ФИКС: раньше пушлась САМА функция road.dispose —
@@ -3635,6 +3990,10 @@ window.BrixGameWorld = (function () {
           try { applyPlayerSave(); } catch (e) {}   // мир уже готов — применить сразу
         }
         function applyPlayerSave() {
+          /* ✅ v0.4.66 ПВП-АРЕНА: сохранение игрока (позиция + инвентарь
+             BrixLand) на арену НЕ применяется — спавн ПРЯМО В ЛОКАЦИИ,
+             в руках НИЧЕГО нет (ни каменного топора, ни факела) */
+          if (pvpMode) { savedP = null; saveRestored = true; return; }
           if (!savedP || saveRestored || !spawnPoint) return;
           var sv = savedP;
           savedP = null;
@@ -3671,6 +4030,10 @@ window.BrixGameWorld = (function () {
                 /* обойма возвращается вместе с оружием (1–30/6/2 по типу) */
                 var magMax = { revolver: 6, shotgun: 2, rifle: 30, smg: 30, rev3x: 6 }[def.tool];
                 if (magMax) slot.mag = Math.max(0, Math.min(magMax, Math.floor(Number(e.mag) || 0)));
+                /* ✅ v0.4.60: скин слота («костюм») возвращается из сохранения */
+                if (e.sk && window.BrixWeaponSkins && BrixWeaponSkins.isSkinned(e.sk)) {
+                  slot.skin = e.sk;
+                }
                 I.slots[i] = slot;
               }
               I.renderAll();
@@ -3689,10 +4052,10 @@ window.BrixGameWorld = (function () {
                   for (var tj = 0; tj < I.slots.length; tj++) {
                     if (!I.slots[tj]) {
                       I.slots[tj] = { item: BrixItems.torch, count: 1 };
-                      I.renderAll();
                       break;
                     }
                   }
+                  I.renderAll();
                 }
               } catch (eTk) {}
             }
@@ -3713,7 +4076,9 @@ window.BrixGameWorld = (function () {
             var inv = [];
             for (var i = 0; i < inventory.slots.length; i++) {
               var s2 = inventory.slots[i];
-              if (s2 && s2.item) inv.push({ id: s2.item.id, n: s2.count, mag: s2.mag || 0 });
+              if (s2 && s2.item) inv.push({ id: s2.item.id, n: s2.count, mag: s2.mag || 0,
+                /* ✅ v0.4.60: скин слота возвращается из сохранения */
+                sk: s2.skin || undefined });
             }
             BrixNet.send({ t: 'psave',
               x: Math.round(controls.position.x * 100) / 100,
@@ -3735,24 +4100,32 @@ window.BrixGameWorld = (function () {
           // РОСТЕР: создаём ВСЕХ игроков, которые уже были в мире
           (msg.players || []).forEach(function (p) {
             var rp = ensureRemote(p.id, p.n);
-            if (p.s) rp.update(0, { x: p.s.x, y: p.s.y, z: p.s.z, yaw: p.s.yaw, a: p.s.a, tool: p.s.tool, ph: p.s.ph || 0, c: p.s.c || 0 });
+            if (p.s) rp.update(0, { x: p.s.x, y: p.s.y, z: p.s.z, yaw: p.s.yaw, a: p.s.a, tool: p.s.tool, si: p.s.si || '', ph: p.s.ph || 0, c: p.s.c || 0 });
             // ✅ v0.4.5: здоровье игрока (полоска над головой)
             if (p.hp !== undefined && p.hp !== null) rp.setHp(p.hp);
           });
           if (msg.world) applyWorldState(msg.world);
+          /* ✅ v0.4.64 ПВП: бесконечный запас патронов — большие стюки
+             всех трёх типов (перезарядка их НЕ тратит, см. блок reload) */
+          if (pvpMode && inventory) {
+            ['ammo', 'shotgunShell', 'rifleBullet'].forEach(function (aid2) {
+              if (inventory.countItem(aid2) < 500) inventory.addItem(aid2, 500);
+            });
+          }
           // ✅ v0.3.6: бочки/чекблоки/дропы (позиции и состояние сервера)
           if (msg.objs) buildObjects(msg.objs);
-          // ✅ v0.4.6: ПОСТРОЙКИ (фундаменты/стены/потолки) — новый игрок
-          //    сразу видит дом; хранятся у сервера в world-objs.json
-          // ✅ v0.4.13: ep — поколение мира (для защиты от «воскрешения»
-          //    постройки, очищенной CLEAR-BUILDS.bat)
-          if (msg.objs && msg.objs.bd && window.BrixBuilding) {
-            BrixBuilding.applySnapshot(msg.objs.bd, msg.objs.ep);
-          }
-          // ✅ v0.4.10: какие замки я уже разгадал (сервер помнит по BRIX-ID,
-          // после перезахода верный код заново не спрашивается)
-          if (msg.objs && msg.objs.dunl && window.BrixBuilding) {
-            BrixBuilding.applyUnl(msg.objs.dunl);
+          /* ✅ v0.4.65 ПВП-АРЕНА: ПОСТРОЙКИ BrixLand на арену НЕ ПРИЕЗЖАЮТ
+             (ни с сервера — у реалма свой пустой bd, ни из локального
+             бэкапа браузера — скип ниже), кодовые замки тоже */
+          if (!pvpMode) {
+            if (msg.objs && msg.objs.bd && window.BrixBuilding) {
+              BrixBuilding.applySnapshot(msg.objs.bd, msg.objs.ep);
+            }
+            // ✅ v0.4.10: какие замки я уже разгадал (сервер помнит по BRIX-ID,
+            // после перезахода верный код заново не спрашивается)
+            if (msg.objs && msg.objs.dunl && window.BrixBuilding) {
+              BrixBuilding.applyUnl(msg.objs.dunl);
+            }
           }
         });
         if (!window.__brixObjLocalInit) {
@@ -3814,7 +4187,7 @@ window.BrixGameWorld = (function () {
           var rp = ensureRemote(msg.id, msg.n);
           // ✅ v0.4.5: возрождение — игрок снова шлёт состояние после смерти
           if (rp.dead) rp.respawn();
-          rp.update(0, { x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw, a: msg.a, tool: msg.tool, ph: msg.ph || 0, c: msg.c || 0 });
+          rp.update(0, { x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw, a: msg.a, tool: msg.tool, si: msg.si || '', ph: msg.ph || 0, c: msg.c || 0 });
         });
         BrixNet.on('hit', applyRemoteHit);
         BrixNet.on('worldReq', function (toId) {
@@ -4069,17 +4442,52 @@ window.BrixGameWorld = (function () {
            какой-то костер и кубики») — на спавне больше ничего не строится */
         setStage('load.step.spawn', 96);
         var spawn = await BrixWorld.findSpawn();
+        /* ✅ v0.4.65: на ПВП-арене игрок появляется в СИНЕЙ ЗОНЕ
+           «ПОЛИГОНА» (локация из СЕКТОР-9), не на точке выживания */
+        if (pvpMode && window.BrixArena && BrixArena.isBuilt()) {
+          var asp = BrixArena.spawnPoint();
+          spawn = new THREE.Vector3(asp.x, asp.y, asp.z);
+        }
         if (cancelled) return;
         setStage('load.step.spawn', 100);
         await nextFrame();
         if (cancelled) return;
 
-        /* спавн игрока: смотрим в сторону дальних гор */
-        var look = new THREE.Vector3(-230, 0, -150);
+        /* спавн игрока: смотрим в сторону дальних гор
+           ✅ v0.4.65: на арене — в сторону центра локации */
+        var look = pvpMode ? new THREE.Vector3(0, 0, 0)
+                           : new THREE.Vector3(-230, 0, -150);
         var dir = look.clone().sub(spawn);
         var yaw = Math.atan2(-dir.x, -dir.z);
         controls.spawnAt(spawn.x, spawn.z, yaw);
         controls.enabled = true;
+        /* ✅ v0.4.65 ПВП-АРЕНА: коллайдеры стен/ящиков/платформы — игрок
+           не проходит сквозь них и ХОДИТ по крышам/ступеням */
+        if (pvpMode && window.BrixArena && BrixArena.isBuilt()) {
+          controls.addBoxColliders(BrixArena.boxes());
+          /* боты «ПОЛИГОНА»: красная команда против игрока — урон
+             ЛОКАЛЬНЫЙ (смерть и респавн — как от падения) */
+          BrixArena.startBots({
+            camera: camera,
+            addTracer: function (from, to, kind) { addTracer(from, to, kind || 'ak'); },
+            getFeet: function () {
+              return { x: controls.position.x,
+                       y: controls.position.y - (controls.eyeH || 1.7),
+                       z: controls.position.z };
+            },
+            isDead: function () { return dead; },
+            onPlayerHit: function (dmg, botName) {
+              if (dead || (window.BrixAdmin && BrixAdmin.god)) return;
+              flashDamage();
+              setMyHp(myHp - dmg);
+              if (myHp <= 0) die('', { botName: botName });
+            },
+            getPlayerSpeed: function () {
+              if (!controls.enabled || !controls._keys || !controls._keys.size) return 0;
+              return (controls._keys.has('ShiftLeft') || controls._keys.has('ShiftRight')) ? 5.6 : 2.6;
+            }
+          });
+        }
         // ✅ v0.4.5: боевая HUD (крестик/ХП/вспышка/окно смерти) + точка возрождения
         spawnPoint = { x: spawn.x, z: spawn.z, yaw: yaw };
         buildCombatHud();
@@ -4115,17 +4523,9 @@ window.BrixGameWorld = (function () {
           });
         }
 
-        /* ✅ v0.4.25 СКИНЫ: смена скина — перерисовать иконки в инвентаре
-           и наложить/снять обёртку на модель в руках (если кирка выбрана) */
-        if (window.BrixWeaponSkins) {
-          BrixWeaponSkins.on(function () {
-            try { inventory.renderForSkin(); } catch (e) {}
-            if (hands && hands.applySkin) {
-              hands.applySkin(hands.currentWeapon === 'ironPickaxe'
-                ? BrixWeaponSkins.wrapFor('ironPickaxe') : null);
-            }
-          });
-        }
+        /* ✅ v0.4.58 СКИНЫ КАК ПРЕДМЕТЫ: подписка BrixWeaponSkins.on(...)
+           больше не нужна — скинутый предмет сам несёт иконку (BrixItems),
+           а обёртку в руках ставит inventory.onSelect → hands.setSkinItem */
 
         /* цикл рендера */
         var clock = new THREE.Clock();
@@ -4269,6 +4669,10 @@ window.BrixGameWorld = (function () {
               yaw: +controls.yaw.toFixed(2),
               a: anim2,
               tool: tool2,
+              /* ✅ v0.4.60: si — id СКИНА в руке ('exkimo'…), чтобы другие
+                 видели обёртку на его модели */
+              si: (sel2 && sel2.skin && window.BrixWeaponSkins &&
+                BrixWeaponSkins.isSkinned(sel2.skin)) ? sel2.skin : '',
               ph: +ph2.toFixed(2),
               /* ✅ v0.4.28: присед едет в состоянии — чужие видят присевшего */
               c: controls.isCrouched ? (controls.isCrouched() ? 1 : 0) : 0,

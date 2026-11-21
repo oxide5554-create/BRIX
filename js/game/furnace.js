@@ -33,9 +33,9 @@ window.BrixFurnace = (function () {
     return lang() === 'en' ? (d.nameEn || d.name) : d.name;
   }
   function itemIcon(id) {
+    /* ✅ v0.4.58: скинутый предмет — отдельный предмет со своей иконкой */
     var d = (window.BrixItems && BrixItems[id]) || {};
-    var sk = window.BrixWeaponSkins ? BrixWeaponSkins.iconFor(id) : null;
-    return sk || d.icon || '';
+    return d.icon || '';
   }
 
   /* ---------- DOM ---------- */

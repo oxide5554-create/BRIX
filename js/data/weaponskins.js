@@ -1,16 +1,18 @@
 // ============================================================
 //  brix • js/data/weaponskins.js
-//  ✅ v0.4.25 СКИНЫ ОРУЖИЯ (первая система скинов на 3D-модели).
-//  Скин = ОБЁРТКА (UV-текстура на модель в руках от 1-го лица)
-//  + ИКОНКА (рендер — показывается в хотбаре/инвентаре/лут-меню).
+//  ✅ v0.4.60 СКИНЫ — КОСТЮМЫ НА АККАУНТЕ.
 //
-//  ВАЖНО (по просьбе игрока): пока скины выдаются ТОЛЬКО через
-//  панель разработчика (клавиша 9) для ТЕСТА. В МАГАЗИН СКИНОВ
-//  (js/data/skins.js, меню игры) скин НЕ добавляется — это потом.
+//  Скин — НЕ предмет: покупается один раз в магазине и хранится
+//  на аккаунте (BrixState.data.ownedSkinIds). В крафт-меню (Q)
+//  жмёшь на ИКОНКУ предмета в превью чертежа → открывается список
+//  всех скинов этого предмета → выбрал → обычный СКАФТ → предмет
+//  создаётся сразу со скином. Скин хранится В СЛОТЕ инвентаря
+//  (slot.skin = id скина) и НИКОГДА не тратится.
 //
-//  Файлы первого скина «Ретро» (от пользователя):
-//    assets/skins/pickaxe_retro_wrap.png  — обёртка (UV-развертка)
-//    assets/icons/skin_pickaxe_retro.png  — иконка (рендер кирки)
+//  Реестр: id СКИНА → обёртка (UV) + доп. карты + иконка.
+//  setSkinItem/wrapFor/getTex работают с id скина и синхронизируются
+//  между игроками полем si (sendState) — как раньше, только id
+//  теперь скиновый. Каталог скинов — js/data/skins.js.
 // ============================================================
 window.BrixWeaponSkins = (function () {
   'use strict';
@@ -18,91 +20,86 @@ window.BrixWeaponSkins = (function () {
   function ax(u) { return window.BrixAsset ? window.BrixAsset(u) : u; }
 
   /* ---------- реестр скинов ----------
-     item — id предмета из BrixItems (skin ложится на ВСЕ экземпляры),
-     wrap — UV-текстура (накладывается на модель в руках),
-     icon — иконка предмета, пока скин надет */
-  var SKINS = [
-    {
-      id: 'pickaxe-retro',
-      item: 'ironPickaxe',
-      name: { ru: 'Кирка «Ретро»', en: 'Pickaxe “Retro”' },
+     ключ = id скина из BrixData.SKINS (skins.js):
+       wrap  — UV-обёртка (накладывается на модель в руках),
+       rough — roughnessMap (если модель поддерживает),
+       metal — metalnessMap (если модель поддерживает),
+       icon  — PNG-рендер скинутого предмета (иконка слота)   */
+  var REG = {
+    /* Револьвер «Экскимо» — шоколадное мороженое (файлы игрока) */
+    exkimo: {
+      wrap:  ax('assets/skins/revolver_exkimo_wrap.png'),
+      rough: ax('assets/skins/revolver_exkimo_roughness.png'),
+      metal: ax('assets/skins/revolver_exkimo_metallic.png'),
+      icon:  ax('assets/icons/skin_revolver_exkimo.png')
+    },
+    /* Томпсон «Леденцовый выстрел» — красно-белая карамель */
+    candy: {
+      wrap: ax('assets/skins/thompson_candy_wrap.png'),
+      icon: ax('assets/icons/skin_thompson_candy.png')
+    },
+    /* С4 «Бомбический подарок» — красные шашки с золотой лентой */
+    gift: {
+      wrap: ax('assets/skins/c4_gift_wrap.png'),
+      icon: ax('assets/icons/skin_c4_gift.png')
+    },
+    /* Каменный топор «Замороженое дерево» — лёд на древке */
+    frozen: {
+      wrap: ax('assets/skins/stone_axe_frozen_wrap.png'),
+      icon: ax('assets/icons/skin_stone_axe_frozen.png')
+    },
+    /* Каменная кирка «Ретро» — оранжево-серый классический окрас */
+    retro: {
       wrap: ax('assets/skins/pickaxe_retro_wrap.png'),
       icon: ax('assets/icons/skin_pickaxe_retro.png')
+    },
+    /* ✅ v0.4.61 Железный топор «Ледяные руны» — лёд со светящимися
+       рунами (арт игрока, развёртка iron_axe.glb) */
+    ice: {
+      wrap: ax('assets/skins/iron_axe_ice_wrap.png'),
+      icon: ax('assets/icons/skin_iron_axe_ice.png')
     }
-  ];
+  };
 
-  /* ---------- надетые скины: itemId -> skinId ----------
-     Хранятся в localStorage: тест-скин не теряется при перезаходе */
-  var LS = 'brixWeaponSkins';
-  var equipped = {};
-  var listeners = [];
+  function def(skinId) { return REG[skinId] || null; }
+  function isSkinned(skinId) { return !!REG[skinId]; }
 
-  function load() {
-    try {
-      var raw = localStorage.getItem(LS);
-      if (raw) {
-        var o = JSON.parse(raw);
-        for (var k in o) {
-          // скин существует и действительно для этого предмета
-          var s = byId(o[k]);
-          if (s && s.item === k) equipped[k] = s.id;
-        }
-      }
-    } catch (e) { /* приватный режим — просто без сохранения */ }
+  /** UV-обёртка скина (или null — обычная модель) */
+  function wrapFor(skinId) {
+    var d = REG[skinId];
+    return d ? d.wrap : null;
   }
 
-  function persist() {
-    try { localStorage.setItem(LS, JSON.stringify(equipped)); } catch (e) {}
+  /** PNG-иконка скинутого предмета (или null — обычная иконка) */
+  function iconFor(skinId) {
+    var d = REG[skinId];
+    return d ? d.icon || null : null;
   }
 
-  function byId(id) {
-    for (var i = 0; i < SKINS.length; i++) if (SKINS[i].id === id) return SKINS[i];
-    return null;
+  /* ---------- кэш текстур (грузятся один раз по адресу) ---------- */
+  var texCache = {};
+  function getTex(url, cb) {
+    if (texCache[url]) { cb(texCache[url]); return; }
+    var loader = new THREE.TextureLoader();
+    loader.load(url, function (tex) {
+      tex.flipY = false; // ✅ v0.4.61 конвенция glTF (как в glb.js) — обёртка не перевёрнута
+      if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 8;
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      texCache[url] = tex;
+      cb(tex);
+    }, undefined, function () {
+      console.warn('[BrixWeaponSkins] текстура не загрузилась: ' + url);
+    });
   }
-
-  function notify() {
-    for (var i = 0; i < listeners.length; i++) {
-      try { listeners[i](); } catch (e) {}
-    }
-  }
-
-  load();
 
   return {
-    /** весь список скинов (админ-панель) */
-    list: function () { return SKINS; },
-    byId: byId,
-    /** скин, надетый на предмет itemId (или null) */
-    equipped: function (itemId) {
-      var id = equipped[itemId];
-      return id ? byId(id) : null;
-    },
-    /** иконка предмета С УЧЁТОМ скина (или null — оставить обычную) */
-    iconFor: function (itemId) {
-      var s = this.equipped(itemId);
-      return s ? s.icon : null;
-    },
-    /** UV-обёртка предмета (или null — обычная модель) */
-    wrapFor: function (itemId) {
-      var s = this.equipped(itemId);
-      return s ? s.wrap : null;
-    },
-    /** надеть скин на его предмет (скины других предметов не трогаем) */
-    setEquip: function (skinId) {
-      var s = skinId ? byId(skinId) : null;
-      if (!s) return null;
-      equipped[s.item] = s.id;
-      persist();
-      notify();
-      return s;
-    },
-    /** снять скин с конкретного предмета */
-    unequipItem: function (itemId) {
-      delete equipped[itemId];
-      persist();
-      notify();
-    },
-    /** подписка на изменения (перерисовать хотбар, наложить текстуру) */
-    on: function (fn) { listeners.push(fn); }
+    /** весь реестр (отладка в консоли) */
+    list: function () { return REG; },
+    def: def,
+    isSkinned: isSkinned,
+    wrapFor: wrapFor,
+    iconFor: iconFor,
+    getTex: getTex
   };
 })();

@@ -2,7 +2,13 @@
 //  brix • js/ui/sidebar.js
 //  Вертикальное меню слева как в референсе:
 //  ИГРАТЬ / СЕРВЕРА / ДРУЗЬЯ / НОВОСТИ / СКИНЫ / НАСТРОЙКИ / ВЫХОД.
-//  Кнопка ИГРАТЬ подключает к последнему серверу.
+//  ✅ v0.4.60: СКИНЫ — магазин костюмов: купил один раз → «КУПЛЕНО» на
+//  аккаунте (в инвентарь ничего не падает). Применение — в крафт-меню
+//  (Q): клик по иконке предмета → список скинов → выбрал → СКАФТ.
+//  ✅ v0.4.64: МАГАЗИН СКИНОВ (вкладка СКИНЫ) — ТОЛЬКО ДЛЯ АДМИНОВ:
+//  обычным игрокам пункт не показывается. Админ определяется по
+//  adminIds из /status (admins.json сервера) или по adminon в игре.
+//  ИГРАТЬ подключает к последнему серверу (по умолчанию BrixLand).
 // ============================================================
 window.BrixSidebar = (function () {
   'use strict';
@@ -12,10 +18,17 @@ window.BrixSidebar = (function () {
     { key: 'servers', labelKey: 'menu.servers' },
     { key: 'friends', labelKey: 'menu.friends' },
     { key: 'news',    labelKey: 'menu.news', badge: true },
-    { key: 'skins',   labelKey: 'menu.skins' },
+    { key: 'skins',   labelKey: 'menu.skins', adminOnly: true },  // ✅ v0.4.64
     { key: 'options', labelKey: 'menu.options' },
     { key: 'quit',    labelKey: 'menu.quit' }
   ];
+
+  var lastNav = null;   // для перерисовки, когда придёт статус админа
+
+  function isAdmin() {
+    return !!(window.BrixFriends && BrixFriends.isAdminAccount &&
+      BrixFriends.isAdminAccount());
+  }
 
   function onItem(key) {
     var S = BrixState.data;
@@ -26,8 +39,11 @@ window.BrixSidebar = (function () {
     }
     if (key === 'play') {
       // ИГРАТЬ = подключение к последнему серверу
+      // (✅ v0.4.64: по умолчанию — BrixLand из списка серверов)
       menuAudio.click();
-      var serverId = S.lastServerId || BrixData.ADMIN_SERVER.id;
+      var serverId = S.lastServerId ||
+        (BrixData.SERVERS && BrixData.SERVERS[0] && BrixData.SERVERS[0].id) ||
+        BrixData.ADMIN_SERVER.id;
       BrixState.setLastServer(serverId);
       BrixGame.connect(serverId);
       return;
@@ -38,6 +54,7 @@ window.BrixSidebar = (function () {
   }
 
   function render(nav) {
+    lastNav = nav;
     var S = BrixState.data;
     var unseen = Math.max(0, BrixData.NEWS.length - S.newsSeenIds.length);
 
@@ -45,6 +62,8 @@ window.BrixSidebar = (function () {
     var ul = nav.querySelector('ul');
 
     ITEMS.forEach(function (it) {
+      /* ✅ v0.4.64: магазин скинов скрыт у НЕ-админов */
+      if (it.adminOnly && !isAdmin()) return;
       var li = document.createElement('li');
       var btn = document.createElement('button');
       var active = it.key !== 'play' && it.key !== 'quit' && S.screen === it.key;
@@ -58,6 +77,12 @@ window.BrixSidebar = (function () {
       ul.appendChild(li);
     });
   }
+
+  /* статус админа приходит АСИНХРОННО (/status каждые 3 с) — как только
+     появился, перерисовываем меню, чтобы админ увидел вкладку СКИНЫ */
+  window.addEventListener('brix-social', function () {
+    if (lastNav && document.body.contains(lastNav)) render(lastNav);
+  });
 
   return { render: render };
 })();

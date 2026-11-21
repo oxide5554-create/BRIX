@@ -225,6 +225,27 @@
 .balance-chip .val { font-family: 'Oswald', sans-serif; font-size: 14px; color: var(--ember); }
 .balance-chip .cap { font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); }
 
+/* ✅ v0.4.60: маркер «КУПЛЕНО» на карточке скина в магазине */
+.owned-mark {
+  position: absolute; left: 50%; top: 12px; transform: translateX(-50%);
+  padding: 3px 10px 4px; font-size: 10px; letter-spacing: .14em;
+  color: #9fd97f; background: rgba(127, 174, 98, .14);
+  border: 1px solid rgba(127, 174, 98, .5); border-radius: 3px;
+  z-index: 2;
+}
+.skin-card.owned .icon-area img { filter: drop-shadow(0 6px 10px rgba(0,0,0,0.5)) saturate(.92); }
+.skin-card.owned .foot .btn-rust-primary { opacity: .6; cursor: default; }
+
+/* ✅ v0.4.60 подсказка магазина скинов: костюм на аккаунте,
+   применяется в крафт-меню кликом по иконке предмета */
+.skins-hint {
+  margin: 0 auto 10px; max-width: 640px; text-align: center;
+  font: 12px RobotoCondensed, Arial Narrow, sans-serif;
+  color: rgba(255, 255, 255, .55);
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 6px; padding: 8px 12px;
+}
 .skins-tabs { margin-bottom: 20px; display: flex; flex-wrap: wrap; gap: 8px; }
 .skins-tabs button {
   border: 1px solid rgba(255, 255, 255, 0.1);

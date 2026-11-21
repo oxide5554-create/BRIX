@@ -207,6 +207,15 @@ window.BrixItems = {
     id: 'berdanaBody', name: 'Корпус берданки', nameEn: 'Berdana Body',
     icon: BrixAx('assets/icons/berdana_body.png'), stackable: true, stack: 100
   }
+  /* ============================================================
+     ✅ v0.4.60 СКИНЫ — КОСТЮМЫ НА АККАУНТЕ, НЕ ПРЕДМЕТЫ. Скин
+     покупается один раз в магазине (монеты) и хранится на аккаунте
+     (BrixState.data.ownedSkinIds). В крафт-меню жмёшь на иконку
+     предмета → список скинов → выбрал → СКАФТ → предмет создаётся
+     со скином. Скин живёт В СЛОТЕ (slot.skin = id скина), иконку
+     и обёртку берёт из BrixWeaponSkins/BrixData.SKINS — отдельных
+     предметов-скинов и вариантных предметов больше НЕТ.
+     ============================================================ */
 };
 
 window.BrixInventory = (function () {
@@ -223,17 +232,37 @@ window.BrixInventory = (function () {
     return BrixState.data.lang === 'en' ? (item.nameEn || item.name) : item.name;
   }
 
+  /** имя СЛОТА с учётом скина: «Револьвер» или
+   *  «Револьвер — Револьвер «Экскимо»» (скин — костюм на аккаунте,
+   *  хранится в slot.skin, предмет остаётся базовым) */
+  function slotName(slot) {
+    if (!slot || !slot.item) return '';
+    var base = langName(slot.item);
+    if (!slot.skin) return base;
+    var sk = (window.BrixData && BrixData.skinById) ? BrixData.skinById(slot.skin) : null;
+    if (!sk) return base;
+    var nm = BrixState.data.lang === 'en' ? (sk.name.en || sk.name.ru) : sk.name.ru;
+    return base + ' — ' + nm;
+  }
+
+  /** иконка СЛОТА: у скинутого — PNG-рендер скина (см. weaponskins.js) */
+  function slotIcon(slot) {
+    if (slot && slot.skin && window.BrixWeaponSkins) {
+      var sic = BrixWeaponSkins.iconFor(slot.skin);
+      if (sic) return sic;
+    }
+    return (slot && slot.item) ? slot.item.icon : '';
+  }
+
   /** иконка предмета — img на весь слот (как renderIcon в репозитории)
-   *  ✅ v0.4.25: если на предмет надет СКИН (панель разработчика) —
-   *  в слоте показывается ИКОНКА СКИНА (рендер от пользователя) */
-  function renderIcon(item) {
+   *  ✅ v0.4.60: skin — id скина слота; иконка скина перекрывает базовую */
+  function renderIcon(item, skin) {
     if (!item) return '';
     var icon = item.icon;
-    try {
-      if (window.BrixWeaponSkins) {
-        icon = BrixWeaponSkins.iconFor(item.id) || icon;
-      }
-    } catch (e) {}
+    if (skin && window.BrixWeaponSkins) {
+      var sic = BrixWeaponSkins.iconFor(skin);
+      if (sic) icon = sic;
+    }
     if (icon) {
       return '<img src="' + icon + '" alt="' + langName(item) + '" draggable="false">' +
         '<i class="bx-icon-fallback"></i>';
@@ -258,9 +287,13 @@ window.BrixInventory = (function () {
     //    добывается и крафтится (план строителя — крафт «5 дерева»)
     // ✅ v0.4.53 ФАКЕЛ в СЛОТЕ 1 (просьба игрока: держать факел клавишей 1,
     //    как топор): топор и кирка сдвинулись на слоты 2 и 3
-    this.slots[0] = { item: BrixItems.torch, count: 1 };
-    this.slots[1] = { item: BrixItems.stoneAxe, count: 1 };
-    this.slots[2] = { item: BrixItems.stonePickaxe, count: 1 };
+    /* ✅ v0.4.66 ПВП-АРЕНА: стартовый набор (факел/топор/кирка) в
+       конструкторе НЕ выдаётся — на арене инвентарь ПУСТОЙ */
+    if (!window.BRIX_PVP) {
+      this.slots[0] = { item: BrixItems.torch, count: 1 };
+      this.slots[1] = { item: BrixItems.stoneAxe, count: 1 };
+      this.slots[2] = { item: BrixItems.stonePickaxe, count: 1 };
+    }
 
     this._mount();
     this._bind();
@@ -324,6 +357,7 @@ window.BrixInventory = (function () {
       /* ✅ fix 0.4.12: открыт кодовый замок/перелаз — цифры ВВОДЯТ КОД,
          а не переключают слоты хотбара (иначе код «1234» дёргал слоты) */
       if (!self.isOpen && e.code.indexOf('Digit') === 0 &&
+          !window.BRIX_PVP &&   /* ✅ v0.4.65: на арене цифры 1–6 НЕ работают */
           !(window.BrixBuilding && BrixBuilding.isUiBlocked && BrixBuilding.isUiBlocked())) {
         var n = parseInt(e.code.replace('Digit', ''), 10);
         if (n >= 1 && n <= HOTBAR_SIZE) { self.select(n - 1); return; }
@@ -335,6 +369,13 @@ window.BrixInventory = (function () {
         // ✅ v0.4.25: крафт-панель (Q) открыта — E не открывает инвентарь
         if (window.BrixCraft && BrixCraft.isOpen()) return;
         if (window.BrixMiniMenu && BrixMiniMenu.isAnyOpen()) return;
+        /* ✅ v0.4.64 ПВП-АРЕНА: E открывает СПИСОК ОРУЖИЯ (инвентаря
+           на арене нет — только бой) */
+        if (window.BRIX_PVP && window.BrixPvpWeapons) {
+          e.preventDefault();
+          BrixPvpWeapons.toggle();
+          return;
+        }
         e.preventDefault();
         self.toggle();
         return;
@@ -361,7 +402,14 @@ window.BrixInventory = (function () {
     this.activeSlot = index;
     this.renderHotbar();
     var slot = this.slots[index];
-    if (this.onSelect) this.onSelect(slot ? slot.item : null, index);
+    /* ✅ v0.4.60: третьим аргументом — СКИН слота (обёртка в руках) */
+    if (this.onSelect) this.onSelect(slot ? slot.item : null, index, slot ? (slot.skin || null) : null);
+  };
+
+  /* ✅ v0.4.60: выбранный СЛОТ целиком (item + skin) — нужно gameworld
+     для синхронизации обёртки другим игрокам и psave */
+  Inventory.prototype.getSelectedSlot = function () {
+    return this.slots[this.activeSlot] || null;
   };
 
   /* ✅ v0.4.9: equipPlan/isPlanEquipped удалены — план строителя теперь
@@ -374,11 +422,16 @@ window.BrixInventory = (function () {
 
   /* ✅ v0.4.54 СИНХРОНИЗАЦИЯ ПАТРОНОВ: обоймы у оружия теперь ПЕРЕЖИВАЮТ
      смерть/лут трупа/сохранение. addItem принимает ТРЕТИЙ параметр mag —
-     сколько патронов в обойме у добавляемого ствола (0 — как раньше) */
+     сколько патронов в обойме у добавляемого ствола (0 — как раньше)
+     ✅ v0.4.60 СКИНЫ: ЧЕТВЁРТЫЙ параметр skin — id скина («костюма»).
+     Скинутые стакаются ТОЛЬКО с одинаковым скином (С4 «Бомбический
+     подарок» не смешивается с обычной С4); у нестакуемого каждый
+     ствол — свой слот со своим slot.skin */
   Inventory.GUN_MAG_MAX = { revolver: 6, shotgun: 2, rifle: 30, smg: 30, rev3x: 6 };
 
-  Inventory.prototype.addItem = function (itemId, count, mag) {
+  Inventory.prototype.addItem = function (itemId, count, mag, skin) {
     count = count || 1;
+    skin = skin || null;
     var item = BrixItems[itemId];
     if (!item) return false;
     var changed = false;
@@ -394,7 +447,7 @@ window.BrixInventory = (function () {
         var to = pass === 0 ? HOTBAR_SIZE : this.slots.length;
         for (var i = from; i < to && count > 0; i++) {
           var s = this.slots[i];
-          if (s && s.item.id === itemId && s.count < item.stack) {
+          if (s && s.item.id === itemId && (s.skin || null) === skin && s.count < item.stack) {
             var add = Math.min(item.stack - s.count, count);
             s.count += add; count -= add; changed = true;
           }
@@ -417,6 +470,8 @@ window.BrixInventory = (function () {
              БЕЗ mag — перезарядка считала «2 − undefined = NaN» и обойма
              не заполнялась, сколько патронов ни было в запасе */
           this.slots[j] = { item: item, count: put };
+          /* ✅ v0.4.60: скин-«костюм» прикрепляется к слоту */
+          if (skin) this.slots[j].skin = skin;
           /* ✅ v0.4.35: томпсон (tool 'smg') тоже с обоймой */
           /* ✅ v0.4.36: револьвер-карабин (tool 'rev3x') — тоже */
           if (item.tool === 'revolver' || item.tool === 'shotgun' ||
@@ -453,10 +508,12 @@ window.BrixInventory = (function () {
     var a = idxOf(source), b = idxOf(target);
     if (a === b) return;
     var A = this.slots[a], B = this.slots[b];
-    // ✅ v0.4.8: план строителя больше не закреплён — его можно перетащить
-    // в хотбар и обратно, на его слот можно положить другой предмет
-    // (в ящик план класть по-прежнему нельзя — см. lootmenu.js)
-    if (A && B && A.item.id === B.item.id && B.item.stackable) {
+    /* ✅ v0.4.8: план строителя больше не закреплён — его можно перетащить
+       в хотбар и обратно, на его слот можно положить другой предмет
+       (в ящик план класть по-прежнему нельзя — см. lootmenu.js)
+       ✅ v0.4.60: скинутые стаканы не смешиваются с обычными */
+    if (A && B && A.item.id === B.item.id && B.item.stackable &&
+        (A.skin || null) === (B.skin || null)) {
       var space = B.item.stack - B.count;
       var move = Math.min(space, A.count);
       B.count += move; A.count -= move;
@@ -470,25 +527,28 @@ window.BrixInventory = (function () {
 
   Inventory.prototype._notifySelect = function () {
     // после изменений пересылаем выбранный предмет (например, топор убрали)
+    // ✅ v0.4.60: третьим аргументом идёт СКИН слота (костюм в руках)
     if (this.onSelect) {
       var slot = this.slots[this.activeSlot];
-      this.onSelect(slot ? slot.item : null, this.activeSlot);
+      this.onSelect(slot ? slot.item : null, this.activeSlot, slot ? (slot.skin || null) : null);
     }
   };
 
 
   /* ✅ v0.4.2: сколько штук предмета МОЖНО вместить прямо сейчас
      (свободные стеки + пустые слоты). Нужно ДО отправки взятия из
-     ящика — раньше предмет «исчезал», если слоты были заняты */
-  Inventory.prototype.freeSpaceFor = function (itemId) {
+     ящика — раньше предмет «исчезал», если слоты были заняты
+     ✅ v0.4.60: skin — скинутые стакаются только с таким же скином */
+  Inventory.prototype.freeSpaceFor = function (itemId, skin) {
     var item = BrixItems[itemId];
     if (!item) return 0;
+    skin = skin || null;
     var space = 0;
     var i, s;
     if (item.stackable) {
       for (i = 0; i < this.slots.length; i++) {
         s = this.slots[i];
-        if (s && s.item.id === itemId && s.count < item.stack) space += item.stack - s.count;
+        if (s && s.item.id === itemId && (s.skin || null) === skin && s.count < item.stack) space += item.stack - s.count;
       }
     }
     for (i = 0; i < this.slots.length; i++) {
@@ -539,7 +599,7 @@ window.BrixInventory = (function () {
     var inner = '';
     var isPlan = !!(slot && slot.item.tool === 'plan');
     if (slot) {
-      inner += renderIcon(slot.item);
+      inner += renderIcon(slot.item, slot.skin);
       // ✅ v0.3.3: количество В УГЛУ СЛОТА вернули (12 дерева)
       if (slot.item.stackable && slot.count > 1) {
         inner += '<span class="bx-count">' + slot.count + '</span>';
@@ -564,7 +624,7 @@ window.BrixInventory = (function () {
         ? (BrixState.data.lang === 'en'
           ? 'Building Plan — drag into the hotbar (slot 1–6) and select it · Z: build menu'
           : 'План строителя — перетащи в хотбар (слот 1–6) и выбери его · Z: меню стройки')
-        : langName(slot.item);
+        : slotName(slot);   // ✅ v0.4.60: имя с учётом скина слота
     }
     div.innerHTML = inner;
 
@@ -683,14 +743,27 @@ window.BrixInventory = (function () {
 
   /* ================= всплывающая добыча ================= */
 
-  Inventory.prototype.showPickup = function (itemId, count) {
+  /* ✅ v0.4.60: skin — у скинутого показываем иконку скина и его имя */
+  Inventory.prototype.showPickup = function (itemId, count, skin) {
     var item = BrixItems[itemId];
     if (!item || !this.dom) return;
+    var icon = item.icon;
+    var nm = BrixState.data.lang === 'en' ? (item.nameEn || item.name) : item.name;
+    if (skin) {
+      if (window.BrixWeaponSkins) {
+        var sic = BrixWeaponSkins.iconFor(skin);
+        if (sic) icon = sic;
+      }
+      if (window.BrixData && BrixData.skinById) {
+        var sk = BrixData.skinById(skin);
+        if (sk) nm = BrixState.data.lang === 'en' ? (sk.name.en || sk.name.ru) : sk.name.ru;
+      }
+    }
     var el = document.createElement('div');
     el.className = 'bx-pickup';
     el.innerHTML =
-      '<img src="' + item.icon + '" alt="">' +
-      '<span>+' + count + ' ' + (BrixState.data.lang === 'en' ? (item.nameEn || item.name) : item.name) + '</span>';
+      '<img src="' + icon + '" alt="">' +
+      '<span>+' + count + ' ' + nm + '</span>';
     var host = this.dom.pickups;
     host.appendChild(el);
     setTimeout(function () { el.classList.add('out'); }, 1100);
@@ -704,12 +777,6 @@ window.BrixInventory = (function () {
     window.removeEventListener('wheel', this._onWheel);
     if (this.dom && this.dom.root.parentNode) this.dom.root.parentNode.removeChild(this.dom.root);
     this.dom = null;
-  };
-
-  /* ✅ v0.4.25: смена скина — перерисовать хотбар/рюкзак (иконки)
-     (подписку ставит gameworld.js: BrixWeaponSkins.on(...)) */
-  Inventory.prototype.renderForSkin = function () {
-    this.renderAll();
   };
 
   /* ================= singleton ================= */
@@ -729,6 +796,8 @@ window.BrixInventory = (function () {
        ✅ v0.4.53/54: факел — в слот 1 (клавиша 1), топор и кирка — 2 и 3 */
     giveStarterKit: function () {
       if (!instance) return;
+      /* ✅ v0.4.66: на арене стартового набора нет */
+      if (window.BRIX_PVP) return;
       instance.slots[0] = { item: BrixItems.torch, count: 1 };
       instance.slots[1] = { item: BrixItems.stoneAxe, count: 1 };
       instance.slots[2] = { item: BrixItems.stonePickaxe, count: 1 };

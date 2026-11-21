@@ -302,57 +302,94 @@ window.BrixFirstPerson = (function () {
      (placeRifle / rifleLeftTarget / ADS) работает без изменений */
   var TP_URL = 'assets/models/thompson.glb';
   var TP_LEN = 0.78;         // длина в руке (м) — томпсон чуть короче калаша
-  /* ✅ v0.4.39 ТОЧКА РУКОЯТИ — по ВЕРШИНАМ модели (inspect_glb_points.js):
-     пистолетная рукоять = бокс x −99..−45, y 76.7..110, z 97.8..114.5
-     (центр ≈ (−72, 93, 106.2)). Было (−60, 74, 107.5): y на 18 ед. НИЖЕ
-     низа рукояти, x — у ПЕРЕДНЕГО края — ладонь висела под рукоятью,
-     и весь томик смотрелся «оружие в воздухе». Теперь ладонь точно на
-     рукояти: правая держит, как у калаша */
-  var TP_GRIP_PT = { x: -72, y: 92, z: 106.2 };
+  /* ✅ v0.4.55 ТОЧКА РУКОЯТИ — по ПРОФИЛЮ ВЕРШИН (scripts/inspect_glb.js,
+     бины x=5, срез y<115): МАССИВ рукояти = x −125..−85 (плотно, 24-50
+     верш./бин), наклон назад-вниз (задний край y 81.5, передний ~92),
+     z 97.9..114.5 (центр 106.2). Зона x −85..−60 — РЕДКАЯ (8-26 верш.):
+     это спусковая скоба, НЕ рукоять. Раньше (−72, 92): ладонь стояла у
+     ПЕРЕДНЕГО края/скобы — «упиралась, не обхватывала». Теперь точка —
+     середина тела рукояти (−100, 92, 106.2): ладонь ложится на рукоять,
+     пальцы сжимают её вокруг. Прото-пространство (после Ry(−90°)):
+     x' = −z_raw + 106.2, y' = y_raw − 92, z' = x_raw + 100 */
+  var TP_GRIP_PT = { x: -100, y: 92, z: 106.2 };
   // хват ПРАВОЙ руки — как у калаша (модель приведена к той же конвенции)
+  // ✅ v0.4.55: sS 0.82 (было 0.88) — томпсон чуть компактнее, левая рука
+  // достаёт до стойки, оружие не «улетает» вправо
   var GRIP_TP = {
-    sS: 0.88,     // размер в руке
+    sS: 0.82,     // размер в руке
     sX: 0.89,     // вдоль пальцев правой
     sP: 0.054,    // от ладони
     sR: 0.0       // поворот по Y в кисти (град)
   };
-  /* ✅ v0.4.39 ЛЕВАЯ РУКА — на ВЕРТИКАЛЬНОЙ ПЕРЕДНЕЙ РУКОЯТКЕ (M1928!),
-     а не под деревянным цевьём как у АК. По вершинам модели: вертикальная
-     рукоятка = стойка raw x 40.6..55.5 (центр 48), z 98.7..114 (центр
-     106.35), y 26.6..148. Прото-пространство при хвате (−72, 92, 106.2):
-     x' = −z_raw + 106.2 (ось стойки ≈ 0 — на оси ствола), y' = y_raw − 92,
-     z' = x_raw + 72 → стойка = прото-z 112.6..127.5, ось y' ≈ −4.
-     Хват «как палку»: ладонь СБОКУ (нормаль почти вдоль gun-right,
-     palmTilt 6 из 90), пальцы вперёд-вправо обхватывают стойку.
-     Раньше (v0.4.38) рука тянулась к ДЕРЕВЯННОМУ цевью raw x 82..118
-     (прото-z 142..178 — на 5 см дальше) и под ним СНИЗУ (как у АК) —
-     не доставала (shortfall), висела раскрытой ладонью в воздухе */
+  /* ✅ v0.4.55 ЛЕВАЯ РУКА — ХВАТ ПЕРЕДНЕЙ РУКОЯТКИ СНИЗУ (C-grip, как у АК):
+     ладонь ПОД стойкой (нормаль вверх, palmTilt 0.35 — почти как у АК 0.30),
+     пальцы обхватывают стойку с дальней стороны, большой палец сбоку/сверху.
+     По вершинам (scripts/profile_glb.js): стойка raw x 40.6..55.5,
+     z 98.7..114, y 26.6..~118. Прото-пространство при хвате (−100, 92, 106.2):
+     x' = −z_raw + 106.2 (ось стойки ≈ 0), y' = y_raw − 92,
+     z' = x_raw + 100 → стойка = прото-z 140.6..155.5.
+     Ось хвата — ВЕРХ стойки, под стволом (raw y ≈ 95 → zCenter +3):
+     предплечье короткое, идёт к оружию, ладонь лежит на теле стойки.
+     Раньше (v0.4.39) ладонь стояла СБОКУ стойки (palmTilt 6 ≈ 80°),
+     пальцы под 60° — «далеко впереди и под неестественным углом» */
   var GRIP_TP_LEFT = {
-    yPref: -127,    // передний край стойки (raw x 55.5 → прото-z 127.5)
-    yRear: -113,    // задний край стойки (raw x 40.6 → прото-z 112.6)
-    zCenter: -4,    // высота ладони на стойке (raw y 88 − рукоять 92)
-    fingerAng: 60,  // угол пальцев от ствола (обхват стойки)
-    palmTilt: 6,    // ладонь СБОКУ стойки (нормаль к оси ствола)
+    yPref: -146,    // верх стойки у ствола (raw x 46 → прото-z 146)
+    /* ✅ v0.4.56: окно расширенно назад до прото-z 118 (сырой x 18, над
+       барабанным магазином). В ADS оружие у глаз — стойка высоко, левой
+       руке (reach 0.55) она недосягаема: поиск идёт от yPref К yRear и
+       останавливается на ПЕРВОЙ достижимой точке — в idle это стойка
+       (короткий shortfall 0.03), в ADS ладонь съезжает назад и ложится
+       НА оружие (у стойки/магазина), а не висит под ним в воздухе */
+    yRear: -118,
+    zCenter: 6,     // ось стойки у ствола (raw y 98 − рукоять 92)
+    /* ✅ v0.4.56 СВОИ цели левой руки в ADS (ads-подобъект, blends по _ads
+       в rifleLeftTarget). В прицеле оружие у глаз (мушка на 0.98 м): ось
+       стойки оказывается на 0.77 м от левого плеча при reach 0.55 —
+       физически недосягаема. Ладонь съезжает назад-вниз и держит оружие
+       ПОД РЕСИВЕРОМ у барабана (прото-z 25..50, на ~2.6 см ниже оси
+       хвата): замер даёт ровно достижимую цель — shortfall 0, рука НА
+       оружии, а не висит под ним */
+    ads: {
+      yPref: -50,
+      yRear: -25,
+      zCenter: -26
+    },
+    fingerAng: 55,  // пальцы обхватывают стойку вокруг
+    palmTilt: 0.35, // ладонь ПОД стойкой (нормаль вверх, как C-grip АК)
     palmThick: 0.12,
     palmFrac: 0.50,
-    curl: 0.62,
-    thumb: 0.35,
+    curl: 0.80,     // пальцы сомкнуты вокруг стойки
+    thumb: 0.40,    // большой палец сбоку/сверху
     twistShare: 0.5
   };
   // ✅ ПРИЦЕЛ (ПКМ): целик/мушка в единицах модели (как ADS_AK:
   // {y: −дистанция вдоль ствола, z: высота} → ptAk → прото-пространство).
-  // ✅ v0.4.39: пересчитано под новый хват (−72, 92, 106.2):
-  // целик raw (−88, 157) → прото (y 65, z −16) → {y: 16, z: 65};
-  // мушка raw (215, 156) → прото (y 64, z 287) → {y: −287, z: 64}
+  // ✅ v0.4.55: пересчитано под хват на теле рукояти (−100, 92, 106.2):
+  // целик raw (−88, 157) → прото (y 65, z +12) → {y: −12, z: 65};
+  // мушка raw (215, 156) → прото (y 64, z 315) → {y: −315, z: 64}
+  /* ✅ v0.4.56 ADS-ГЕОМЕТРИЯ ТОМПСОНА (замеры в игре, см. отчёт):
+     ЯКОРЬ = МУШКА (anchor = front), а не целик. У M1928 целик стоит в
+     12 ед. (~2 см) ПЕРЕД ладонью — при привязке целика к оси камеры
+     запястью нужно ~0.65 м при reach 0.55: замер сломанного ADS —
+     правая кисть растянута в 0.55/0.55 (предел), левая shortfall 0.34,
+     оружие висит в 1.23 м от камеры. Якорь на мушке (315 ед. ≈ 0.48 м
+     ПЕРЕД ладонью) оставляет запястье у корпуса: ладонь в прото-z ≈
+     dist − 0.48 → при dist 0.62 запястье в ~0.44 м от плеча — рука НА
+     рукояти. Мушка при этом ложится ровно на ось камеры (проекция
+     641,291 против центра 640,288 — до правки), целик — на той же
+     линии ближе к глазу. dist 0.98: хват (прото-ноль) на 0.29 м ПЕРЕД
+     камерой — кисть и ресивер в кадре (при dist 0.62 хват оказывался на
+     z −0.07, ЗА камерой — «рука исчезла»); целик в 0.32 м от глаза,
+     мушка в 0.98 — геометрия настоящего прицеливания. Запястье при
+     этом в 0.43 м от плеча (reach 0.55) — рука не растянута.
+     adsScale 1.06 — в прицеле томпсон на 6% крупнее (солиднее и не
+     «мельчит»), множитель нарастает плавно по _ads; у АК adsScale нет */
   var ADS_TP = {
-    rear:  { y: 16, z: 65 },     // целик (чуть позади рукояти — как у M1928)
-    front: { y: -287, z: 64 },   // мушка (у дульного среза)
-    /* ✅ v0.4.39: dist 0.64 (у калаша 0.85). У M1928 целик стоит ПОЗАДИ
-       рукояти (прото-z −16, у АК +1.80), поэтому при тех же 0.85 кисть
-       не дотягивалась (shortfall 0.18 м, целик на 8.8° ниже оси камеры —
-       у калаша всего 1.6°). 0.64 держит цель руки в доступности плеча:
-       прицел встаёт по оси, как у калаша */
-    dist:  0.64,
+    rear:  { y: -12, z: 65 },    // целик (на ствольной коробке, за рукоятью)
+    front: { y: -315, z: 64 },   // мушка (у дульного среза)
+    anchor: { y: -315, z: 64 },  // ✅ v0.4.56 точка на оси камеры в ADS = мушка
+    dist:  0.98,                 // глаз → мушка (м)
+    adsScale: 1.06,              // масштаб оружия в прицеле (× к idle)
     fov:   55,
     speed: 11
   };
@@ -441,6 +478,36 @@ window.BrixFirstPerson = (function () {
     gw: 1, gyaw: -22, gpitch: 38, groll: 0,
     curl: 0.85, thumb: 0.60,
     sx: 3, sy: -4
+  });
+
+  /* ✅ v0.4.55 ПОЗА ТОМПСОНА в покое — по требованиям к хвату M1928
+     (значения подобраны вживую в браузере, shortfall левой руки = ~0.03):
+     • gw=1 + gyaw/gpitch/groll=0 — ЯВНАЯ ориентация ствола: ось ствола
+       ровно по оси камеры (pitch = 0°, параллельно горизонту), а не
+       «куда легла ладонь» (у АК в idle gw=0 — там ствол смотрит туда,
+       куда положила рамка кисти; у томпсона это давало наклон вверх);
+     • rx 0.10, ry 0.29, rz 0.37 — оружие БЛИЖЕ К ЦЕНТРУ экрана и не
+       перекрывает обзор (было rx 0.23, ry 0.29, rz 0.50 — справа и
+       далеко впереди, из-за чего левая рука не доставала на 20 см);
+     • sy −16 — торс развёрнут к оружию (левое плечо вперёд): без этого
+       стойка передней рукоятки вне длины левой руки (shortfall 0.20);
+     • curl 0.82 (было 0.50) — ладонь СЖАТА на пистолетной рукояти
+       (пальцы плотно обхватывают), thumb 0.30 — большой палец вдоль
+       ствольной коробки;
+     • idx 0.35 — указательный палец РАСЛАБЛЕН (лежит на спусковом
+       крючке), остальные сжаты */
+  var FIDLE_TP = Object.assign({}, FIDLE_AK, {
+    rx: 0.10, ry: 0.29, rz: 0.37,
+    sy: -16,
+    rphi: 0, ryaw: 0,
+    curl: 0.82, thumb: 0.30,
+    idx: 0.35,
+    gw: 1, gyaw: 0, gpitch: 0, groll: 0
+  });
+  // ✅ БЕГ с томпсоном — как у АК: прижат к груди, ствол вверх-влево
+  // (rx/ry/rz НЕ переопределяем — F_RUN_AK сам прижимает оружие к груди)
+  var F_RUN_TP = Object.assign({}, F_RUN_AK, {
+    idx: 0.35
   });
 
   // Камера рук (должна совпадать с renderOverlay) — ЗНАЧЕНИЯ ИЗ РЕПОЗИТОРА:
@@ -1279,6 +1346,7 @@ window.BrixFirstPerson = (function () {
       B.RightHand.add(cholder);
       cholder.visible = self.currentWeapon === 'c4' && self.visible;
       self.c4 = { holder: cholder, wrap: cwrap, proto: cg };
+      self._applyDesiredSkin();   // ✅ v0.4.58: скин С4 ждал модель
       console.log('[BrixFirstPerson] С4 в руках готов (ширина ' + C4.len + ' м)');
     };
 
@@ -1449,6 +1517,7 @@ this._attachSyringe = function (res) {
       holder.visible = self.currentWeapon === 'revolver' && self.visible;
       self.revolver = { holder: holder, wrap: wrap, proto: rvg };
       self._refitRevolver();
+      self._applyDesiredSkin();   // ✅ v0.4.58: скин ждал загрузки модели
       console.log('[BrixFirstPerson] револьвер в руках готов');
     };
     // пересборка подгонки (вызывается и «вживую», если меняли REV.flip / REV.upDown)
@@ -1624,6 +1693,7 @@ this._attachSyringe = function (res) {
       self.rifle.holder.visible = self.visible &&
         (self.currentWeapon === 'rifle' || self.currentWeapon === 'smg');
       if (self.currentWeapon === 'smg') self._setRifleModel('tp');
+      self._applyDesiredSkin();   // ✅ v0.4.58: скин томпсона ждал модель
       console.log('[BrixFirstPerson] томпсон в руках готов');
     };
 
@@ -1649,12 +1719,9 @@ this._attachSyringe = function (res) {
     // (раньше setVisible(this.visible) всегда ставил 'axe' и перетирал
     // револьвер сразу после загрузки моделей)
     this.setWeapon(this.currentWeapon === 'none' ? null : this.currentWeapon);
-    // ✅ v0.4.25: если скин выбрали, пока модель ещё грузилась — применяем сейчас
-    if (this._skinPending !== undefined) {
-      var pend = this._skinPending;
-      this._skinPending = undefined;
-      if (this.currentWeapon === 'ironPickaxe') this.applySkin(pend || BrixWeaponSkinUrlSafe());
-    }
+    // ✅ v0.4.58: если скинутый предмет выбрали, пока модели грузились —
+    // накладываем обёртку сейчас (револьвер/томпсон/С4 могли догрузиться)
+    this._applyDesiredSkin();
 
     // для хотбара: топор считается выбранным, если setVisible(true)
   };
@@ -1703,12 +1770,16 @@ this._attachSyringe = function (res) {
     };
 
     var q1 = new THREE.Quaternion(), q2 = new THREE.Quaternion();
-    this.fingers = function (side, curl, thumb) {
+    /* ✅ v0.4.55 idxRelax (0..1) — НАСКОЛЬКО указательный палец расслаблен
+       относительно остальных (лежит на спусковом крючке, пока остальные
+       сжаты на рукояти). 0 — поведение как раньше (у всех оружие) */
+    this.fingers = function (side, curl, thumb, idxRelax) {
       var g = self.SG[side];
+      var idxK = 1 - (idxRelax || 0);
       ['Index', 'Middle', 'Ring', 'Pinky'].forEach(function (F, fi) {
         [70, 80, 55].forEach(function (deg, n) {
           var k = side + 'Hand' + F + (n + 1);
-          var mult = [1, 1.05, 1.1, 1.15][fi];
+          var mult = [idxK, 1.05, 1.1, 1.15][fi];
           self.bones[k].quaternion.copy(rest[k].q)
             .multiply(q1.setFromAxisAngle(self.AXC[k], g.curl * deg * D * curl * mult));
         });
@@ -1935,7 +2006,11 @@ this._attachSyringe = function (res) {
       var cl = new THREE.Vector3().crossVectors(fl, al);
       var qb = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(fl, al, cl));
       rf.holder.quaternion.copy(qb).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), G.sR * D));
-      rf.holder.scale.setScalar(G.sS / (H.ws || 1));
+      /* ✅ v0.4.56 ADS-масштаб: в прицеле оружие крупнее на adsScale
+         (томпсон ×1.06 — «солиднее», не мельчит), множитель плавно
+         нарастает по _ads; у калаша adsScale нет — поведение прежнее */
+      var adsS = 1 + ((RIFLE_CFGS[rf.kind || 'ak'].ads.adsScale || 1) - 1) * Math.min(1, self._ads || 0);
+      rf.holder.scale.setScalar(G.sS / (H.ws || 1) * adsS);
       rf.proto.position.set(0, 0, 0);
       rf.proto.rotation.set(0, Math.PI / 2, 0);   // ствол из Y → вперёд по пальцам (как в репозитории)
     };
@@ -1952,6 +2027,49 @@ this._attachSyringe = function (res) {
       return { f: f, a: u };
     };
 
+    /* ---------- ✅ v0.4.57 ДУЛО ТЕКУЩЕГО ОРУЖИЯ (для трассеров) ----------
+       Возвращает мировую позицию дульного среза ВИДИМОГО ствола —
+       трассер вылетает именно из ствола, а не из точки возле камеры
+       (старый muzzleWorldPos в gameworld.js брал камеру + офсет —
+       выглядело «рандомно»). Универсально: берём мировой габаритный
+       бокс активного прото-оружия и дальний по стволу угол = дуло.
+       f — направление ствола в мире (_gunF, выставляется в позах) */
+    var _mzBox = new THREE.Box3(), _mzC = new THREE.Vector3(), _p = new THREE.Vector3();
+    var _qInv = new THREE.Quaternion(), _v3 = new THREE.Vector3();
+    this.muzzleWorld = function (out) {
+      var obj = null;
+      if (self.rifle && self.rifle.holder.visible) obj = self.rifle.proto;
+      else if (self.revolver && self.revolver.holder.visible) obj = self.revolver.proto;
+      else if (self.shotgun && self.shotgun.holder.visible) obj = self.shotgun.proto;
+      else if (self.rev3x && self.rev3x.holder.visible) obj = self.rev3x.proto;
+      if (!obj) return null;
+      var f = self._gunF || self.FW;
+      obj.updateMatrixWorld(true);
+      _mzBox.setFromObject(obj);
+      _mzBox.getCenter(_mzC);
+      /* 8 углов бокса: тот, что дальше всех вдоль ствола от центра — дуло;
+         чуть отступаем назад к центру (срез ствола, не «нос» бокса с прицелом) */
+      var mn = _mzBox.min, mx = _mzBox.max, best = null, bd = -Infinity;
+      for (var i = 0; i < 8; i++) {
+        _p.set(i & 1 ? mx.x : mn.x, i & 2 ? mx.y : mn.y, i & 4 ? mx.z : mn.z);
+        var d = _p.clone().sub(_mzC).dot(f);
+        if (d > bd) { bd = d; best = _p.clone(); }
+      }
+      out.copy(best).addScaledVector(f, -bd * 0.10);   // 10% назад от носа бокса
+      /* ✅ руки живут в СВОЕЙ сцене (handsScene + статичная handsCamera
+         в (0, 1.7, 0), взгляд по +Z) — точка дула в её координатах.
+         Перевод в МИР: офсет от камеры рук → в ЛОКАЛЬ камеры рук
+         (inverse кватерниона), затем кватернионом ОСНОВНОЙ камеры в
+         мир + её позиция. Обе камеры — THREE-камеры (смотрят по −z
+         локально), поэтому прямой перенос кватернионов корректен при
+         любом yaw/pitch игрока */
+      out.sub(self.camFrame.pos);
+      _qInv.copy(self.handsCamera.quaternion).invert();
+      out.applyQuaternion(_qInv).applyQuaternion(self.camera.quaternion);
+      out.add(_v3.copy(self.camera.position));
+      return out;
+    };
+
     // ✅ v0.4.21 цель ЛЕВОЙ руки (порт leftGunTarget): считается от РЕАЛЬНОГО
     // положения автомата в мире — рука привязана к цевью и не уезжает
     // при беге/отдаче/прицеливании. shortfall > 0 — на сколько не достаёт
@@ -1959,6 +2077,14 @@ this._attachSyringe = function (res) {
       var B = self.bones;
       var cfg = RIFLE_CFGS[self.rifle.kind || 'ak'];
       var G = cfg.left, HALF_H = cfg.halfH, HALF_W = cfg.halfW;
+      /* ✅ v0.4.56: в ADS у левой руки СВОИ цели (G.ads), плавно
+         смешиваются с idle-целями по _ads — оружие у глаз, и ладонь
+         съезжает с вертикальной стойки под ресивер (стойка на 0.77 м
+         от плеча — недосягаема при reach 0.55) */
+      var adsK = Math.min(1, self._ads || 0), AG = G.ads;
+      var yPref = AG ? G.yPref + (AG.yPref - G.yPref) * adsK : G.yPref;
+      var yRear = AG ? G.yRear + (AG.yRear - G.yRear) * adsK : G.yRear;
+      var zC = AG ? G.zCenter + (AG.zCenter - G.zCenter) * adsK : G.zCenter;
       var obj = self.rifle.proto, objW = obj.matrixWorld;
       var fwd = new THREE.Vector3(0, 0, 1).transformDirection(objW);   // куда смотрит дуло
       var up = new THREE.Vector3(0, 1, 0).transformDirection(objW);    // верх оружия
@@ -1977,10 +2103,10 @@ this._attachSyringe = function (res) {
       var dist = halfExt + G.palmThick * palmLenW;
       // ищем самую переднюю точку цевья, до которой рука достаёт
       var reachMax = LL * 0.985;
-      var t0 = G.yPref, t1 = G.yRear, W = null, bestW = null, bestD = Infinity, N = 12;
+      var t0 = yPref, t1 = yRear, W = null, bestW = null, bestD = Infinity, N = 12;
       for (var i = 0; i < N; i++) {
         var t = t0 + (t1 - t0) * (i / (N - 1));
-        var gc = obj.localToWorld(new THREE.Vector3(0, G.zCenter, -t));
+        var gc = obj.localToWorld(new THREE.Vector3(0, zC, -t));
         var w = gc.addScaledVector(pd, -dist).addScaledVector(f2, -G.palmFrac * palmLenW);
         var d = w.distanceTo(SL);
         if (d < bestD) { bestD = d; bestW = w; }
@@ -1990,8 +2116,11 @@ this._attachSyringe = function (res) {
     };
 
     // ✅ v0.4.21 левая рука НА цевье калаша (порт poseLeftHandGun)
+    // ✅ v0.4.55: конфиг по оружию (curl/thumb/twistShare томпсона — свои,
+    // раньше всегда брались GRIP_AK_LEFT — левая кисть томпсона жала
+    // пальцами «по-калашьи» независимо от GRIP_TP_LEFT)
     this.poseLeftHandRifle = function (LL, SL, pole) {
-      var G = GRIP_AK_LEFT, H = self.HF.Left;
+      var G = RIFLE_CFGS[self.rifle.kind || 'ak'].left, H = self.HF.Left;
       var T = self.rifleLeftTarget(LL, SL);
       self.ik(self.bones.LeftArm, self.bones.LeftForeArm, self.bones.LeftHand, T.W, pole);
       // часть разворота ладони отдаём предплечью (запястье не «выкручивается»)
@@ -2213,7 +2342,12 @@ this._attachSyringe = function (res) {
         }
         var adsK = p.ads || 0;
         var ptAk = function (q) { return new THREE.Vector3(q.x || 0, q.z, -q.y); };
-        var anchorAk = function () { return self.rifle.proto.localToWorld(ptAk(cfgR.ads.rear)); };
+        /* ✅ v0.4.56: якорь ADS — из конфига (томпсон = МУШКА, калаш =
+           целик как раньше). Якорь — точка, которая ложится на ось
+           камеры на дистанции ads.dist; от неё считается сдвиг кисти */
+        var anchorAk = function () {
+          return self.rifle.proto.localToWorld(ptAk(cfgR.ads.anchor || cfgR.ads.rear));
+        };
         var PnAk = null;
         if (adsK > 0.001) {
           // где целик был бы БЕЗ прицеливания — переход плавный
@@ -2250,7 +2384,7 @@ this._attachSyringe = function (res) {
           self.ik(B.RightArm, B.RightForeArm, B.RightHand, Wr, rightPole);
           self.orientHand('Right', fF, aF);
         }
-        self.fingers('Right', p.curl, p.thumb);
+        self.fingers('Right', p.curl, p.thumb, p.idx);   // ✅ v0.4.55: указательный — на спуске
         // автомат на правой руке → левая к цевью (привязана к модели)
         self.model.updateMatrixWorld(true);
         self.placeRifle();
@@ -2442,62 +2576,125 @@ this._attachSyringe = function (res) {
       this.syringe.holder.visible = syrOn;
       if (!syrOn) this._swingType = this._swingType === 'syringe' ? null : this._swingType;
     }
-    /* ✅ v0.4.25 СКИН: при выборе железной кирки накладываем обёртку
-       скина (если надет), при выборе другого оружия — обычная модель */
-    if (window.BrixWeaponSkins) {
-      var skinWrap = this.currentWeapon === 'ironPickaxe'
-        ? BrixWeaponSkins.wrapFor('ironPickaxe') : null;
-      this.applySkin(skinWrap);
-    }
+    /* ✅ v0.4.60 СКИНЫ — КОСТЮМЫ: обёртку накладывает setSkinItem —
+       её вызывает gameworld при смене слота хотбара (скин живёт
+       В СЛОТЕ: slot.skin, а не на типе оружия) */
   };
 
-  /* ✅ v0.4.25 СКИН ОРУЖИЯ: накладывает UV-обёртку (текстуру) на модель
-   *  железной кирки в руках (или возвращает родную). url === null — снять.
-   *  Текстура грузится один раз и кэшируется по адресу; повторный вызов
-   *  с тем же url не перекрашивает модель заново */
-  FirstPersonPlayer.prototype.applySkin = function (url) {
+  /* ============================================================
+     ✅ v0.4.60 СКИНЫ — КОСТЮМЫ НА АККАУНТЕ — универсальная обёртка.
+     applySkin(group, url, maps): накладывает UV-обёртку на ЛЮБУЮ
+     модель в руках (группа = wrap/models.* держателя). url === null —
+     вернуть родные карты. Состояние хранится на группе (userData),
+     поэтому каждый держатель помнит свой скин независимо.
+     ============================================================ */
+  FirstPersonPlayer.prototype.applySkin = function (group, url, maps) {
     var self = this;
-    if (!this.ironPick) { this._skinPending = url || null; return; }
-    if (this._skinUrl === (url || null)) return;   // ничего не изменилось
-    this._skinUrl = url || null;
-    var token = (this._skinToken = (this._skinToken || 0) + 1);
-    var proto = this.ironPick.wrap && this.ironPick.wrap.children[0];
-    if (!proto) return;
-    // вернуть родные карты/цвета
-    proto.traverse(function (o) {
+    if (!group) return;
+    if (group.userData._skinUrl === (url || null)) return;   // ничего не изменилось
+    group.userData._skinUrl = url || null;
+    var token = (group.userData._skinToken =
+      (group.userData._skinToken || 0) + 1);
+    /* вернуть родные карты/цвета/факторы */
+    group.traverse(function (o) {
       if (!o.isMesh || !o.material) return;
       var mats = Array.isArray(o.material) ? o.material : [o.material];
       mats.forEach(function (m) {
         if (m.userData._origMap === undefined) {
           m.userData._origMap = m.map || null;
           m.userData._origColor = m.color ? m.color.getHex() : 0xffffff;
+          m.userData._origRough = ('roughnessMap' in m) ? (m.roughnessMap || null) : undefined;
+          m.userData._origMetal = ('metalnessMap' in m) ? (m.metalnessMap || null) : undefined;
+          /* ✅ v0.4.63: факторы тоже запоминаем — после снятия скина
+             материал возвращается в исходный (без «глянца»/металла) */
+          m.userData._origRoughF = ('roughness' in m) ? m.roughness : undefined;
+          m.userData._origMetalF = ('metalness' in m) ? m.metalness : undefined;
         }
         m.map = m.userData._origMap;
         if (m.color) m.color.setHex(m.userData._origColor);
+        if (m.userData._origRough !== undefined) m.roughnessMap = m.userData._origRough;
+        if (m.userData._origMetal !== undefined) m.metalnessMap = m.userData._origMetal;
+        if (m.userData._origRoughF !== undefined) m.roughness = m.userData._origRoughF;
+        if (m.userData._origMetalF !== undefined) m.metalness = m.userData._origMetalF;
         m.needsUpdate = true;
       });
     });
     if (!url) return;
-    // грузим обёртку и накладываем
-    var loader = new THREE.TextureLoader();
-    loader.load(url, function (tex) {
-      if (self._skinToken !== token) return;      // пока грузили — скин сменили
-      if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
-      tex.anisotropy = 8;
-      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-      proto.traverse(function (o) {
+    /* грузим обёртку и накладываем.
+       ✅ v0.4.63 ВИТРИННЫЙ МАТЕРИАЛ (как в 3D-осмотре магазина) —
+       обёртка это ПЕРЕКРАСКА. Раньше было «криво» в руках:
+       · у большинства моделей metalness=1 (умолчание glTF) — без
+         своей metal-карты металл «съедал» окрас обёртки (тёмное
+         зеркало при освещении мира) — револьвер/томпсон/С4/кам. топор;
+       · у «Экскимо» свои rough/metal-карты, но с шероховатостью ≈0.2 —
+         «жидкий» глянец вместо окраса.
+       Единый витринный материал: металл 0.15 / шероховатость 0.6 —
+       окрас обёртки виден ровно как на арте, у всех скинов одинаково */
+    var applyMaps = function (tex) {
+      if (group.userData._skinToken !== token) return;  // скин сменили пока грузили
+      group.traverse(function (o) {
         if (!o.isMesh || !o.material) return;
         var mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach(function (m) {
-          m.map = tex;                             // обёртка на все части кирки
-          if (m.color) m.color.setHex(0xffffff);   // белый цвет — текстура не темнит
+          m.map = tex;                             // обёртка на все части
+          if (m.color) m.color.setHex(0xffffff);   // белый — текстура не темнит
+          if ('roughnessMap' in m) { m.roughnessMap = null; m.roughness = 0.6; }
+          if ('metalnessMap' in m) { m.metalnessMap = null; m.metalness = 0.15; }
           m.needsUpdate = true;
         });
       });
-      console.log('[BrixFirstPerson] скин кирки надет: ' + url);
-    }, undefined, function () {
-      console.warn('[BrixFirstPerson] обёртка скина не загрузилась: ' + url);
-    });
+    };
+    BrixWeaponSkins.getTex(url, function (tex) { applyMaps(tex); });
+  };
+
+  /** ✅ v0.4.60: выбран слот со скином — наложить/снять обёртку по id
+   *  СКИНА ('exkimo' → револьвер «Экскимо» и т.д.).
+   *  null — обычный предмет: снимаем со всех держателей */
+  FirstPersonPlayer.prototype.setSkinItem = function (skinId) {
+    this._skinItem = skinId || null;
+    this._applyDesiredSkin();
+  };
+
+  /** применить желаемый скин ко всем УЖЕ загруженным держателям
+   *  (модели револьвера/томпсона/С4 грузятся асинхронно — вызывается
+   *  и от setSkinItem, и от каждого _attach*) */
+  FirstPersonPlayer.prototype._applyDesiredSkin = function () {
+    if (!window.BrixWeaponSkins) return;
+    var id = this._skinItem || null;
+    var sk = id ? BrixWeaponSkins.def(id) : null;
+    var w = sk ? sk.wrap : null, mp = sk || null;
+    /* револьвер «Экскимо» (+ рев3x держит ту же модель — скинов у 3× нет) */
+    if (this.revolver && this.revolver.wrap) {
+      this.applySkin(this.revolver.wrap, id === 'exkimo' ? w : null, null);
+    }
+    /* калаш/томпсон: обёртка только на модель томпсона «Леденцовый выстрел» */
+    if (this.rifle && this.rifle.models) {
+      this.applySkin(this.rifle.models.ak, null, null);
+      this.applySkin(this.rifle.models.tp, id === 'candy' ? w : null, null);
+    }
+    /* каменный топор «Замороженое дерево» */
+    if (this.axe && this.axe.wrap) {
+      this.applySkin(this.axe.wrap, id === 'frozen' ? w : null, null);
+    }
+    /* каменная кирка — скинов у неё НЕТ («Ретро» приписывали ей по ошибке
+       до v0.4.63 — всегда снимаем) */
+    if (this.stonePick && this.stonePick.wrap) {
+      this.applySkin(this.stonePick.wrap, null, null);
+    }
+    /* ✅ v0.4.63: ЖЕЛЕЗНЫЙ ТОПОР «Ледяные руны» — держателя вообще не было
+       в этом списке: в руках крафтился ОБЫЧНЫЙ топор */
+    if (this.ironAxe && this.ironAxe.wrap) {
+      this.applySkin(this.ironAxe.wrap, id === 'ice' ? w : null, null);
+    }
+    /* ✅ v0.4.63: «Ретро» — скин ЖЕЛЕЗНОЙ кирки (skins.js: item ironPickaxe),
+       раньше висел на каменной — железная кирка в руках была без скина */
+    if (this.ironPick && this.ironPick.wrap) {
+      this.applySkin(this.ironPick.wrap, id === 'retro' ? w : null, null);
+    }
+    /* С4 «Бомбический подарок» */
+    if (this.c4 && this.c4.wrap) {
+      this.applySkin(this.c4.wrap, id === 'gift' ? w : null, null);
+    }
   };
 
   /** ✅ v0.4.5 ОТДАЧА: проиграть анимацию выстрела (короткий кик руки).
@@ -2621,10 +2818,13 @@ this._attachSyringe = function (res) {
       else relDip = rp < 0.2 ? rp / 0.2 : rp > 0.85 ? Math.max(0, (1 - rp) / 0.15) : 1;
     }
 
-    var idle = Object.assign({}, FIDLE_AK);
+    // ✅ v0.4.55: у томпсона СВОИ idle/бег позы (ствол по оси камеры,
+    // оружие ближе к центру, ладонь сжата) — у калаша прежние
+    var tpHold = this.rifle && this.rifle.kind === 'tp';
+    var idle = Object.assign({}, tpHold ? FIDLE_TP : FIDLE_AK);
     idle.sx += Math.sin(t * 1.8) * 0.8;   // дыхание в покое
     idle.sy += Math.sin(t * 1.5) * 0.5;
-    var run = Object.assign({}, F_RUN_AK);
+    var run = Object.assign({}, tpHold ? F_RUN_TP : F_RUN_AK);
     run.sx += Math.sin(t * 8) * 1.2;      // покачивание при беге
     run.gpitch += Math.sin(t * 8) * 1.2;
     run.gyaw += Math.cos(t * 4) * 1.0;
@@ -2816,13 +3016,6 @@ this._attachSyringe = function (res) {
     this.loaded = false;
     this.visible = false;
   };
-
-  // ✅ v0.4.25 безопасный запрос обёртки скина (модуль может быть не загружен)
-  function BrixWeaponSkinUrlSafe() {
-    try {
-      return window.BrixWeaponSkins ? BrixWeaponSkins.wrapFor('ironPickaxe') : null;
-    } catch (e) { return null; }
-  }
 
   FirstPersonPlayer.REV = REV;   // настройка револьвера из консоли: BrixFirstPerson.REV.len = 0.34
   FirstPersonPlayer.SGN = SGN;   // ✅ v0.4.19 настройка дробовика: BrixFirstPerson.SGN.len = 0.56

@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BRIX BOT STUDIO — студия анимаций и хватов бота</title>
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+<style>
+:root{
+  --bg:#0b0e13; --s1:#11161d; --s2:#171e27; --s3:#1f2833; --line:#2b3644;
+  --amber:#ffb347; --ember:#ff5a3c; --blue:#4da3ff; --acid:#46e08a;
+  --txt:#e9e5da; --mut:#8b97a8;
+  --disp:'Russo One','Arial Black',sans-serif; --body:'Segoe UI',system-ui,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--body);overflow:hidden}
+#app{display:flex;height:100%}
+#viewport{flex:1;position:relative;min-width:0}
+#viewport canvas{display:block;width:100%;height:100%;touch-action:none}
+#panel{width:360px;background:var(--s1);border-left:1px solid var(--line);overflow-y:auto;padding:14px;flex-shrink:0}
+h1{font-family:var(--disp);font-size:17px;letter-spacing:.06em;color:var(--amber);margin-bottom:2px}
+.sub{font-size:11px;color:var(--mut);margin-bottom:14px;line-height:1.5}
+.sec{border:1px solid var(--line);background:var(--s2);padding:10px 12px;margin-bottom:12px}
+.sec h2{font-family:var(--disp);font-size:12px;color:var(--txt);letter-spacing:.08em;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.sec h2::before{content:"";width:14px;height:3px;background:var(--amber)}
+.btn{display:inline-block;background:linear-gradient(165deg,#2a3341,#1a222c);border:1px solid var(--line);color:var(--txt);
+  font-family:var(--body);font-size:12px;padding:8px 12px;cursor:pointer;text-align:center;transition:.15s}
+.btn:hover{border-color:var(--amber);color:var(--amber)}
+.btn.accent{background:linear-gradient(165deg,#3a2a14,#241a0e);border-color:#6e5326;color:var(--amber)}
+.btn.danger{border-color:#6e2b24;color:#ff8a7a}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.row .btn{flex:1;min-width:90px}
+input[type=file]{display:none}
+input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:#2b3644;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;background:var(--amber);cursor:pointer}
+.lbl{font-size:10.5px;color:var(--mut);letter-spacing:.08em;text-transform:uppercase;display:flex;justify-content:space-between;margin:8px 0 4px}
+.lbl output{color:var(--amber)}
+.list{max-height:150px;overflow-y:auto;border:1px solid var(--line);background:var(--s1)}
+.list button{display:block;width:100%;text-align:left;background:none;border:none;color:var(--txt);
+  font-family:var(--body);font-size:12px;padding:7px 10px;cursor:pointer;border-bottom:1px solid #1c242e}
+.list button:hover{background:#222c38}
+.list button.sel{background:#2c2413;color:var(--amber)}
+.chip{display:inline-block;font-size:10px;padding:2px 7px;border:1px solid var(--line);color:var(--mut);margin:2px 3px 2px 0}
+.chip.on{border-color:var(--acid);color:var(--acid)}
+#boneList{max-height:200px}
+.hint{font-size:11px;color:var(--mut);line-height:1.55;margin-top:6px}
+.hint b{color:var(--amber)}
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#1d2835;border:1px solid var(--amber);
+  color:var(--txt);padding:10px 18px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;z-index:50;max-width:80vw}
+#toast.on{opacity:1}
+#drop{position:fixed;inset:0;background:#0b0e13e8;border:3px dashed var(--amber);display:none;
+  align-items:center;justify-content:center;font-family:var(--disp);font-size:22px;color:var(--amber);z-index:40}
+#drop.on{display:flex}
+@media (max-width:760px){
+  #app{flex-direction:column}
+  #panel{width:100%;height:45%;order:2;border-left:none;border-top:1px solid var(--line)}
+  #viewport{height:55%}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="viewport"></div>
+  <div id="panel">
+    <h1>BRIX BOT STUDIO</h1>
+    <div class="sub">Студия анимаций и хватов бота. Загрузи свою модель (FBX/GLB + текстуры),
+      настрой базовые анимации, хваты и пальцы, вставь НАШ кала́ш (без рук) и выгрузи конфиг для игры.</div>
+
+    <div class="sec">
+      <h2>1. Модель бота</h2>
+      <div class="row">
+        <button class="btn accent" id="btnLoadModel">Загрузить FBX/GLB + текстуры</button>
+        <input type="file" id="fileModel" multiple accept=".fbx,.glb,.gltf,.png,.jpg">
+      </div>
+      <div class="hint">Выбери сразу <b>ScientistRigged.fbx и все .png из папки textures</b> (можно выделить всё).
+        Или перетащи файлы в окно. Модель из rust-scientist-blue.zip подходит напрямую.</div>
+      <div id="modelInfo" class="hint" style="color:var(--acid)"></div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="btnSkeleton" disabled>Скелет: выкл</button>
+        <button class="btn" id="btnGrid" disabled>Сетка: выкл</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>2. Базовые анимации</h2>
+      <div id="animList" class="list"></div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="btnPlay" disabled>■ Стоп</button>
+        <button class="btn" id="btnSpeed" disabled>Скорость 1.0×</button>
+      </div>
+      <div class="hint">Если в FBX есть свои клипы — они в списке вместе с базовыми:
+        <b>IDLE · WALK · AIM · SHOOT · DEATH</b> (строятся по костям автоматически).</div>
+    </div>
+
+    <div class="sec">
+      <h2>3. Хват оружия</h2>
+      <div class="row">
+        <button class="btn accent" id="btnLoadAk">Наш кала́ш (ak47.glb)</button>
+        <input type="file" id="fileAk" accept=".glb,.gltf">
+      </div>
+      <div class="hint">Студия сама попробует взять <b>../assets/models/ak47.glb</b> (если открыта из папки BRIX).
+        Иначе — выбери ak47.glb вручную. Оружие крепится к кости ПРАВОЙ РУКИ.</div>
+      <div class="lbl">Кость-хват (правая рука)</div>
+      <select id="gripBone" style="width:100%;background:var(--s3);color:var(--txt);border:1px solid var(--line);padding:7px;font-size:12px"></select>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" data-grip="chest">Две руки · у груди</button>
+        <button class="btn" data-grip="hip">Одна рука · у бедра</button>
+        <button class="btn" data-grip="down">Опущен</button>
+      </div>
+      <div class="lbl">Смещение оружия X <output id="ox">0</output></div>
+      <input type="range" id="akX" min="-0.5" max="0.5" step="0.005" value="0" disabled>
+      <div class="lbl">Смещение Y <output id="oy">0</output></div>
+      <input type="range" id="akY" min="-0.5" max="0.5" step="0.005" value="0" disabled>
+      <div class="lbl">Смещение Z <output id="oz">0</output></div>
+      <input type="range" id="akZ" min="-0.5" max="0.5" step="0.005" value="0" disabled>
+      <div class="lbl">Поворот X <output id="rx">0°</output></div>
+      <input type="range" id="akRX" min="-180" max="180" step="1" value="0" disabled>
+      <div class="lbl">Поворот Y <output id="ry">0°</output></div>
+      <input type="range" id="akRY" min="-180" max="180" step="1" value="0" disabled>
+      <div class="lbl">Поворот Z <output id="rz">0°</output></div>
+      <input type="range" id="akRZ" min="-180" max="180" step="1" value="0" disabled>
+    </div>
+
+    <div class="sec">
+      <h2>4. Пальцы (сжатие на хвате)</h2>
+      <div id="fingerInfo" class="hint">Кости пальцев ищутся автоматически (finger/thumb/index/middle/ring/pinky).</div>
+      <div class="lbl">Сжатие правой кисти <output id="fcurlR">0%</output></div>
+      <input type="range" id="curlR" min="0" max="100" step="1" value="0" disabled>
+      <div class="lbl">Сжатие левой кисти <output id="fcurlL">0%</output></div>
+      <input type="range" id="curlL" min="0" max="100" step="1" value="0" disabled>
+    </div>
+
+    <div class="sec">
+      <h2>5. Поза вручную (кости)</h2>
+      <div id="boneList" class="list"></div>
+      <div class="lbl">Поворот кости X <output id="bx0">0°</output></div>
+      <input type="range" id="boneX" min="-180" max="180" step="1" value="0" disabled>
+      <div class="lbl">Поворот кости Y <output id="by0">0°</output></div>
+      <input type="range" id="boneY" min="-180" max="180" step="1" value="0" disabled>
+      <div class="lbl">Поворот кости Z <output id="bz0">0°</output></div>
+      <input type="range" id="boneZ" min="-180" max="180" step="1" value="0" disabled>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="btnPoseSave" disabled>Записать позу</button>
+        <button class="btn" id="btnPoseReset" disabled>Сброс костей</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <h2>6. Конфиг для игры</h2>
+      <div class="row">
+        <button class="btn accent" id="btnExport">Выгрузить bot-anim.json</button>
+        <button class="btn" id="btnImport">Загрузить конфиг</button>
+        <input type="file" id="fileCfg" accept=".json">
+      </div>
+      <div class="hint">Конфиг хранит: хват (кость/смещения/повороты), сжатие пальцев, записанные позы и выбор
+        базовой анимации. В игре он применяется к боту арены «ПОЛИГОН».</div>
+    </div>
+  </div>
+</div>
+<div id="drop">Отпусти файлы модели (FBX/GLB + текстуры)</div>
+<div id="toast"></div>
+<script>
+window.addEventListener('error', function (e) {
+  var el = document.getElementById('modelInfo');
+  if (el) el.textContent = 'ОШИБКА: ' + (e.message || e.type) + (e.filename ? (' @ ' + e.filename.split('/').pop() + ':' + e.lineno) : '');
+  el && (el.style.color = '#ff8a7a');
+});
+window.addEventListener('unhandledrejection', function (e) {
+  var el = document.getElementById('modelInfo');
+  if (el) { el.textContent = 'ОШИБКА ЗАГРУЗКИ: ' + (e.reason && e.reason.message ? e.reason.reason ? '' : e.reason.message : e.reason); el.style.color = '#ff8a7a'; }
+});
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+/* ================= сцена ================= */
+const vp = document.getElementById('viewport');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+if (THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
+vp.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0e13);
+scene.fog = new THREE.Fog(0x0b0e13, 18, 60);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 200);
+camera.position.set(2.6, 1.7, 3.4);
+
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.target.set(0, 1, 0);
+orbit.enableDamping = true;
+
+scene.add(new THREE.HemisphereLight(0x8fa4c4, 0x2a2118, 0.85));
+const sun = new THREE.DirectionalLight(0xffd9a0, 2.2);
+sun.position.set(4, 7, 3);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.left = -5; sun.shadow.camera.right = 5;
+sun.shadow.camera.top = 5; sun.shadow.camera.bottom = -5;
+scene.add(sun);
+const rim = new THREE.DirectionalLight(0x4d7dff, 0.7);
+rim.position.set(-5, 3, -4);
+scene.add(rim);
+
+const clock = new THREE.Clock();
+let animSpeed = 1;
+let mixer = null;                 // объявлено заранее — цикл рендера стартует сразу
+let grid = null;
+function makeGrid() {
+  grid = new THREE.GridHelper(10, 20, 0x3a4656, 0x222b36);
+  grid.visible = false;
+  scene.add(grid);
+}
+makeGrid();
+const floorM = new THREE.Mesh(new THREE.CircleGeometry(6, 40),
+  new THREE.MeshStandardMaterial({ color: 0x141a22, roughness: 0.95 }));
+floorM.rotation.x = -Math.PI / 2;
+floorM.receiveShadow = true;
+scene.add(floorM);
+
+function resize() {
+  const w = vp.clientWidth, h = vp.clientHeight;
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  renderer.setSize(w, h, false);
+}
+window.addEventListener('resize', resize);
+resize();
+(function loop() {
+  requestAnimationFrame(loop);
+  const dt = clock.getDelta();
+  if (mixer) mixer.update(dt * animSpeed);
+  orbit.update();
+  renderer.render(scene, camera);
+})();
+
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove('on'), 2600);
+}
+
+/* ================= загрузка модели ================= */
+let botRoot = null, skeleton = null, bones = [], clips = [];
+let blobMap = {};
+
+function urlMod(loader) {
+  loader.manager = new THREE.LoadingManager();
+  loader.manager.setURLModifier((url) => {
+    const clean = decodeURIComponent(url).replace(/^\.?\//, '').split('/').pop().toLowerCase();
+    if (blobMap[clean]) return blobMap[clean];
+    return url;
+  });
+}
+
+function clearModel() {
+  if (botRoot) { scene.remove(botRoot); botRoot = null; }
+  if (skeleton) { scene.remove(skeleton); skeleton = null; }
+  if (mixer) { mixer.stopAllAction(); mixer.uncacheRoot(mixer.getRoot()); mixer = null; }
+  clips = []; bones = [];
+}
+
+function findBones(root) {
+  const out = [];
+  root.traverse((o) => { if (o.isBone || (o.isObject3D && /mixamorig|bip|bone|joint|arm|hand|leg|spine|head|finger|thumb/i.test(o.name || ''))) out.push(o); });
+  return out;
+}
+
+function pick(arr, re) { return arr.filter((b) => re.test(b.name || '')); }
+/* ✅ v0.4.66: нормализация имени кости — CamelCase (mixamorigRightArm),
+   snake_case (arm_R) и точечные (arm.r) приводятся к «arm r» виду.
+   Старый regex с [^a-z]-границами НЕ находил mixamo-кости (слитные
+   имена без разделителей), из-за чего анимации вообще не позировали
+   руки/ноги — бот и держал оружие «тупо» (поза просто не применялась). */
+function normName(n) {
+  return (n || '').replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[^A-Za-z0-9]+/g, ' ').toLowerCase();
+}
+function pickSide(arr, re, side) {
+  const want = side === 'r' ? ['right', ' r '] : ['left', ' l '];
+  const avoid = side === 'r' ? ['left'] : ['right'];
+  return arr.filter((b) => {
+    const n = ' ' + normName(b.name) + ' ';
+    if (!re.test(n)) return false;
+    return want.some((w) => n.indexOf(w) !== -1) &&
+      !avoid.some((w) => n.indexOf(w) !== -1);
+  });
+}
+function pickPref(arr, side, res) {
+  for (const re of res) {
+    const hits = pickSide(arr, re, side);
+    if (hits.length) return hits;
+  }
+  return [];
+}
+
+window.__studio = { scene, camera, orbit,
+  get bot() { return botRoot; }, get bones() { return bones; } };
+
+function afterModelLoad(obj, kind) {
+  clearModel();
+  botRoot = obj;
+  window.__ST = { get botRoot() { return botRoot; }, get bones() { return bones; }, rig: rigGroups };
+  obj.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.frustumCulled = false;
+      if (o.material) { const mats = Array.isArray(o.material) ? o.material : [o.material]; mats.forEach((m) => { m.side = THREE.FrontSide; if (m.map) m.map.anisotropy = 4; }); }
+    }
+  });
+  /* ✅ нормализация масштаба: FBX из Rust — в САНТИМЕТРАХ (~104 юнита
+     рост) → приводим к метрам (~1.8), иначе камера/туман не видят модель */
+  const preBox = new THREE.Box3().setFromObject(obj);
+  const preH = preBox.max.y - preBox.min.y;
+  if (isFinite(preH) && (preH > 3 || preH < 0.5)) {
+    const k = 1.8 / preH;
+    obj.scale.setScalar(k);
+    obj.position.y -= preBox.min.y * k;
+    obj.position.x -= (preBox.min.x + preBox.max.x) / 2 * k;
+    obj.position.z -= (preBox.min.z + preBox.max.z) / 2 * k;
+  }
+  scene.add(obj);
+  bones = findBones(obj);
+  // скелет
+  document.getElementById('btnSkeleton').disabled = false;
+  document.getElementById('btnGrid').disabled = false;
+  // клипы
+  const anims = (kind === 'fbx' ? obj.animations : (obj.userData && obj.userData.glbAnimations) || obj.animations) || [];
+  const info = document.getElementById('modelInfo');
+  info.textContent = 'Костей: ' + bones.length + ' · Клипов в файле: ' + anims.length;
+  buildAnimList(anims);
+  buildBoneList();
+  buildFingerControls();
+  fillGripBoneSelect();
+  enableAll();
+  // рамка камеры по росту модели (уже нормализованной)
+  const box = new THREE.Box3().setFromObject(obj);
+  const h = Math.max(0.5, box.max.y - box.min.y);
+  camera.position.set(h * 0.9, h * 0.62, h * 1.35);
+  orbit.target.set(0, Math.min(1.1, h * 0.5), 0);
+  sun.shadow.camera.left = -3; sun.shadow.camera.right = 3;
+  sun.shadow.camera.top = 3; sun.shadow.camera.bottom = -3;
+  sun.shadow.camera.updateProjectionMatrix();
+  if (!anims.length) toast('В модели нет клипов — используй базовые анимации');
+}
+
+function loadFiles(files) {
+  blobMap = {};
+  let fbxFile = null, glbFile = null;
+  for (const f of files) {
+    const name = f.name.toLowerCase();
+    const url = URL.createObjectURL(f);
+    blobMap[name] = url;
+    if (name.endsWith('.fbx')) fbxFile = f;
+    if (name.endsWith('.glb') || name.endsWith('.gltf')) glbFile = f;
+  }
+  if (!fbxFile && !glbFile) { toast('Нет FBX/GLB в выбранных файлах'); return; }
+  if (fbxFile) {
+    const loader = new FBXLoader();
+    urlMod(loader);
+    loader.load(blobMap[fbxFile.name.toLowerCase()], (obj) => afterModelLoad(obj, 'fbx'),
+      undefined, (e) => { console.error(e); toast('Ошибка чтения FBX — загрузи текстуры вместе с ним'); });
+    toast('Читаю FBX: ' + fbxFile.name);
+  } else {
+    const loader = new GLTFLoader();
+    urlMod(loader);
+    loader.load(blobMap[glbFile.name.toLowerCase()], (gltf) => {
+      const obj = gltf.scene;
+      obj.animations = gltf.animations || [];
+      afterModelLoad(obj, 'glb');
+    }, undefined, (e) => { console.error(e); toast('Ошибка чтения GLB'); });
+    toast('Читаю GLB: ' + glbFile.name);
+  }
+}
+
+document.getElementById('btnLoadModel').onclick = () => document.getElementById('fileModel').click();
+document.getElementById('fileModel').onchange = (e) => { if (e.target.files.length) loadFiles([...e.target.files]); };
+window.addEventListener('dragover', (e) => { e.preventDefault(); document.getElementById('drop').classList.add('on'); });
+window.addEventListener('dragleave', () => document.getElementById('drop').classList.remove('on'));
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  document.getElementById('drop').classList.remove('on');
+  if (e.dataTransfer.files.length) loadFiles([...e.dataTransfer.files]);
+});
+
+/* ================= анимации ================= */
+let actions = [], activeAction = null, animSpeedStep = 0;
+const SPEEDS = [0.5, 1, 1.5, 2];
+
+function buildAnimList(glbClips) {
+  const listEl = document.getElementById('animList');
+  listEl.innerHTML = '';
+  actions = [];
+  clips = [];
+  mixer = botRoot ? new THREE.AnimationMixer(botRoot) : null;
+  if (window.__ST) { window.__ST.mixer = mixer; window.__ST.clips = clips; }
+  (glbClips || []).forEach((c) => { clips.push({ name: 'ФАЙЛ · ' + c.name, clip: c }); });
+  const proc = makeProceduralClips();
+  /* ✅ v0.4.66: раньше пушался СЫРОЙ AnimationClip, а playClip читает
+     clips[idx].clip → undefined → TypeError 'uuid' и поза НИКОГДА не
+     применялась (бот и держал кала́ш «тупо» — без позы). */
+  proc.forEach((c) => clips.push({ name: c.name, clip: c }));
+  clips.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.textContent = c.name;
+    b.onclick = () => playClip(i, b);
+    listEl.appendChild(b);
+  });
+}
+
+function playClip(idx, btn) {
+  if (!mixer) return;
+  [...document.querySelectorAll('#animList button')].forEach((b) => b.classList.remove('sel'));
+  if (btn) btn.classList.add('sel');
+  if (activeAction) activeAction.fadeOut(0.2);
+  const clip = clips[idx].clip;
+  activeAction = mixer.clipAction(clip);
+  activeAction.reset().fadeIn(0.2).play();
+  document.getElementById('btnPlay').textContent = '■ Стоп';
+  playing = true;
+}
+
+let playing = false;
+document.getElementById('btnPlay').onclick = () => {
+  if (!mixer) return;
+  playing = !playing;
+  if (activeAction) {
+    if (playing) activeAction.play(); else activeAction.stop();
+  }
+  document.getElementById('btnPlay').textContent = playing ? '■ Стоп' : '▶ Играть';
+};
+document.getElementById('btnSpeed').onclick = (e) => {
+  animSpeedStep = (animSpeedStep + 1) % SPEEDS.length;
+  animSpeed = SPEEDS[animSpeedStep];
+  e.target.textContent = 'Скорость ' + animSpeed + '×';
+};
+
+/* ---- процедурные базовые анимации по костям (любой риг) ---- */
+function qTrack(times, quats) {
+  return new THREE.QuaternionKeyframeTrack('.bones[' + times._bn + '].quaternion',
+    times.t, quats.flat());
+}
+function makeClipFor(name, dur, boneFn) {
+  // boneFn(bone, t01, eulerTarget)
+  const fps = 20, n = Math.max(2, Math.round(dur * fps) + 1);
+  const e = new THREE.Euler(), q = new THREE.Quaternion();
+  const tracks = [];
+  const used = new Set();
+  const groups = rigGroups();
+  const defs = boneFn(groups);
+  defs.forEach((d) => {
+    const bone = d.bone;
+    if (!bone || used.has(bone.name)) return;
+    used.add(bone.name);
+    const times = [], vals = [];
+    const baseQ = bone.quaternion.clone();
+    for (let i = 0; i < n; i++) {
+      const t01 = i / (n - 1);
+      d.fn(t01, e);
+      q.setFromEuler(e);
+      // локальный поворот поверх базового
+      const fin = baseQ.clone().multiply(q);
+      times.push(i / fps);
+      vals.push(fin.x, fin.y, fin.z, fin.w);
+    }
+    const track = new THREE.QuaternionKeyframeTrack(bone.name + '.quaternion', times, vals);
+    tracks.push(track);
+  });
+  if (!tracks.length) return null;
+  return new THREE.AnimationClip(name, dur, tracks);
+}
+
+let _rig = null;
+function rigGroups() {
+  if (_rig) return _rig;
+  const g = {
+    spine: pick(bones, /spine|chest|torso|upperbody|body/i)[0] || null,
+    spine1: pick(bones, /spine_?0?1|spine1|chest/i)[1] || pick(bones, /spine|chest/i)[1] || null,
+    head: pick(bones, /head(?!.*(top|end))/i)[0] || null,
+    armR: (pickPref(bones, 'r', [/upperarm/i, /arm/i, /shoulder|clavicle/i])[0]) || null,
+    armL: (pickPref(bones, 'l', [/upperarm/i, /arm/i, /shoulder|clavicle/i])[0]) || null,
+    foreR: (pickPref(bones, 'r', [/fore ?arm|lower ?arm/i, /elbow/i])[0]) || null,
+    foreL: (pickPref(bones, 'l', [/fore ?arm|lower ?arm/i, /elbow/i])[0]) || null,
+    handR: ((pickSide(bones, /hand|wrist/i, 'r').sort((a, b) => a.name.length - b.name.length)[0])) || null,
+    handL: ((pickSide(bones, /hand|wrist/i, 'l').sort((a, b) => a.name.length - b.name.length)[0])) || null,
+    thighR: (pickPref(bones, 'r', [/thigh|up ?leg|hip/i, /leg/i])[0]) || null,
+    thighL: (pickPref(bones, 'l', [/thigh|up ?leg|hip/i, /leg/i])[0]) || null,
+    calfR: (pickPref(bones, 'r', [/calf|lower ?leg|knee|shin/i, /(?<!up )leg/i])[0]) || null,
+    calfL: (pickPref(bones, 'l', [/calf|lower ?leg|knee|shin/i, /(?<!up )leg/i])[0]) || null
+  };
+  _rig = g;
+  return g;
+}
+
+function makeProceduralClips() {
+  const out = [];
+  // IDLE — дыхание + лёгкое покачивание
+  /* ✅ v0.4.66: IDLE = «низкая готовность» (low ready) — оружие у груди,
+     ствол вперёд-вниз, как держат в FPS на патрулировании */
+  const idle = makeClipFor('IDLE', 3.2, (g) => {
+    const defs = [];
+    if (g.spine) defs.push({ bone: g.spine, fn: (t, e) => { e.set(0.04 + Math.sin(t * Math.PI * 2) * 0.02, 0, Math.cos(t * Math.PI * 2) * 0.015); } });
+    if (g.head) defs.push({ bone: g.head, fn: (t, e) => { e.set(Math.sin(t * Math.PI * 2 + 1) * 0.03, Math.sin(t * Math.PI) * 0.05, 0); } });
+    if (g.armR) defs.push({ bone: g.armR, fn: (t, e) => { e.set(0, 1.15 + Math.sin(t * Math.PI * 2) * 0.02, 0.35); } });
+    if (g.armL) defs.push({ bone: g.armL, fn: (t, e) => { e.set(0, -1.1 + Math.sin(t * Math.PI * 2 + 1) * 0.02, -0.35); } });
+    if (g.foreR) defs.push({ bone: g.foreR, fn: (t, e) => { e.set(1.4, 0.28, 0); } });
+    if (g.foreL) defs.push({ bone: g.foreL, fn: (t, e) => { e.set(1.35, -0.42, 0); } });
+    return defs;
+  });
+  if (idle) out.push(idle);
+  // WALK — шаг на месте
+  const walk = makeClipFor('WALK', 1.1, (g) => {
+    const defs = [];
+    const legSwing = (t) => Math.sin(t * Math.PI * 2) * 0.55;
+    if (g.thighR) defs.push({ bone: g.thighR, fn: (t, e) => { e.set(legSwing(t), 0, 0); } });
+    if (g.thighL) defs.push({ bone: g.thighL, fn: (t, e) => { e.set(-legSwing(t), 0, 0); } });
+    if (g.calfR) defs.push({ bone: g.calfR, fn: (t, e) => { const s = Math.sin(t * Math.PI * 2); e.set(s > 0 ? -s * 0.7 : 0, 0, 0); } });
+    if (g.calfL) defs.push({ bone: g.calfL, fn: (t, e) => { const s = Math.sin(t * Math.PI * 2 + Math.PI); e.set(s > 0 ? -s * 0.7 : 0, 0, 0); } });
+    /* ✅ v0.4.66: руки держат оружие (низкая готовность), а не машут */
+    if (g.armR) defs.push({ bone: g.armR, fn: (t, e) => { e.set(Math.sin(t * Math.PI * 4) * 0.02, 1.15, 0.35); } });
+    if (g.armL) defs.push({ bone: g.armL, fn: (t, e) => { e.set(0, -1.1, -0.35); } });
+    if (g.foreR) defs.push({ bone: g.foreR, fn: (t, e) => { e.set(1.4, 0.28, 0); } });
+    if (g.foreL) defs.push({ bone: g.foreL, fn: (t, e) => { e.set(1.35, -0.42, 0); } });
+    if (g.spine) defs.push({ bone: g.spine, fn: (t, e) => { e.set(0.04, Math.sin(t * Math.PI * 4) * 0.04, 0); } });
+    return defs;
+  });
+  if (walk) out.push(walk);
+  // AIM — оружие у плеча (статичная стойка + микро-доводка)
+  /* ✅ v0.4.66: AIM = как игрок в 1-м лице — оружие поднято к плечу,
+     ствол горизонтально вперёд, правая на рукоятке, левая на цевье */
+  const aim = makeClipFor('AIM', 1.6, (g) => {
+    const defs = [];
+    if (g.armR) defs.push({ bone: g.armR, fn: (t, e) => { e.set(0, 1.52 + Math.sin(t * Math.PI * 2) * 0.015, 0.5); } });
+    if (g.foreR) defs.push({ bone: g.foreR, fn: (t, e) => { e.set(1.78, 0.28, 0); } });
+    if (g.armL) defs.push({ bone: g.armL, fn: (t, e) => { e.set(0, -1.45 + Math.sin(t * Math.PI * 2 + 1) * 0.015, -0.5); } });
+    if (g.foreL) defs.push({ bone: g.foreL, fn: (t, e) => { e.set(1.7, -0.42, 0); } });
+    if (g.spine) defs.push({ bone: g.spine, fn: (t, e) => { e.set(0.06, Math.sin(t * Math.PI * 2) * 0.02, 0); } });
+    if (g.head) defs.push({ bone: g.head, fn: (t, e) => { e.set(-0.05, 0, 0); } });
+    return defs;
+  });
+  if (aim) out.push(aim);
+  // SHOOT — отдача поверх AIM
+  const shoot = makeClipFor('SHOOT', 0.45, (g) => {
+    const defs = [];
+    const kick = (t) => Math.max(0, Math.sin(t * Math.PI)) * 1.0;
+    if (g.armR) defs.push({ bone: g.armR, fn: (t, e) => { e.set(kick(t) * 0.14, 1.52, 0.5); } });
+    if (g.foreR) defs.push({ bone: g.foreR, fn: (t, e) => { e.set(1.78 + kick(t) * 0.22, 0.28, 0); } });
+    if (g.armL) defs.push({ bone: g.armL, fn: (t, e) => { e.set(kick(t) * 0.1, -1.45, -0.5); } });
+    if (g.foreL) defs.push({ bone: g.foreL, fn: (t, e) => { e.set(1.7 + kick(t) * 0.18, -0.42, 0); } });
+    if (g.spine) defs.push({ bone: g.spine, fn: (t, e) => { e.set(0.06 + kick(t) * 0.06, 0, 0); } });
+    return defs;
+  });
+  if (shoot) out.push(shoot);
+  // DEATH — падение назад
+  const death = makeClipFor('DEATH', 1.2, (g) => {
+    const defs = [];
+    const fall = (t) => { const k = Math.min(1, t * 1.25); return k * k; };
+    if (g.spine) defs.push({ bone: g.spine, fn: (t, e) => { e.set(-fall(t) * 1.35, 0, 0); } });
+    if (g.head) defs.push({ bone: g.head, fn: (t, e) => { e.set(-fall(t) * 0.5, 0, fall(t) * 0.3); } });
+    if (g.armR) defs.push({ bone: g.armR, fn: (t, e) => { e.set(-0.2 - fall(t) * 0.6, 0, -fall(t) * 1.1); } });
+    if (g.armL) defs.push({ bone: g.armL, fn: (t, e) => { e.set(-0.2 - fall(t) * 0.6, 0, fall(t) * 1.1); } });
+    if (g.thighR) defs.push({ bone: g.thighR, fn: (t, e) => { e.set(fall(t) * 0.7, 0, 0); } });
+    if (g.thighL) defs.push({ bone: g.thighL, fn: (t, e) => { e.set(fall(t) * 0.5, 0, 0); } });
+    if (g.calfR) defs.push({ bone: g.calfR, fn: (t, e) => { e.set(-fall(t) * 0.9, 0, 0); } });
+    if (g.calfL) defs.push({ bone: g.calfL, fn: (t, e) => { e.set(-fall(t) * 0.6, 0, 0); } });
+    return defs;
+  });
+  if (death) out.push(death);
+  return out;
+}
+
+/* ================= скелет/сетка ================= */
+document.getElementById('btnSkeleton').onclick = (e) => {
+  if (!botRoot) return;
+  if (skeleton) { scene.remove(skeleton); skeleton = null; e.target.textContent = 'Скелет: выкл'; }
+  else { skeleton = new THREE.SkeletonHelper(botRoot); scene.add(skeleton); e.target.textContent = 'Скелет: вкл'; }
+};
+document.getElementById('btnGrid').onclick = (e) => {
+  grid.visible = !grid.visible;
+  e.target.textContent = 'Сетка: ' + (grid.visible ? 'вкл' : 'выкл');
+};
+
+/* ================= хват (наш ak47.glb) ================= */
+let akModel = null, akHolder = null;
+/* ✅ v0.4.66: пресеты подобраны ПОД ПОЗУ AIM (руки у груди) — кала́ш
+   горизонтально, ствол вперёд (+Z персонажа), правая на рукоятке,
+   левая на цевье. Старый chest [6,178,4] вращал оружие по оси кости
+   (выглядело «тупо», особенно без позы из-за бага клипов). */
+const AK_PRESETS = {
+  chest: { p: [0.01, -0.08, 0.07], r: [152, 58, -42] },
+  hip: { p: [0.05, -0.3, -0.05], r: [18, 168, -12] },
+  down: { p: [0.02, -0.34, -0.02], r: [82, 172, 0] }
+};
+
+/* авто-загрузка модели учёного (если студия открыта из папки BRIX) */
+function tryAutoBot() {
+  const fbx = new FBXLoader();
+  // текстуры лежат рядом (textures/*.png) — маппим имена файлов на папку
+  fbx.manager = new THREE.LoadingManager();
+  fbx.manager.setURLModifier(function (url) {
+    if (/\.fbx(\?|$)/i.test(url)) return url;   // сам FBX не переписываем
+    const clean = decodeURIComponent(url).replace(/^\.?\//, '').split('/').pop().toLowerCase();
+    return '../assets/models/bot-scientist/textures/' + clean;
+  });
+  fbx.load('../assets/models/bot-scientist/ScientistRigged.fbx', (obj) => {
+    if (botRoot) return;
+    afterModelLoad(obj, 'fbx');
+    toast('Модель учёного загружена (assets/models/bot-scientist)');
+  }, (xhr) => {
+    if (xhr.total) document.getElementById('modelInfo').textContent =
+      'Загрузка FBX: ' + Math.round(xhr.loaded / xhr.total * 100) + '%';
+  }, (err) => {
+    console.error('[studio] FBX auto-load fail', err);
+    const el = document.getElementById('modelInfo');
+    el.textContent = 'FBX не загрузился автоматически — выбери файлы вручную (пункт 1)';
+    el.style.color = '#ff8a7a';
+  });
+}
+tryAutoBot();
+
+function tryAutoAk() {
+  // студия лежит в BRIX/tools → модель рядом: ../assets/models/ak47.glb
+  const loader = new GLTFLoader();
+  ['../assets/models/ak47.glb', '../BRIX/assets/models/ak47.glb', 'assets/models/ak47.glb'].forEach((u) => {
+    loader.load(u, (gltf) => {
+      if (akModel) return;
+      attachAk(gltf.scene);
+      toast('Кала́ш загружен автоматически');
+    }, undefined, () => {});
+  });
+}
+tryAutoAk();
+
+document.getElementById('btnLoadAk').onclick = () => document.getElementById('fileAk').click();
+document.getElementById('fileAk').onchange = (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const loader = new GLTFLoader();
+  loader.load(URL.createObjectURL(f), (gltf) => attachAk(gltf.scene), undefined, () => toast('Ошибка GLB'));
+};
+
+function fillGripBoneSelect() {
+  const sel = document.getElementById('gripBone');
+  sel.innerHTML = '';
+  const arms = bones.filter((b) => /hand|wrist|palm|forearm|lowerarm|arm/i.test(b.name || ''));
+  const rs = arms.filter((b) => /r$|right|_r\b|\br\b/i.test(b.name || ''));
+  (rs.length ? rs : arms).forEach((b) => {
+    const o = document.createElement('option');
+    o.value = b.name;
+    o.textContent = b.name;
+    sel.appendChild(o);
+  });
+  if (!sel.options.length) {
+    const o = document.createElement('option');
+    o.value = '';
+    o.textContent = '— кости рук не найдены —';
+    sel.appendChild(o);
+  } else {
+    const hand = rs.find((b) => /hand|wrist/i.test(b.name || '')) || rs[0];
+    if (hand) sel.value = hand.name;
+  }
+  sel.onchange = () => attachAk(akModel);
+}
+
+function attachAk(model) {
+  if (!model) return;
+  /* ✅ нормализация: кала́ш приводим к длине ~0.85 м и ЦЕНТРИМ в
+     держателе (у ak47.glb бывают разные масштабы/пивоты) */
+  const pre = new THREE.Box3().setFromObject(model);
+  const size = pre.getSize(new THREE.Vector3());
+  const len = Math.max(size.x, size.y, size.z) || 1;
+  const k = 0.85 / len;
+  model.scale.setScalar(k);
+  model.updateMatrixWorld(true);
+  const box2 = new THREE.Box3().setFromObject(model);
+  const c = box2.getCenter(new THREE.Vector3());
+  model.position.sub(c);
+  if (akHolder && akHolder.parent) akHolder.parent.remove(akHolder);
+  const boneName = document.getElementById('gripBone').value;
+  const bone = bones.find((b) => b.name === boneName) ||
+    bones.find((b) => /hand|wrist/i.test(b.name || ''));
+  if (!bone) { toast('Кость руки не найдена — хват недоступен'); return; }
+  akModel = model;
+  akHolder = new THREE.Group();
+  akHolder.name = '__brix_ak_holder';
+  akHolder.add(model);
+  bone.add(akHolder);
+  /* ✅ компенсация СЖАТИЯ кости (у mixamo-ригов кости часто со scale
+     ~0.01, а то и 0): держатель растягивается обратно — кала́ш всегда
+     0.85 м в МИРОВЫХ координатах */
+  const ws = new THREE.Vector3();
+  bone.getWorldScale(ws);
+  const bs = Math.abs(ws.x) > 1e-6 ? Math.abs(ws.x) : 1;
+  akHolder.scale.setScalar(1 / bs);
+  applyAkTransform();
+  /* ✅ v0.4.66: сразу правильный хват — пресет «у груди», чтобы кала́ш
+     не висел по оси кости (то, что выглядело «тупо») */
+  const gp = AK_PRESETS.chest;
+  document.getElementById('akX').value = gp.p[0];
+  document.getElementById('akY').value = gp.p[1];
+  document.getElementById('akZ').value = gp.p[2];
+  document.getElementById('akRX').value = gp.r[0];
+  document.getElementById('akRY').value = gp.r[1];
+  document.getElementById('akRZ').value = gp.r[2];
+  applyAkTransform();
+  ['akX', 'akY', 'akZ', 'akRX', 'akRY', 'akRZ'].forEach((id) => { document.getElementById(id).disabled = false; });
+  if (window.__ST) window.__ST.akHolder = akHolder;
+}
+
+function applyAkTransform() {
+  if (!akHolder) return;
+  const gx = +document.getElementById('akX').value;
+  const gy = +document.getElementById('akY').value;
+  const gz = +document.getElementById('akZ').value;
+  const rx = +document.getElementById('akRX').value * Math.PI / 180;
+  const ry = +document.getElementById('akRY').value * Math.PI / 180;
+  const rz = +document.getElementById('akRZ').value * Math.PI / 180;
+  akHolder.position.set(gx, gy, gz);
+  akHolder.rotation.set(rx, ry, rz);
+  document.getElementById('ox').textContent = gx.toFixed(2);
+  document.getElementById('oy').textContent = gy.toFixed(2);
+  document.getElementById('oz').textContent = gz.toFixed(2);
+  document.getElementById('rx').textContent = Math.round(+document.getElementById('akRX').value) + '°';
+  document.getElementById('ry').textContent = Math.round(+document.getElementById('akRY').value) + '°';
+  document.getElementById('rz').textContent = Math.round(+document.getElementById('akRZ').value) + '°';
+}
+['akX', 'akY', 'akZ', 'akRX', 'akRY', 'akRZ'].forEach((id) => {
+  document.getElementById(id).addEventListener('input', applyAkTransform);
+});
+
+document.querySelectorAll('[data-grip]').forEach((b) => {
+  b.onclick = () => {
+    const preset = AK_PRESETS[b.getAttribute('data-grip')];
+    if (!akHolder) { toast('Сначала загрузи кала́ш'); return; }
+    document.getElementById('akX').value = preset.p[0];
+    document.getElementById('akY').value = preset.p[1];
+    document.getElementById('akZ').value = preset.p[2];
+    document.getElementById('akRX').value = preset.r[0];
+    document.getElementById('akRY').value = preset.r[1];
+    document.getElementById('akRZ').value = preset.r[2];
+    applyAkTransform();
+    toast('Хват: ' + b.textContent);
+  };
+});
+
+/* ================= пальцы ================= */
+let fingerBonesR = [], fingerBonesL = [];
+function buildFingerControls() {
+  fingerBonesR = bones.filter((b) => /finger|thumb|index|middle|ring|pinky/i.test(b.name || '') &&
+    /r$|right|_r\b|\br\b/i.test(b.name || ''));
+  fingerBonesL = bones.filter((b) => /finger|thumb|index|middle|ring|pinky/i.test(b.name || '') &&
+    /l$|left|_l\b|\bl\b/i.test(b.name || ''));
+  document.getElementById('fingerInfo').innerHTML = fingerBonesR.length + fingerBonesL.length
+    ? 'Найдено фаланг: ' + (fingerBonesR.length + fingerBonesL.length) + ' — ползунок сжимает кисть на хват.'
+    : 'Кости пальцев в риге не найдены — сжатие недоступно (не страшно: хват работает и без него).';
+  document.getElementById('curlR').disabled = !fingerBonesR.length;
+  document.getElementById('curlL').disabled = !fingerBonesL.length;
+}
+
+function curlFingers(list, k) {
+  list.forEach((b) => {
+    const base = b.userData.__baseQ || (b.userData.__baseQ = b.quaternion.clone());
+    const e = new THREE.Euler(k * 0.9, 0, k * 0.25);
+    const q = new THREE.Quaternion().setFromEuler(e);
+    b.quaternion.copy(base).multiply(q);
+  });
+}
+document.getElementById('curlR').addEventListener('input', (e) => {
+  document.getElementById('fcurlR').textContent = e.target.value + '%';
+  curlFingers(fingerBonesR, +e.target.value / 100);
+});
+document.getElementById('curlL').addEventListener('input', (e) => {
+  document.getElementById('fcurlL').textContent = e.target.value + '%';
+  curlFingers(fingerBonesL, +e.target.value / 100);
+});
+
+/* ================= позы костей ================= */
+let selBone = null;
+function buildBoneList() {
+  const listEl = document.getElementById('boneList');
+  listEl.innerHTML = '';
+  bones.slice(0, 120).forEach((b) => {
+    const btn = document.createElement('button');
+    btn.textContent = b.name || '(кость)';
+    btn.onclick = () => {
+      [...listEl.children].forEach((c) => c.classList.remove('sel'));
+      btn.classList.add('sel');
+      selBone = b;
+      ['boneX', 'boneY', 'boneZ'].forEach((id) => { document.getElementById(id).disabled = false; });
+      document.getElementById('btnPoseSave').disabled = false;
+      document.getElementById('btnPoseReset').disabled = false;
+    };
+    listEl.appendChild(btn);
+  });
+}
+['boneX', 'boneY', 'boneZ'].forEach((id, axis) => {
+  document.getElementById(id).addEventListener('input', (e) => {
+    if (!selBone) return;
+    const deg = +e.target.value;
+    const out = document.getElementById(['bx0', 'by0', 'bz0'][axis]);
+    if (out) out.textContent = deg + '°';
+    const base = selBone.userData.__poseBaseQ || (selBone.userData.__poseBaseQ = selBone.quaternion.clone());
+    const eul = new THREE.Euler(
+      +document.getElementById('boneX').value * Math.PI / 180,
+      +document.getElementById('boneY').value * Math.PI / 180,
+      +document.getElementById('boneZ').value * Math.PI / 180);
+    selBone.quaternion.copy(base).multiply(new THREE.Quaternion().setFromEuler(eul));
+  });
+});
+document.getElementById('btnPoseReset').onclick = () => {
+  bones.forEach((b) => { if (b.userData.__poseBaseQ) b.quaternion.copy(b.userData.__poseBaseQ); });
+  ['boneX', 'boneY', 'boneZ'].forEach((id) => { document.getElementById(id).value = 0; });
+  ['bx0', 'by0', 'bz0'].forEach((id) => { document.getElementById(id).textContent = '0°'; });
+};
+
+const poses = [];
+document.getElementById('btnPoseSave').onclick = () => {
+  if (!selBone) return;
+  poses.push({
+    bone: selBone.name,
+    x: +document.getElementById('boneX').value,
+    y: +document.getElementById('boneY').value,
+    z: +document.getElementById('boneZ').value
+  });
+  toast('Поза записана: ' + selBone.name + ' (' + poses.length + ' всего)');
+};
+
+/* ================= конфиг ================= */
+function enableAll() {
+  ['btnPlay', 'btnSpeed'].forEach((id) => { document.getElementById(id).disabled = false; });
+}
+document.getElementById('btnExport').onclick = () => {
+  const cfg = {
+    app: 'BRIX Bot Studio', ver: 1, date: new Date().toISOString(),
+    grip: {
+      bone: document.getElementById('gripBone').value,
+      pos: [ +document.getElementById('akX').value, +document.getElementById('akY').value, +document.getElementById('akZ').value ],
+      rotDeg: [ +document.getElementById('akRX').value, +document.getElementById('akRY').value, +document.getElementById('akRZ').value ],
+      weapon: 'ak47'
+    },
+    fingers: { right: +document.getElementById('curlR').value, left: +document.getElementById('curlL').value },
+    anim: activeAction ? clips.find((c) => c.clip === activeAction.getClip())?.name : null,
+    speed: animSpeed,
+    poses: poses
+  };
+  const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'bot-anim.json';
+  a.click();
+  toast('Конфиг выгружен: bot-anim.json');
+};
+document.getElementById('btnImport').onclick = () => document.getElementById('fileCfg').click();
+document.getElementById('fileCfg').onchange = (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  f.text().then((txt) => {
+    try {
+      const cfg = JSON.parse(txt);
+      if (cfg.grip) {
+        document.getElementById('gripBone').value = cfg.grip.bone || '';
+        if (cfg.grip.pos) {
+          document.getElementById('akX').value = cfg.grip.pos[0];
+          document.getElementById('akY').value = cfg.grip.pos[1];
+          document.getElementById('akZ').value = cfg.grip.pos[2];
+        }
+        if (cfg.grip.rotDeg) {
+          document.getElementById('akRX').value = cfg.grip.rotDeg[0];
+          document.getElementById('akRY').value = cfg.grip.rotDeg[1];
+          document.getElementById('akRZ').value = cfg.grip.rotDeg[2];
+        }
+        if (akModel) applyAkTransform();
+      }
+      if (cfg.fingers) {
+        document.getElementById('curlR').value = cfg.fingers.right || 0;
+        document.getElementById('curlL').value = cfg.fingers.left || 0;
+        curlFingers(fingerBonesR, (cfg.fingers.right || 0) / 100);
+        curlFingers(fingerBonesL, (cfg.fingers.left || 0) / 100);
+      }
+      toast('Конфиг загружен' + (cfg.grip && !akModel ? ' (модель/кала́ш подставь и нажми пресет)' : ''));
+    } catch (err) { toast('Кривой JSON'); }
+  });
+};
+
+toast('Студия готова: загрузи модель бота (пункт 1)');
+</script>
+</body>
+</html>

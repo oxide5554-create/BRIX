@@ -491,6 +491,72 @@
 .bxc-row-cc { font-size: 11px; letter-spacing: .1em; color: #9ec873; flex: 0 0 auto; }
 .bxc-row.nores .bxc-row-cc { color: #d96b55; }
 
+/* ✅ v0.4.60 СКИНЫ ПРИ КРАФТЕ: большая иконка предмета — КНОПКА.
+   У предметов со скинами в углу стрелка «▾»; клик открывает список */
+.bxc-shot-wrap { position: relative; }
+button.bxc-shot {
+  display: block; padding: 0; margin: 0; background: none; border: 0;
+  cursor: default; font: inherit;
+}
+button.bxc-shot.hasskins { cursor: pointer; }
+.bxc-shot-arrow {
+  display: none; position: absolute; right: 6px; bottom: 6px;
+  min-width: 18px; padding: 1px 0 2px; text-align: center;
+  font-size: 11px; line-height: 1; color: #ffb266;
+  background: rgba(20, 22, 20, .85);
+  border: 1px solid rgba(255, 178, 102, .55); border-radius: 4px;
+}
+button.bxc-shot.hasskins .bxc-shot-arrow { display: block; }
+button.bxc-shot.hasskins:hover .bxc-shot-arrow,
+button.bxc-shot.hasskins:hover { border-color: rgba(255, 178, 102, .55); }
+/* список скинов предмета — под иконкой */
+.bxc-skin-menu {
+  position: absolute; z-index: 30; top: calc(100% + 6px); right: 0;
+  width: 240px; max-height: 240px; overflow-y: auto;
+  background: rgba(24, 26, 24, .97);
+  border: 1px solid rgba(255, 255, 255, .14); border-radius: 6px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, .55);
+  padding: 6px;
+}
+.bxc-skin-menu.hidden { display: none; }
+.bxc-sm-cap {
+  font-size: 10px; letter-spacing: .18em; color: rgba(255, 255, 255, .45);
+  padding: 2px 4px 6px;
+}
+.bxc-sm-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 6px 8px; margin-bottom: 4px; text-align: left;
+  background: rgba(255, 255, 255, .04);
+  border: 1px solid rgba(255, 255, 255, .1); border-radius: 5px;
+  color: rgba(255, 255, 255, .85); cursor: pointer;
+  font-size: 11px; letter-spacing: .04em;
+}
+.bxc-sm-item img { width: 30px; height: 30px; object-fit: contain; flex: none; }
+.bxc-sm-item .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bxc-sm-item .st { font-size: 10px; color: #9fd97f; flex: none; letter-spacing: .08em; }
+.bxc-sm-item:hover { border-color: rgba(255, 178, 102, .55); }
+.bxc-sm-item.on {
+  border-color: var(--rust, #cd412f); background: rgba(205, 65, 47, .16);
+  color: #fff; box-shadow: 0 0 10px rgba(205, 65, 47, .25);
+}
+.bxc-sm-item.on .st { color: #ffb266; }
+.bxc-sm-item.lock { opacity: .45; cursor: not-allowed; }
+.bxc-sm-item.lock .st { color: #d96b55; }
+.bxc-sm-hint {
+  font-size: 9.5px; line-height: 1.45; color: rgba(255, 255, 255, .4);
+  padding: 4px 4px 2px;
+}
+
+/* ✅ v0.4.60: маркер «ЕСТЬ СКИН» у чертежа в списке */
+.bxc-skin-badge {
+  display: inline-block; vertical-align: 1px;
+  margin-left: 6px; padding: 1px 6px 2px;
+  font-size: 9px; letter-spacing: .12em;
+  color: #ffb266; border: 1px solid rgba(255, 178, 102, .45);
+  border-radius: 3px; background: rgba(255, 178, 102, .1);
+}
+
+
 /* нижняя подсказка */
 .bxc-hint {
   margin-top: 10px; font-size: 10px; letter-spacing: .18em;

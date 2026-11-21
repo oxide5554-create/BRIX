@@ -119,6 +119,17 @@ window.BrixAdmin = (function () {
   if (window.BrixNet) {
     BrixNet.on('adminon', function () {
       enabled = true;
+      /* ✅ v0.4.62: АДМИНАМ 10000 МОНЕТ (просьба игрока) — при подтверждении
+         админа сервером аккаунт добирается до 10000 (один раз, не каждый
+         вход: если монет больше 10000 — НЕ трогаем) */
+      try {
+        if (window.BrixState && BrixState.data && (BrixState.data.coins | 0) < 10000) {
+          BrixState.data.coins = 10000;
+          BrixState.save();
+          if (window.BrixHud) BrixHud.toast(
+            ru('Админский баланс: 10000 монет', 'Admin balance: 10000 coins'), 6);
+        }
+      } catch (eC) { /* нет state — пропускаем */ }
       if (!toastOnce) {
         toastOnce = true;
         toast(ru('Developer panel ready — press 9',
@@ -334,6 +345,39 @@ window.BrixAdmin = (function () {
     });
     body.appendChild(grid);
 
+    /* ---------- ✅ v0.4.63 2б. МОНЕТЫ СЕБЕ ---------- */
+    body.appendChild(secTitle('МОНЕТЫ — НАЧИСЛИТЬ СЕБЕ'));
+    var coinsRow = el('div', 'bap-item');
+    coinsRow.style.display = 'flex';
+    coinsRow.style.alignItems = 'center';
+    coinsRow.style.gap = '10px';
+    var coinsIn = el('input', 'bap-item-qty');
+    coinsIn.type = 'number';
+    coinsIn.min = '1';
+    coinsIn.max = '1000000';
+    coinsIn.value = '1000';
+    coinsIn.style.width = '110px';
+    coinsRow.appendChild(coinsIn);
+    var coinsBal = el('div', 'bap-item-name',
+      ru('Balance: ' + (window.BrixState ? BrixState.data.coins : 0) + ' coins',
+         'Баланс: ' + (window.BrixState ? BrixState.data.coins : 0) + ' монет'));
+    coinsRow.appendChild(coinsBal);
+    var coinsBtn = el('button', 'bap-btn bap-btn-small', ru('ADD', 'НАЧИСЛИТЬ'));
+    coinsBtn.onclick = function () {
+      if (window.menuAudio) menuAudio.click();
+      if (!window.BrixState) { toast(ru('State not ready', 'Профиль не готов'), 3); return; }
+      var n = Math.max(1, Math.min(1000000, parseInt(coinsIn.value, 10) || 0));
+      if (!n) { toast(ru('Enter an amount', 'Введи количество'), 3); return; }
+      BrixState.data.coins = Math.min(9999999, (BrixState.data.coins | 0) + n);
+      BrixState.save();
+      coinsBal.textContent = ru('Balance: ' + BrixState.data.coins + ' coins',
+        'Баланс: ' + BrixState.data.coins + ' монет');
+      toast(ru('+' + n + ' coins — balance ' + BrixState.data.coins,
+               '+' + n + ' монет — баланс ' + BrixState.data.coins), 4);
+    };
+    coinsRow.appendChild(coinsBtn);
+    body.appendChild(coinsRow);
+
     /* ---------- 3. ПОСТРОЙКИ ---------- */
     body.appendChild(secTitle('СЕРВЕР: ПОСТРОЙКИ'));
     var wipe = el('button', 'bap-btn bap-btn-danger font-h', 'УДАЛИТЬ ВСЕ ПОСТРОЙКИ');
@@ -414,53 +458,9 @@ window.BrixAdmin = (function () {
     };
     body.appendChild(dcl);
 
-    /* ---------- 7. ✅ v0.4.25 СКИНЫ (ТЕСТ) ----------
-       Скины оружия: пока ТОЛЬКО отсюда, для теста.
-       В магазин скинов (меню игры) скин НЕ добавляется. */
-    body.appendChild(secTitle('СКИНЫ (ТЕСТ — В МАГАЗИНЕ НЕТ)'));
-    var skinBox = el('div', 'bap-skins');
-    body.appendChild(skinBox);
-    body.appendChild(el('div', 'bap-note',
-      'Надеть/снять скин. Пока он надет — железная кирка выглядит «Ретро» ' +
-      'в руках и в инвентаре. В магазине скинов его НЕТ — это тест.'));
-    paintSkins();
-
-    function paintSkins() {
-      skinBox.innerHTML = '';
-      var list = (window.BrixWeaponSkins && BrixWeaponSkins.list()) || [];
-      if (!list.length) {
-        skinBox.appendChild(el('div', 'bap-note', 'Скинов пока нет.'));
-        return;
-      }
-      list.forEach(function (sk) {
-        var it = (window.BrixInventory && BrixInventory.ITEMS[sk.item]) || {};
-        var isOn = window.BrixWeaponSkins && !!BrixWeaponSkins.equipped(sk.item);
-        var nm = (BrixState.data.lang === 'en') ? (sk.name.en || sk.name.ru) : (sk.name.ru || sk.name.en);
-        var row = el('div', 'bap-skin' + (isOn ? ' on' : ''));
-        var ico = el('img', 'bap-skin-ico');
-        ico.src = sk.icon; ico.alt = nm; ico.draggable = false;
-        row.appendChild(ico);
-        var mid = el('div', 'bap-skin-mid');
-        mid.appendChild(el('div', 'bap-skin-name', nm));
-        mid.appendChild(el('div', 'bap-skin-item', 'на предмет: ' + (it.name || sk.item)));
-        row.appendChild(mid);
-        var btn = el('button', 'bap-btn bap-btn-small font-h', isOn ? 'СНЯТЬ' : 'НАДЕТЬ');
-        btn.onclick = function () {
-          if (window.menuAudio) menuAudio.click();
-          if (!window.BrixWeaponSkins) return;
-          if (isOn) {
-            BrixWeaponSkins.unequipItem(sk.item);
-            toast('Скин снят: ' + nm, 4);
-          } else {
-            BrixWeaponSkins.setEquip(sk.id);
-            toast('Скин надет: ' + nm + ' — выбери железную кирку в хотбаре (клавиша 5)', 6);
-          }
-          paintSkins();   // перерисовать кнопки
-        };
-        row.appendChild(btn);
-        skinBox.appendChild(row);
-      });
-    }
+    /* ✅ v0.4.58 СКИНЫ КАК ПРЕДМЕТЫ: старая тестовая секция «СКИНЫ»
+       (надеть/снять ретро-кирку) удалена — скины теперь покупаются в
+       магазине как ПРЕДМЕТЫ и тратятся в крафт-меню «со скином» */
 
     card.appendChild(body);
 

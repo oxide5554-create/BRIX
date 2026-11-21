@@ -111,6 +111,12 @@ window.BrixTopBar = (function () {
           actions =
             '<button class="btn-rust-primary" data-resend="' + n.id + '">' + BrixState.t('bell.resend') + '</button>' +
             '<button class="btn-rust" data-ok="' + n.id + '">' + BrixState.t('bell.ok') + '</button>';
+        } else if (n.kind === 'invite') {
+          /* ✅ v0.4.62: ЗАЯВКА В ДРУЗЬЯ прямо в колокольчике —
+             «вам предложили дружить» + ПРИНЯТЬ / ИГНОРИРОВАТЬ */
+          actions =
+            '<button class="btn-rust-primary" data-faccept="' + n.id + '">' + BrixState.t('bell.accept') + '</button>' +
+            '<button class="btn-rust" data-fignore="' + n.id + '">' + BrixState.t('bell.ignore') + '</button>';
         } else {
           actions = '<button class="btn-rust-primary" data-ok="' + n.id + '">' + BrixState.t('bell.ok') + '</button>';
         }
@@ -131,6 +137,36 @@ window.BrixTopBar = (function () {
         '</div>';
 
       back.querySelector('[data-close]').onclick = function () { back.remove(); };
+      /* ✅ v0.4.62: ПРИНЯТЬ заявку из колокольчика → друзья;
+         ИГНОРИРОВАТЬ → отклонить + убрать уведомление */
+      back.querySelectorAll('[data-faccept]').forEach(function (b) {
+        b.onclick = function () {
+          menuAudio.buy();
+          var n = notifs.filter(function (x) { return x.id === b.dataset.faccept; })[0];
+          if (n) {
+            // id заявки берём из входящих по имени (в уведомлении только ник)
+            var req = ((BrixState.data.social || {}).incoming || [])
+              .filter(function (x) { return x.name === n.name; })[0];
+            if (req) BrixFriends.accept(req.id, req.name);
+            BrixState.socialNotifResolve(n.id);
+          }
+          draw();
+          try { window.dispatchEvent(new CustomEvent('brix-social')); } catch (eS) {}
+        };
+      });
+      back.querySelectorAll('[data-fignore]').forEach(function (b) {
+        b.onclick = function () {
+          menuAudio.back();
+          var n = notifs.filter(function (x) { return x.id === b.dataset.fignore; })[0];
+          if (n) {
+            var req = ((BrixState.data.social || {}).incoming || [])
+              .filter(function (x) { return x.name === n.name; })[0];
+            if (req) BrixFriends.decline(req.id, req.name);
+            BrixState.socialNotifResolve(n.id);
+          }
+          draw();
+        };
+      });
       back.querySelectorAll('[data-ok]').forEach(function (b) {
         b.onclick = function () {
           menuAudio.click();
