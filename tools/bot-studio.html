@@ -2,901 +2,1859 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BRIX BOT STUDIO — студия анимаций и хватов бота</title>
-<script type="importmap">
-{"imports":{
-  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-}}
-</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>BRIX BOT STUDIO — хват калаша · анимации · полигон</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Russo+One&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#0b0e13; --s1:#11161d; --s2:#171e27; --s3:#1f2833; --line:#2b3644;
-  --amber:#ffb347; --ember:#ff5a3c; --blue:#4da3ff; --acid:#46e08a;
-  --txt:#e9e5da; --mut:#8b97a8;
-  --disp:'Russo One','Arial Black',sans-serif; --body:'Segoe UI',system-ui,sans-serif;
+  --bg:#0a0e13; --s1:#10161d; --s2:#151d26; --s3:#1c2733; --line:#243444; --line2:#31465c;
+  --tx:#dfe9f2; --mut:#8aa0b4; --dim:#5b7186;
+  --amber:#ffa028; --amber2:#ffc46b; --amber-deep:#ff7a1a;
+  --cyan:#3ec6ff; --green:#7dff5a; --ok:#57e389; --red:#ff4d5e; --vio:#b48bff; --wood:#b06a30;
+  --st-idle:#9db4c8; --st-walk:#57e389; --st-run:#ffd166; --st-aim:#3ec6ff; --st-shoot:#ffa028; --st-reload:#b48bff; --st-death:#ff4d5e;
+  --mono:'JetBrains Mono',monospace; --disp:'Russo One',sans-serif; --body:'Manrope',sans-serif;
 }
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{height:100%;background:var(--bg);color:var(--txt);font-family:var(--body);overflow:hidden}
-#app{display:flex;height:100%}
-#viewport{flex:1;position:relative;min-width:0}
-#viewport canvas{display:block;width:100%;height:100%;touch-action:none}
-#panel{width:360px;background:var(--s1);border-left:1px solid var(--line);overflow-y:auto;padding:14px;flex-shrink:0}
-h1{font-family:var(--disp);font-size:17px;letter-spacing:.06em;color:var(--amber);margin-bottom:2px}
-.sub{font-size:11px;color:var(--mut);margin-bottom:14px;line-height:1.5}
-.sec{border:1px solid var(--line);background:var(--s2);padding:10px 12px;margin-bottom:12px}
-.sec h2{font-family:var(--disp);font-size:12px;color:var(--txt);letter-spacing:.08em;margin-bottom:8px;display:flex;align-items:center;gap:8px}
-.sec h2::before{content:"";width:14px;height:3px;background:var(--amber)}
-.btn{display:inline-block;background:linear-gradient(165deg,#2a3341,#1a222c);border:1px solid var(--line);color:var(--txt);
-  font-family:var(--body);font-size:12px;padding:8px 12px;cursor:pointer;text-align:center;transition:.15s}
-.btn:hover{border-color:var(--amber);color:var(--amber)}
-.btn.accent{background:linear-gradient(165deg,#3a2a14,#241a0e);border-color:#6e5326;color:var(--amber)}
-.btn.danger{border-color:#6e2b24;color:#ff8a7a}
-.btn:disabled{opacity:.4;cursor:not-allowed}
-.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
-.row .btn{flex:1;min-width:90px}
-input[type=file]{display:none}
-input[type=range]{width:100%;height:4px;-webkit-appearance:none;background:#2b3644;outline:none}
-input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;background:var(--amber);cursor:pointer}
-.lbl{font-size:10.5px;color:var(--mut);letter-spacing:.08em;text-transform:uppercase;display:flex;justify-content:space-between;margin:8px 0 4px}
-.lbl output{color:var(--amber)}
-.list{max-height:150px;overflow-y:auto;border:1px solid var(--line);background:var(--s1)}
-.list button{display:block;width:100%;text-align:left;background:none;border:none;color:var(--txt);
-  font-family:var(--body);font-size:12px;padding:7px 10px;cursor:pointer;border-bottom:1px solid #1c242e}
-.list button:hover{background:#222c38}
-.list button.sel{background:#2c2413;color:var(--amber)}
-.chip{display:inline-block;font-size:10px;padding:2px 7px;border:1px solid var(--line);color:var(--mut);margin:2px 3px 2px 0}
-.chip.on{border-color:var(--acid);color:var(--acid)}
-#boneList{max-height:200px}
-.hint{font-size:11px;color:var(--mut);line-height:1.55;margin-top:6px}
-.hint b{color:var(--amber)}
-#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:#1d2835;border:1px solid var(--amber);
-  color:var(--txt);padding:10px 18px;font-size:13px;opacity:0;transition:.3s;pointer-events:none;z-index:50;max-width:80vw}
-#toast.on{opacity:1}
-#drop{position:fixed;inset:0;background:#0b0e13e8;border:3px dashed var(--amber);display:none;
-  align-items:center;justify-content:center;font-family:var(--disp);font-size:22px;color:var(--amber);z-index:40}
-#drop.on{display:flex}
-@media (max-width:760px){
-  #app{flex-direction:column}
-  #panel{width:100%;height:45%;order:2;border-left:none;border-top:1px solid var(--line)}
-  #viewport{height:55%}
+html,body{height:100%}
+body{background:var(--bg);color:var(--tx);font-family:var(--body);overflow:hidden;-webkit-font-smoothing:antialiased}
+body::after{content:"";position:fixed;inset:0;z-index:90;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E")}
+::selection{background:var(--amber);color:#1a1206}
+/* ---------- scrollbars ---------- */
+*{scrollbar-width:thin;scrollbar-color:#3a4f66 #0d1219}
+*::-webkit-scrollbar{width:9px;height:9px}
+*::-webkit-scrollbar-track{background:#0d1219;border-left:1px solid #1a2431}
+*::-webkit-scrollbar-thumb{background:linear-gradient(180deg,#3a4f66,#2b3c4f);border-radius:5px;border:2px solid #0d1219}
+*::-webkit-scrollbar-thumb:hover{background:var(--amber)}
+/* ---------- app grid ---------- */
+#app{display:grid;grid-template-rows:56px 1fr;height:100vh;height:100dvh}
+#main{display:grid;grid-template-columns:minmax(0,1fr) 392px;min-height:0}
+#left{display:grid;grid-template-rows:minmax(0,1fr) auto;min-height:0;border-right:1px solid var(--line)}
+/* ---------- topbar ---------- */
+#top{display:flex;align-items:center;gap:14px;padding:0 16px;background:linear-gradient(180deg,#141c26,#0f151d);border-bottom:1px solid var(--line);position:relative;z-index:40}
+#top::after{content:"";position:absolute;left:0;right:0;bottom:-4px;height:4px;
+  background:repeating-linear-gradient(-45deg,var(--amber) 0 10px,#131a22 10px 20px);opacity:.85}
+.logo{display:flex;align-items:center;gap:10px;min-width:0}
+.logo svg{flex:none}
+.logo b{font-family:var(--disp);font-size:17px;letter-spacing:.06em;white-space:nowrap;
+  background:linear-gradient(90deg,#ffc46b,#ffa028 55%,#ff7a1a);-webkit-background-clip:text;background-clip:text;color:transparent}
+.logo small{display:block;font-family:var(--mono);font-size:9.5px;color:var(--mut);letter-spacing:.14em;margin-top:1px}
+#topchips{display:flex;gap:8px;margin-left:8px;flex:1;min-width:0;overflow:hidden}
+.chip{font-family:var(--mono);font-size:10.5px;color:var(--mut);border:1px solid var(--line);background:#0d141c;
+  padding:4px 9px;border-radius:99px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.chip b{color:var(--tx);font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex:none}
+.dot.ok{background:var(--green);box-shadow:0 0 8px var(--green)}
+.dot.warn{background:var(--amber);box-shadow:0 0 8px var(--amber)}
+.dot.off{background:#3a4a5c}
+#top .actions{display:flex;gap:8px;align-items:center}
+/* ---------- buttons ---------- */
+.btn{font-family:var(--body);font-weight:700;font-size:12.5px;color:var(--tx);background:linear-gradient(180deg,#1b2530,#141c25);
+  border:1px solid var(--line2);border-radius:9px;padding:8px 13px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;
+  transition:transform .12s,border-color .15s,box-shadow .15s,background .15s;user-select:none;white-space:nowrap}
+.btn:hover{border-color:var(--amber);box-shadow:0 0 0 1px rgba(255,160,40,.25),0 4px 18px -6px rgba(255,160,40,.35);transform:translateY(-1px)}
+.btn:active{transform:translateY(0) scale(.98)}
+.btn svg{flex:none}
+.btn.primary{background:linear-gradient(180deg,#ffb44d,#ff8c1f);color:#221302;border-color:#ffc46b;text-shadow:0 1px 0 rgba(255,255,255,.25)}
+.btn.primary:hover{box-shadow:0 0 0 1px #ffc46b,0 6px 24px -6px rgba(255,150,30,.7)}
+.btn.danger{border-color:#5c2b33;color:#ff8d99}
+.btn.danger:hover{border-color:var(--red);box-shadow:0 0 0 1px rgba(255,77,94,.3)}
+.btn.sm{padding:5px 9px;font-size:11.5px;border-radius:7px}
+.btn.wide{width:100%;justify-content:center}
+.btn[disabled]{opacity:.4;pointer-events:none}
+.icobtn{width:38px;height:38px;justify-content:center;padding:0}
+/* ---------- stage ---------- */
+#stage{position:relative;min-height:0;background:radial-gradient(120% 90% at 60% 20%,#1a2836 0%,#0f1620 60%);overflow:hidden}
+#stage canvas{display:block;width:100%;height:100%;outline:none;touch-action:none}
+#stage::after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(130% 100% at 50% 40%,transparent 60%,rgba(4,7,11,.35) 100%)}
+.hud{position:absolute;z-index:10;pointer-events:none}
+#hudTL{top:12px;left:14px;display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+#hudHits{top:12px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--amber2);
+  border:1px solid rgba(255,160,40,.45);background:rgba(13,18,25,.8);padding:5px 12px;border-radius:99px;transition:transform .1s}
+#hudHits.pulse{transform:translateX(-50%) scale(1.12);color:#fff;border-color:var(--amber)}
+#hudBR{bottom:12px;right:14px;display:flex;gap:6px}
+#camrow{position:absolute;top:12px;right:14px;z-index:11;display:flex;gap:6px}
+.camBtn{pointer-events:auto;font-family:var(--mono);font-size:10.5px;color:var(--mut);background:rgba(13,18,25,.85);
+  border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;transition:.15s}
+.camBtn:hover{color:var(--amber2);border-color:var(--amber)}
+#stateMark{bottom:8px;left:16px;font-family:var(--disp);font-size:46px;letter-spacing:.08em;opacity:.13;line-height:1;color:var(--st-idle);transition:color .3s}
+body[data-state="WALK"] #stateMark{color:var(--st-walk)} body[data-state="RUN"] #stateMark{color:var(--st-run)}
+body[data-state="AIM"] #stateMark{color:var(--st-aim)}
+body[data-state="SHOOT"] #stateMark{color:var(--st-shoot)} body[data-state="RELOAD"] #stateMark{color:var(--st-reload)}
+body[data-state="DEATH"] #stateMark{color:var(--st-death)}
+#crosshair{top:50%;left:50%;transform:translate(-50%,-50%);width:44px;height:44px;opacity:0;transition:opacity .25s,transform .08s}
+body[data-state="AIM"] #crosshair,body[data-state="SHOOT"] #crosshair{opacity:.9}
+#crosshair.fire{transform:translate(-50%,-50%) scale(1.25)}
+#dropOverlay{position:absolute;inset:0;z-index:30;display:none;align-items:center;justify-content:center;background:rgba(8,12,17,.85);backdrop-filter:blur(4px)}
+#dropOverlay.on{display:flex}
+#dropOverlay .box{border:2px dashed var(--amber);border-radius:16px;padding:38px 54px;text-align:center;background:rgba(255,160,40,.06);animation:dropPulse 1.2s infinite}
+#dropOverlay .box b{font-family:var(--disp);font-size:19px;color:var(--amber2);display:block;margin-bottom:8px}
+#dropOverlay .box span{font-family:var(--mono);font-size:11.5px;color:var(--mut)}
+@keyframes dropPulse{50%{box-shadow:0 0 0 10px rgba(255,160,40,.07)}}
+/* ---------- transport ---------- */
+#transport{background:linear-gradient(180deg,#121a23,#0e141c);border-top:1px solid var(--line);padding:10px 14px 8px;display:flex;flex-direction:column;gap:7px;z-index:20}
+#trow{display:flex;gap:8px;align-items:stretch;overflow-x:auto;padding-bottom:2px}
+.stateBtn{flex:none;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:86px;padding:8px 10px 7px;cursor:pointer;
+  background:linear-gradient(180deg,#171f2a,#121922);border:1px solid var(--line);border-radius:11px;color:var(--mut);transition:.15s;position:relative}
+.stateBtn .en{font-family:var(--mono);font-size:8.5px;letter-spacing:.18em;opacity:.7}
+.stateBtn .ru{font-family:var(--disp);font-size:11.5px;letter-spacing:.05em;color:var(--tx)}
+.stateBtn svg{opacity:.85}
+.stateBtn:hover{transform:translateY(-2px);border-color:var(--line2)}
+.stateBtn.active{color:var(--sc);border-color:var(--sc);background:linear-gradient(180deg,color-mix(in srgb,var(--sc) 16%,#131a23),#121922);box-shadow:0 0 18px -4px var(--sc),inset 0 0 12px -8px var(--sc)}
+.stateBtn.active .ru{color:var(--sc)}
+.stateBtn.active[data-state="DEATH"]{animation:deathPulse 1.1s infinite}
+@keyframes deathPulse{50%{box-shadow:0 0 26px -2px var(--red)}}
+#tctl{flex:none;display:flex;align-items:center;gap:8px;margin-left:auto;padding-left:8px;border-left:1px solid var(--line)}
+#speedWrap{display:flex;flex-direction:column;gap:2px;width:130px}
+#speedWrap label{font-family:var(--mono);font-size:9.5px;color:var(--mut);display:flex;justify-content:space-between}
+#speedWrap label b{color:var(--amber2)}
+#keysHint{font-family:var(--mono);font-size:9.5px;color:var(--dim);letter-spacing:.05em;display:flex;gap:12px;flex-wrap:wrap}
+#keysHint b{color:var(--mut);font-weight:600}
+/* ---------- panel ---------- */
+#panel{min-height:0;overflow-y:auto;background:linear-gradient(180deg,#10161d,#0d1219);padding:14px 14px 24px;position:relative}
+#panel::before{content:"";position:sticky;top:-14px;display:block;height:0}
+.sec{border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,#131b24,#101720);margin-bottom:12px;overflow:hidden;animation:secIn .55s cubic-bezier(.2,.8,.2,1) backwards}
+.sec:nth-child(2){animation-delay:.06s}.sec:nth-child(3){animation-delay:.12s}.sec:nth-child(4){animation-delay:.18s}
+.sec:nth-child(5){animation-delay:.24s}.sec:nth-child(6){animation-delay:.3s}.sec:nth-child(7){animation-delay:.36s}.sec:nth-child(8){animation-delay:.42s}
+@keyframes secIn{from{opacity:0;transform:translateY(14px)}}
+.sec>header{display:flex;align-items:center;gap:9px;padding:11px 13px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.015)}
+.sec>header .num{font-family:var(--mono);font-size:10px;font-weight:600;color:#221302;background:linear-gradient(180deg,#ffb44d,#ff8c1f);border-radius:6px;padding:3px 7px}
+.sec>header h2{font-family:var(--disp);font-size:12.5px;letter-spacing:.09em;font-weight:400}
+.sec>header .tag{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--dim);letter-spacing:.1em}
+.sec .body{padding:12px 13px;display:flex;flex-direction:column;gap:11px}
+.note{font-size:11.5px;line-height:1.55;color:var(--mut)}
+.note b{color:var(--amber2);font-weight:700}
+.note code{font-family:var(--mono);font-size:10.5px;color:var(--cyan);background:#0d141c;border:1px solid var(--line);padding:1px 5px;border-radius:5px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+/* controls */
+.ctl{display:flex;flex-direction:column;gap:5px}
+.ctl .lab{display:flex;justify-content:space-between;align-items:baseline;font-size:11.5px;font-weight:600;color:var(--mut)}
+.ctl .lab output{font-family:var(--mono);font-size:11px;color:var(--amber2)}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:20px;background:transparent;cursor:pointer;--p:50%}
+input[type=range]::-webkit-slider-runnable-track{height:5px;border-radius:3px;background:linear-gradient(90deg,var(--amber) var(--p),#223140 var(--p))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:#0d1219;border:2.5px solid var(--amber);margin-top:-5px;transition:box-shadow .15s,transform .1s}
+input[type=range]:hover::-webkit-slider-thumb{box-shadow:0 0 10px rgba(255,160,40,.6);transform:scale(1.12)}
+input[type=range]::-moz-range-track{height:5px;border-radius:3px;background:#223140}
+input[type=range]::-moz-range-progress{height:5px;border-radius:3px;background:var(--amber)}
+input[type=range]::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:#0d1219;border:2.5px solid var(--amber)}
+input[type=range]:focus-visible{outline:2px solid var(--cyan);outline-offset:2px;border-radius:4px}
+input[type=range][disabled]{opacity:.35;pointer-events:none}
+select{font-family:var(--body);font-weight:600;font-size:12px;color:var(--tx);background:#0d141c url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23ffa028' stroke-width='1.6' fill='none'/%3E%3C/svg%3E") no-repeat right 10px center;
+  border:1px solid var(--line2);border-radius:8px;padding:8px 28px 8px 10px;appearance:none;cursor:pointer;width:100%}
+select:hover{border-color:var(--amber)}
+select:focus-visible{outline:2px solid var(--cyan)}
+.tgl{display:flex;align-items:center;gap:9px;cursor:pointer;font-size:12px;font-weight:600;color:var(--mut);user-select:none}
+.tgl input{display:none}
+.tgl .sw{width:34px;height:19px;border-radius:99px;background:#1a2431;border:1px solid var(--line2);position:relative;transition:.18s;flex:none}
+.tgl .sw::after{content:"";position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#5b7186;transition:.18s}
+.tgl input:checked+.sw{background:rgba(255,160,40,.25);border-color:var(--amber)}
+.tgl input:checked+.sw::after{left:17px;background:var(--amber);box-shadow:0 0 8px rgba(255,160,40,.7)}
+.tgl input:checked~span{color:var(--tx)}
+.tglrow{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.drop{border:1.5px dashed rgba(255,160,40,.5);border-radius:11px;background:rgba(255,160,40,.05);padding:14px;text-align:center;cursor:pointer;transition:.15s;display:block}
+.drop:hover{background:rgba(255,160,40,.1);border-color:var(--amber)}
+.drop b{display:flex;align-items:center;justify-content:center;gap:8px;font-size:12.5px;color:var(--amber2)}
+.drop span{display:block;font-family:var(--mono);font-size:9.5px;color:var(--mut);margin-top:5px;line-height:1.5}
+.drop input{display:none}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.mini{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--dim);margin-bottom:-3px}
+.posechip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;color:var(--cyan);border:1px solid var(--line2);background:#0d141c;border-radius:99px;padding:4px 6px 4px 10px;cursor:pointer;transition:.15s}
+.posechip:hover{border-color:var(--cyan)}
+.posechip .x{width:16px;height:16px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;color:var(--dim);font-style:normal}
+.posechip .x:hover{color:var(--red);background:rgba(255,77,94,.15)}
+.clipbtn{width:100%;justify-content:flex-start;font-family:var(--mono);font-size:11px}
+.clipbtn.active{border-color:var(--cyan);color:var(--cyan);box-shadow:0 0 12px -4px var(--cyan)}
+#jsonPrev{font-family:var(--mono);font-size:10px;line-height:1.55;color:#9fc2da;background:#0a1017;border:1px solid var(--line);border-radius:9px;padding:10px;max-height:150px;overflow:auto;white-space:pre}
+#panelFoot{font-family:var(--mono);font-size:9.5px;color:var(--dim);text-align:center;line-height:1.8;letter-spacing:.06em;padding:4px 0 10px}
+#panelFoot b{color:var(--amber)}
+/* toasts */
+#toasts{position:fixed;left:16px;bottom:16px;z-index:120;display:flex;flex-direction:column;gap:8px;max-width:min(400px,86vw)}
+.toast{display:flex;align-items:center;gap:10px;background:rgba(15,21,29,.95);border:1px solid var(--line2);border-left:3px solid var(--cyan);
+  border-radius:10px;padding:10px 13px;font-size:12px;font-weight:600;box-shadow:0 10px 30px -10px #000;animation:toastIn .3s cubic-bezier(.2,.9,.3,1.2)}
+.toast.ok{border-left-color:var(--ok)} .toast.warn{border-left-color:var(--amber)} .toast.err{border-left-color:var(--red)}
+.toast .act{margin-left:auto;flex:none;font-family:var(--mono);font-size:10.5px;color:var(--amber2);background:none;border:1px solid rgba(255,160,40,.5);border-radius:7px;padding:4px 9px;cursor:pointer}
+.toast .act:hover{background:rgba(255,160,40,.15)}
+.toast.out{animation:toastOut .25s forwards}
+@keyframes toastIn{from{opacity:0;transform:translateX(-16px)}}
+@keyframes toastOut{to{opacity:0;transform:translateY(8px)}}
+/* boot */
+#boot{position:fixed;inset:0;z-index:200;background:radial-gradient(70% 60% at 50% 42%,#16222f 0%,#0a0e13 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;transition:opacity .6s}
+#boot.off{opacity:0;pointer-events:none}
+#boot .blogo{font-family:var(--disp);font-size:44px;letter-spacing:.1em;background:linear-gradient(90deg,#ffc46b,#ff7a1a);-webkit-background-clip:text;background-clip:text;color:transparent;animation:bootGlow 1.6s infinite}
+@keyframes bootGlow{50%{filter:drop-shadow(0 0 22px rgba(255,150,30,.55))}}
+#boot .bsub{font-family:var(--mono);font-size:11px;letter-spacing:.3em;color:var(--mut)}
+#bootBarW{width:230px;height:5px;border-radius:3px;background:#1a2431;overflow:hidden;border:1px solid var(--line)}
+#bootBar{height:100%;width:5%;background:linear-gradient(90deg,#ffb44d,#ff7a1a);transition:width .3s;border-radius:3px}
+#bootMsg{font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.08em;min-height:15px}
+#boot.err #bootMsg{color:var(--red);max-width:420px;text-align:center;line-height:1.6}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.001s!important;transition-duration:.001s!important}}
+/* ---------- mobile ---------- */
+@media (max-width:1120px){#main{grid-template-columns:minmax(0,1fr) 340px}}
+@media (max-width:980px){
+  #app{grid-template-rows:52px 1fr}
+  #main{grid-template-columns:1fr;grid-template-rows:minmax(280px,46dvh) auto minmax(0,1fr)}
+  #left{display:contents}
+  #stage{grid-row:1}
+  #transport{grid-row:2;border-top:1px solid var(--line)}
+  #panel{grid-row:3;border-top:1px solid var(--line)}
+  #topchips{display:none}
+  .logo small{display:none}
+  #stateMark{font-size:30px}
+  #keysHint{display:none}
+  #camrow{top:auto;bottom:10px;right:10px}
+  #hudBR{display:none}
+  .stateBtn{min-width:74px;padding:7px 8px 6px}
+  #tctl{border-left:none}
+  #speedWrap{width:104px}
 }
 </style>
 </head>
-<body>
+<body data-state="IDLE">
+
+<div id="boot">
+  <div class="blogo">BRIX</div>
+  <div class="bsub">BOT STUDIO · ПОЛИГОН</div>
+  <div id="bootBarW"><div id="bootBar"></div></div>
+  <div id="bootMsg">инициализация рендера…</div>
+</div>
+
 <div id="app">
-  <div id="viewport"></div>
-  <div id="panel">
-    <h1>BRIX BOT STUDIO</h1>
-    <div class="sub">Студия анимаций и хватов бота. Загрузи свою модель (FBX/GLB + текстуры),
-      настрой базовые анимации, хваты и пальцы, вставь НАШ кала́ш (без рук) и выгрузи конфиг для игры.</div>
+  <!-- ══════════ TOP BAR ══════════ -->
+  <header id="top">
+    <div class="logo">
+      <svg width="30" height="30" viewBox="0 0 30 30" fill="none">
+        <rect x="1.5" y="1.5" width="27" height="27" rx="7" stroke="#ffa028" stroke-width="2"/>
+        <circle cx="15" cy="15" r="6.5" stroke="#3ec6ff" stroke-width="1.6"/>
+        <path d="M15 5v5M15 20v5M5 15h5M20 15h5" stroke="#ffa028" stroke-width="2" stroke-linecap="round"/>
+        <circle cx="15" cy="15" r="1.8" fill="#ff4d5e"/>
+      </svg>
+      <div><b>BRIX BOT STUDIO</b><small>ХВАТ · АНИМАЦИИ · ПОЛИГОН</small></div>
+    </div>
+    <div id="topchips">
+      <span class="chip">Модель <b id="chipModel">манекен BRIX</b></span>
+      <span class="chip">Калаш <b id="chipWeapon">встроенный</b></span>
+      <span class="chip"><i class="dot ok" id="chipIKr"></i>правая · спуск</span>
+      <span class="chip"><i class="dot ok" id="chipIKl"></i>левая · цевьё</span>
+    </div>
+    <div class="actions">
+      <button class="btn sm" id="sndBtn" title="Звук (M)">
+        <svg id="sndIco" width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M2 6v4h3l4 3V3L5 6H2z" fill="currentColor"/><path class="waves" d="M11 5.5a3.5 3.5 0 010 5M12.8 3.8a6 6 0 010 8.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        <span id="sndLbl">ЗВУК: ВКЛ</span>
+      </button>
+      <button class="btn primary sm" id="exportBtn" title="Выгрузить bot-anim.json (E)">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M8 2v8m0 0l-3-3m3 3l3-3M2.5 12.5h11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Экспорт
+      </button>
+    </div>
+  </header>
 
-    <div class="sec">
-      <h2>1. Модель бота</h2>
-      <div class="row">
-        <button class="btn accent" id="btnLoadModel">Загрузить FBX/GLB + текстуры</button>
-        <input type="file" id="fileModel" multiple accept=".fbx,.glb,.gltf,.png,.jpg">
+  <div id="main">
+    <div id="left">
+      <!-- ══════════ 3D STAGE ══════════ -->
+      <div id="stage">
+        <div class="hud" id="hudTL">
+          <span class="chip"><i class="dot ok" id="ikR"></i><span id="ikRTxt">R · грип+спуск</span></span>
+          <span class="chip"><i class="dot ok" id="ikL"></i><span id="ikLTxt">L · цевьё</span></span>
+          <span class="chip">кость хвата <b id="boneChip">RightHand</b></span>
+        </div>
+        <div class="hud" id="hudHits">МИШЕНЬ · <b id="hitsVal">0</b></div>
+        <div class="hud" id="hudBR">
+          <span class="chip"><b id="fpsVal">60</b> fps</span>
+          <span class="chip"><b id="triVal">0</b> трис</span>
+        </div>
+        <div id="camrow">
+          <button class="camBtn" data-cam="front">СПЕРЕДИ</button>
+          <button class="camBtn" data-cam="side">СБОКУ</button>
+          <button class="camBtn" data-cam="back">СЗАДИ</button>
+          <button class="camBtn" data-cam="grip">ХВАТ КРУПНО</button>
+        </div>
+        <svg class="hud" id="crosshair" viewBox="0 0 44 44" fill="none">
+          <circle cx="22" cy="22" r="1.6" fill="#3ec6ff"/>
+          <path d="M22 4v9M22 31v9M4 22h9M31 22h9" stroke="#3ec6ff" stroke-width="1.6" stroke-linecap="round"/>
+          <circle cx="22" cy="22" r="14" stroke="#3ec6ff" stroke-width=".8" opacity=".4"/>
+        </svg>
+        <div class="hud" id="stateMark">IDLE</div>
+        <div id="dropOverlay"><div class="box">
+          <b>Отпусти файлы модели</b><span>FBX / GLB + текстуры .png · ak47.glb · bot-anim.json</span>
+        </div></div>
       </div>
-      <div class="hint">Выбери сразу <b>ScientistRigged.fbx и все .png из папки textures</b> (можно выделить всё).
-        Или перетащи файлы в окно. Модель из rust-scientist-blue.zip подходит напрямую.</div>
-      <div id="modelInfo" class="hint" style="color:var(--acid)"></div>
-      <div class="row" style="margin-top:8px">
-        <button class="btn" id="btnSkeleton" disabled>Скелет: выкл</button>
-        <button class="btn" id="btnGrid" disabled>Сетка: выкл</button>
+
+      <!-- ══════════ TRANSPORT ══════════ -->
+      <div id="transport">
+        <div id="trow">
+          <button class="stateBtn active" data-state="IDLE" style="--sc:var(--st-idle)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="3.2" r="2" stroke="currentColor" stroke-width="1.5"/><path d="M8 6v5m0 0l-2.5 4M8 11l2.5 4M4 8.5h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            <span class="ru">СТОЙКА</span><span class="en">IDLE · 1</span>
+          </button>
+          <button class="stateBtn" data-state="WALK" style="--sc:var(--st-walk)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 3l5 5-5 5M8.5 3l5 5-5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="ru">ШАГ</span><span class="en">WALK · 2</span>
+          </button>
+          <button class="stateBtn" data-state="RUN" style="--sc:var(--st-run)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="10.2" cy="2.9" r="1.8" stroke="currentColor" stroke-width="1.5"/><path d="M9.6 5.6L6.2 7.4 3.4 6.1M6.2 7.4l2.6 1.7 1 3.3M6.2 7.4L4.6 11l-3 2.4M8.8 9.1l3.6 1.7 2 .3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="ru">БЕГ</span><span class="en">RUN · 7</span>
+          </button>
+          <button class="stateBtn" data-state="AIM" style="--sc:var(--st-aim)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="5.5" stroke="currentColor" stroke-width="1.5"/><path d="M8 1v3.4M8 11.6V15M1 8h3.4M11.6 8H15" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/></svg>
+            <span class="ru">ПРИЦЕЛ</span><span class="en">AIM · 3</span>
+          </button>
+          <button class="stateBtn" data-state="SHOOT" style="--sc:var(--st-shoot)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1l1.6 4.2L14 3.9l-2.4 3.6L15 8l-3.4.5L14 12.1l-4.4-1.3L8 15l-1.6-4.2L2 12.1l2.4-3.6L1 8l3.4-.5L2 3.9l4.4 1.3L8 1z" fill="currentColor"/></svg>
+            <span class="ru">ОГОНЬ</span><span class="en">SHOOT · 4</span>
+          </button>
+          <button class="stateBtn" data-state="RELOAD" style="--sc:var(--st-reload)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 8a5.5 5.5 0 11-1.6-3.9M13.5 1.5v3h-3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span class="ru">ПЕРЕЗАРЯДКА</span><span class="en">RELOAD · 5</span>
+          </button>
+          <button class="stateBtn" data-state="DEATH" style="--sc:var(--st-death)">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3.5 3.5l9 9m0-9l-9 9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="8" cy="8" r="6.6" stroke="currentColor" stroke-width="1.3" opacity=".55"/></svg>
+            <span class="ru">СМЕРТЬ</span><span class="en">DEATH · 6</span>
+          </button>
+          <div id="tctl">
+            <button class="btn sm" id="stopBtn" title="Стоп — вернуть IDLE">■ Стоп</button>
+            <button class="btn sm icobtn" id="pauseBtn" title="Пауза (Space)">
+              <svg id="pauseIco" width="13" height="13" viewBox="0 0 14 14"><path d="M3 2h3v10H3zM8 2h3v10H8z" fill="currentColor"/></svg>
+            </button>
+            <div id="speedWrap">
+              <label>СКОРОСТЬ <b id="speedVal">1.0×</b></label>
+              <input type="range" id="speedRange" min="0.1" max="2" step="0.05" value="1">
+            </div>
+          </div>
+        </div>
+        <div id="keysHint">
+          <span><b>1–7</b> состояния</span><span><b>Space</b> пауза</span><span><b>M</b> звук</span><span><b>G</b> скелет</span><span><b>C</b> камера</span><span><b>E</b> экспорт</span><span><b>ЛКМ</b> орбита · <b>колесо</b> зум · <b>клик по боту</b> — выбрать кость</span>
+        </div>
       </div>
     </div>
 
-    <div class="sec">
-      <h2>2. Базовые анимации</h2>
-      <div id="animList" class="list"></div>
-      <div class="row" style="margin-top:8px">
-        <button class="btn" id="btnPlay" disabled>■ Стоп</button>
-        <button class="btn" id="btnSpeed" disabled>Скорость 1.0×</button>
-      </div>
-      <div class="hint">Если в FBX есть свои клипы — они в списке вместе с базовыми:
-        <b>IDLE · WALK · AIM · SHOOT · DEATH</b> (строятся по костям автоматически).</div>
-    </div>
+    <!-- ══════════ CONTROL PANEL ══════════ -->
+    <aside id="panel">
 
-    <div class="sec">
-      <h2>3. Хват оружия</h2>
-      <div class="row">
-        <button class="btn accent" id="btnLoadAk">Наш кала́ш (ak47.glb)</button>
-        <input type="file" id="fileAk" accept=".glb,.gltf">
-      </div>
-      <div class="hint">Студия сама попробует взять <b>../assets/models/ak47.glb</b> (если открыта из папки BRIX).
-        Иначе — выбери ak47.glb вручную. Оружие крепится к кости ПРАВОЙ РУКИ.</div>
-      <div class="lbl">Кость-хват (правая рука)</div>
-      <select id="gripBone" style="width:100%;background:var(--s3);color:var(--txt);border:1px solid var(--line);padding:7px;font-size:12px"></select>
-      <div class="row" style="margin-top:8px">
-        <button class="btn" data-grip="chest">Две руки · у груди</button>
-        <button class="btn" data-grip="hip">Одна рука · у бедра</button>
-        <button class="btn" data-grip="down">Опущен</button>
-      </div>
-      <div class="lbl">Смещение оружия X <output id="ox">0</output></div>
-      <input type="range" id="akX" min="-0.5" max="0.5" step="0.005" value="0" disabled>
-      <div class="lbl">Смещение Y <output id="oy">0</output></div>
-      <input type="range" id="akY" min="-0.5" max="0.5" step="0.005" value="0" disabled>
-      <div class="lbl">Смещение Z <output id="oz">0</output></div>
-      <input type="range" id="akZ" min="-0.5" max="0.5" step="0.005" value="0" disabled>
-      <div class="lbl">Поворот X <output id="rx">0°</output></div>
-      <input type="range" id="akRX" min="-180" max="180" step="1" value="0" disabled>
-      <div class="lbl">Поворот Y <output id="ry">0°</output></div>
-      <input type="range" id="akRY" min="-180" max="180" step="1" value="0" disabled>
-      <div class="lbl">Поворот Z <output id="rz">0°</output></div>
-      <input type="range" id="akRZ" min="-180" max="180" step="1" value="0" disabled>
-    </div>
+      <section class="sec">
+        <header><span class="num">01</span><h2>МОДЕЛЬ БОТА</h2><span class="tag">FBX / GLB</span></header>
+        <div class="body">
+          <label class="drop">
+            <b><svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 11V3m0 0L5 6m3-3l3 3M2.5 13h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>Загрузить FBX/GLB + текстуры</b>
+            <span>Выбери сразу ScientistRigged.fbx и все .png из папки textures<br>(можно выделить всё) · или перетащи файлы в окно<br>Модель из rust-scientist-blue.zip подходит напрямую</span>
+            <input type="file" id="modelFile" multiple accept=".fbx,.glb,.gltf,.png,.jpg,.jpeg,.webp,.tga">
+          </label>
+          <div class="chips">
+            <span class="chip">файл <b id="modelName">манекен BRIX</b></span>
+            <span class="chip">костей <b id="boneCount">—</b></span>
+            <span class="chip">клипов <b id="clipCount">0</b></span>
+          </div>
+          <div class="tglrow">
+            <label class="tgl"><input type="checkbox" id="tglSkel"><i class="sw"></i><span>Скелет</span></label>
+            <label class="tgl"><input type="checkbox" id="tglMesh" checked><i class="sw"></i><span>Сетка</span></label>
+            <label class="tgl"><input type="checkbox" id="tglWire"><i class="sw"></i><span>Каркас</span></label>
+            <label class="tgl"><input type="checkbox" id="tglGrid" checked><i class="sw"></i><span>Разметка пола</span></label>
+          </div>
+          <div class="ctl"><div class="lab"><span>Разворот бота</span><output id="yawVal">0°</output></div>
+            <input type="range" id="yawRange" min="-180" max="180" step="1" value="0"></div>
+          <button class="btn sm" id="mannequinBtn">↺ Вернуть манекен BRIX</button>
+        </div>
+      </section>
 
-    <div class="sec">
-      <h2>4. Пальцы (сжатие на хвате)</h2>
-      <div id="fingerInfo" class="hint">Кости пальцев ищутся автоматически (finger/thumb/index/middle/ring/pinky).</div>
-      <div class="lbl">Сжатие правой кисти <output id="fcurlR">0%</output></div>
-      <input type="range" id="curlR" min="0" max="100" step="1" value="0" disabled>
-      <div class="lbl">Сжатие левой кисти <output id="fcurlL">0%</output></div>
-      <input type="range" id="curlL" min="0" max="100" step="1" value="0" disabled>
-    </div>
+      <section class="sec">
+        <header><span class="num">02</span><h2>АНИМАЦИИ И СЦЕНА</h2><span class="tag">PROC + CLIPS</span></header>
+        <div class="body">
+          <p class="note">Новый процедурный движок v3: <b>СТОЙКА</b> — дыхание, перенос веса, взгляд по сторонам; <b>ШАГ</b> — мах бедра, сгиб колена на махе, подскок таза, стопа пятка/носок; <b>БЕГ</b> — шире шаг, наклон корпуса, каденс 1.5 Гц; <b>ПРИЦЕЛ/ОГОНЬ</b> — вскидка к линии глаз и отдача; <b>ПЕРЕЗАРЯДКА</b> — магазин из левой руки; <b>СМЕРТЬ</b> — подколени, завал назад-набок. Оружие стабилизировано контр-вращением — ствол держит линию цели.</p>
+          <div id="clipList" style="display:flex;flex-direction:column;gap:6px">
+            <span class="note" style="font-family:var(--mono);font-size:10px">В файле нет клипов — работают процедурные.</span>
+          </div>
+          <div class="ctl"><div class="lab"><span>Качество рендера</span></div>
+            <select id="qualitySel"><option value="high">Высокое — тени + пыль + 1.75×</option><option value="med">Среднее — 1.25×</option><option value="low">Низкое — без теней, 1×</option></select></div>
+          <div class="tglrow">
+            <label class="tgl"><input type="checkbox" id="tglShadows" checked><i class="sw"></i><span>Тени</span></label>
+            <label class="tgl"><input type="checkbox" id="tglDust" checked><i class="sw"></i><span>Пыль / лучи</span></label>
+            <label class="tgl"><input type="checkbox" id="tglTracers" checked><i class="sw"></i><span>Трассеры</span></label>
+          </div>
+        </div>
+      </section>
 
-    <div class="sec">
-      <h2>5. Поза вручную (кости)</h2>
-      <div id="boneList" class="list"></div>
-      <div class="lbl">Поворот кости X <output id="bx0">0°</output></div>
-      <input type="range" id="boneX" min="-180" max="180" step="1" value="0" disabled>
-      <div class="lbl">Поворот кости Y <output id="by0">0°</output></div>
-      <input type="range" id="boneY" min="-180" max="180" step="1" value="0" disabled>
-      <div class="lbl">Поворот кости Z <output id="bz0">0°</output></div>
-      <input type="range" id="boneZ" min="-180" max="180" step="1" value="0" disabled>
-      <div class="row" style="margin-top:8px">
-        <button class="btn" id="btnPoseSave" disabled>Записать позу</button>
-        <button class="btn" id="btnPoseReset" disabled>Сброс костей</button>
-      </div>
-    </div>
+      <section class="sec">
+        <header><span class="num">03</span><h2>ХВАТ ОРУЖИЯ</h2><span class="tag">2× IK</span></header>
+        <div class="body">
+          <p class="note"><b>Правая кисть — на рукояти, указательный на спуске. Левая вытянута к цевью. Ствол строго вперёд.</b> Обе руки приклеены к оружию двухкостным IK и не отрываются в анимациях.</p>
+          <div class="row">
+            <button class="btn sm" id="weaponBtn">Загрузить ak47.glb</button>
+            <input type="file" id="weaponFile" accept=".glb,.gltf" style="display:none">
+            <span class="chip">оружие <b id="weaponName">встроенный АК</b></span>
+          </div>
+          <p class="note" style="font-family:var(--mono);font-size:9.5px">Студия сама пробует взять <code>../assets/models/ak47.glb</code> (если открыта из папки BRIX). Иначе — выбери файл вручную.</p>
+          <div class="ctl"><div class="lab"><span>Стойка хвата</span></div>
+            <select id="presetSel">
+              <option value="ready">Две руки · прямо у груди (боевая)</option>
+              <option value="ads">Прицел · у линии глаз</option>
+              <option value="patrol">У груди · патруль (ствол чуть вниз)</option>
+              <option value="hip">Одна рука · у бедра</option>
+              <option value="low">Опущен · low-ready</option>
+            </select></div>
+          <div class="row">
+            <button class="btn sm primary" id="alignBtn" style="flex:1">⟛ Выровнять ствол прямо</button>
+            <button class="btn sm" id="flipBtn" title="Кант оружия 180°">⇅ 180°</button>
+          </div>
+          <div class="grid2">
+            <div class="ctl"><div class="lab"><span>Ось ствола</span></div>
+              <select id="axisSel"><option value="auto">Авто</option><option value="pz">+Z</option><option value="nz">−Z</option><option value="px">+X</option><option value="nx">−X</option><option value="py">+Y</option><option value="ny">−Y</option></select></div>
+            <div class="ctl"><div class="lab"><span>Кость-хват</span></div>
+              <select id="gripBoneSel"><option value="R">Правая рука</option><option value="L">Левая рука</option></select></div>
+          </div>
+          <div class="ctl"><div class="lab"><span>Масштаб оружия</span><output id="wScaleVal">1.00×</output></div>
+            <input type="range" id="wScaleRange" min="0.5" max="1.5" step="0.01" value="1"></div>
+          <div class="mini">СМЕЩЕНИЕ ОРУЖИЯ · М</div>
+          <div class="grid3">
+            <div class="ctl"><div class="lab"><span>X</span><output id="offXVal">0</output></div><input type="range" id="offXRange" min="-0.3" max="0.3" step="0.005" value="0"></div>
+            <div class="ctl"><div class="lab"><span>Y</span><output id="offYVal">0</output></div><input type="range" id="offYRange" min="-0.3" max="0.3" step="0.005" value="0"></div>
+            <div class="ctl"><div class="lab"><span>Z</span><output id="offZVal">0</output></div><input type="range" id="offZRange" min="-0.3" max="0.3" step="0.005" value="0"></div>
+          </div>
+          <div class="mini">ПОВОРОТ ОРУЖИЯ</div>
+          <div class="grid3">
+            <div class="ctl"><div class="lab"><span>Тангаж</span><output id="rotXVal">0°</output></div><input type="range" id="rotXRange" min="-60" max="60" step="0.5" value="0"></div>
+            <div class="ctl"><div class="lab"><span>Рыскание</span><output id="rotYVal">0°</output></div><input type="range" id="rotYRange" min="-60" max="60" step="0.5" value="0"></div>
+            <div class="ctl"><div class="lab"><span>Крен</span><output id="rotZVal">0°</output></div><input type="range" id="rotZRange" min="-60" max="60" step="0.5" value="0"></div>
+          </div>
+          <div class="grid2">
+            <div class="ctl"><div class="lab"><span>Доворот кисти R</span><output id="wristRVal">0°</output></div><input type="range" id="wristRRange" min="-70" max="70" step="1" value="0"></div>
+            <div class="ctl"><div class="lab"><span>Доворот кисти L</span><output id="wristLVal">0°</output></div><input type="range" id="wristLRange" min="-70" max="70" step="1" value="0"></div>
+          </div>
+        </div>
+      </section>
 
-    <div class="sec">
-      <h2>6. Конфиг для игры</h2>
-      <div class="row">
-        <button class="btn accent" id="btnExport">Выгрузить bot-anim.json</button>
-        <button class="btn" id="btnImport">Загрузить конфиг</button>
-        <input type="file" id="fileCfg" accept=".json">
-      </div>
-      <div class="hint">Конфиг хранит: хват (кость/смещения/повороты), сжатие пальцев, записанные позы и выбор
-        базовой анимации. В игре он применяется к боту арены «ПОЛИГОН».</div>
-    </div>
+      <section class="sec">
+        <header><span class="num">04</span><h2>ПАЛЬЦЫ</h2><span class="tag">CURL</span></header>
+        <div class="body">
+          <p class="note">Кости пальцев ищутся автоматически (<code>finger/thumb/index/middle/ring/pinky</code>). Указательный правой сжимается на 35% — <b>лежит на спусковом крючке</b> и дёргается при каждом выстреле.</p>
+          <div class="ctl"><div class="lab"><span>Сжатие правой кисти</span><output id="curlRVal">78%</output></div>
+            <input type="range" id="curlRRange" min="0" max="100" step="1" value="78"></div>
+          <div class="ctl"><div class="lab"><span>Сжатие левой кисти</span><output id="curlLVal">88%</output></div>
+            <input type="range" id="curlLRange" min="0" max="100" step="1" value="88"></div>
+          <div class="grid2">
+            <div class="ctl"><div class="lab"><span>Ось сжатия</span></div>
+              <select id="curlAxisSel"><option value="auto">Авто</option><option value="x">X</option><option value="y">Y</option><option value="z">Z</option><option value="nx">−X</option><option value="ny">−Y</option><option value="nz">−Z</option></select></div>
+            <button class="btn sm" id="gripDefaultBtn" style="align-self:end">✊ Обхват по умолчанию</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="sec">
+        <header><span class="num">05</span><h2>ОГОНЬ · МИШЕНЬ</h2><span class="tag">600 RPM</span></header>
+        <div class="body">
+          <p class="note">Стреляй <b>очередями</b>: как у настоящего АК, ствол уводит вверх-вправо. Гильзы, вспышка, дым и трассер каждый 3-й патрон. Стальная мишень на <b>12 м</b> звенит при попадании.</p>
+          <div class="ctl"><div class="lab"><span>Темп огня</span><output id="rateVal">600 в/мин</output></div>
+            <input type="range" id="rateRange" min="300" max="900" step="10" value="600"></div>
+          <div class="ctl"><div class="lab"><span>Сила отдачи</span><output id="recoilVal">1.00×</output></div>
+            <input type="range" id="recoilRange" min="0" max="2" step="0.05" value="1"></div>
+          <button class="btn sm" id="hitsResetBtn">⟲ Сбросить счёт мишени</button>
+        </div>
+      </section>
+
+      <section class="sec">
+        <header><span class="num">06</span><h2>ПОЗА ВРУЧНУЮ</h2><span class="tag">КОСТИ</span></header>
+        <div class="body">
+          <div class="ctl"><div class="lab"><span>Кость</span><output id="boneSelVal"></output></div>
+            <select id="boneSel"><option value="">— выбери кость или кликни по боту —</option></select></div>
+          <div class="grid3">
+            <div class="ctl"><div class="lab"><span>X</span><output id="poseXVal">0°</output></div><input type="range" id="poseXRange" min="-120" max="120" step="1" value="0" disabled></div>
+            <div class="ctl"><div class="lab"><span>Y</span><output id="poseYVal">0°</output></div><input type="range" id="poseYRange" min="-120" max="120" step="1" value="0" disabled></div>
+            <div class="ctl"><div class="lab"><span>Z</span><output id="poseZVal">0°</output></div><input type="range" id="poseZRange" min="-120" max="120" step="1" value="0" disabled></div>
+          </div>
+          <div class="row">
+            <button class="btn sm" id="recordBtn">● Записать позу</button>
+            <button class="btn sm danger" id="resetBonesBtn">Сброс костей</button>
+          </div>
+          <div class="chips" id="poseList"></div>
+        </div>
+      </section>
+
+      <section class="sec">
+        <header><span class="num">07</span><h2>КОНФИГ ДЛЯ ИГРЫ</h2><span class="tag">JSON v2</span></header>
+        <div class="body">
+          <button class="btn primary wide" id="exportBtn2">⬇ Выгрузить bot-anim.json</button>
+          <div class="grid2">
+            <button class="btn sm" id="configBtn">Загрузить конфиг</button>
+            <button class="btn sm" id="copyBtn">Копировать JSON</button>
+          </div>
+          <input type="file" id="configFile" accept=".json" style="display:none">
+          <pre id="jsonPrev"></pre>
+          <p class="note">Конфиг хранит: хват (кость / смещения / повороты / ось ствола), сжатие пальцев и доворот кистей, записанные позы, темп и отдачу, выбор базовой анимации. В игре он применяется к боту арены <b>«ПОЛИГОН»</b>.</p>
+        </div>
+      </section>
+
+      <div id="panelFoot">BRIX BOT STUDIO v3 · <b>калаш и учёный — автозагрузка</b> · правая — грип/спуск · левая — цевьё<br>новый движок анимаций v3: стойка · шаг · бег · прицел · огонь · перезарядка · смерть</div>
+    </aside>
   </div>
 </div>
-<div id="drop">Отпусти файлы модели (FBX/GLB + текстуры)</div>
-<div id="toast"></div>
-<script>
-window.addEventListener('error', function (e) {
-  var el = document.getElementById('modelInfo');
-  if (el) el.textContent = 'ОШИБКА: ' + (e.message || e.type) + (e.filename ? (' @ ' + e.filename.split('/').pop() + ':' + e.lineno) : '');
-  el && (el.style.color = '#ff8a7a');
-});
-window.addEventListener('unhandledrejection', function (e) {
-  var el = document.getElementById('modelInfo');
-  if (el) { el.textContent = 'ОШИБКА ЗАГРУЗКИ: ' + (e.reason && e.reason.message ? e.reason.reason ? '' : e.reason.message : e.reason); el.style.color = '#ff8a7a'; }
-});
-</script>
 
+<div id="toasts"></div>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"
+}}
+</script>
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
-/* ================= сцена ================= */
-const vp = document.getElementById('viewport');
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-if (THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
-vp.appendChild(renderer.domElement);
+/* ═══════════════════ helpers / state ═══════════════════ */
+const $=id=>document.getElementById(id);
+const D2R=Math.PI/180, clamp=THREE.MathUtils.clamp, damp=THREE.MathUtils.damp;
+const rnd=(a=1,b)=>b===undefined?Math.random()*a:a+Math.random()*(b-a);
+const kf=(u,K)=>{ if(u<=K[0][0])return K[0][1];
+  for(let i=1;i<K.length;i++){ if(u<=K[i][0]){ const a=K[i-1],b=K[i],s=(u-a[0])/(b[0]-a[0]),e=s*s*(3-2*s); return a[1]+(b[1]-a[1])*e; } }
+  return K[K.length-1][1]; };
+const sstep=(x,a,b)=>{const t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t);};
 
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0b0e13);
-scene.fog = new THREE.Fog(0x0b0e13, 18, 60);
+const S={ anim:'IDLE', prev:'IDLE', paused:false, speed:1,
+  preset:'ready', gripSide:'R', axis:'auto', flip:false, wScale:1,
+  off:[0,0,0], rot:[0,0,0], wristR:0, wristL:0,
+  curlR:78, curlL:88, curlAxis:'auto', yaw:0,
+  rate:600, recoil:1, quality:'high',
+  tgl:{skel:false,mesh:true,wire:false,grid:true,shadows:true,dust:true,tracers:true,sound:true},
+  userPose:{}, poses:[], clip:null, hits:0 };
 
-const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 200);
-camera.position.set(2.6, 1.7, 3.4);
+const PRESETS={
+  ready:{fwd:.20,up:-.02,right:.07,pitch:0,roll:0,left:true},
+  ads:{fwd:.17,up:.095,right:.015,pitch:0,roll:0,left:true},
+  patrol:{fwd:.14,up:-.05,right:.09,pitch:-14,roll:6,left:true},
+  hip:{fwd:.10,up:-.22,right:.16,pitch:-6,roll:4,left:false},
+  low:{fwd:.16,up:-.10,right:.08,pitch:-32,roll:3,left:true} };
 
-const orbit = new OrbitControls(camera, renderer.domElement);
-orbit.target.set(0, 1, 0);
-orbit.enableDamping = true;
+/* toasts */
+function toast(msg,type='info',act){ const t=document.createElement('div'); t.className='toast '+(type==='info'?'':type);
+  t.innerHTML=`<span>${msg}</span>`; if(act){const b=document.createElement('button');b.className='act';b.textContent=act.label;
+    b.onclick=()=>{act.fn();kill();};t.appendChild(b);} $('toasts').appendChild(t);
+  while($('toasts').children.length>3)$('toasts').firstChild.remove();
+  const kill=()=>{t.classList.add('out');setTimeout(()=>t.remove(),260);};
+  setTimeout(kill,act?6500:4200); }
 
-scene.add(new THREE.HemisphereLight(0x8fa4c4, 0x2a2118, 0.85));
-const sun = new THREE.DirectionalLight(0xffd9a0, 2.2);
-sun.position.set(4, 7, 3);
-sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
-sun.shadow.camera.left = -5; sun.shadow.camera.right = 5;
-sun.shadow.camera.top = 5; sun.shadow.camera.bottom = -5;
-scene.add(sun);
-const rim = new THREE.DirectionalLight(0x4d7dff, 0.7);
-rim.position.set(-5, 3, -4);
-scene.add(rim);
+/* ═══════════════════ audio ═══════════════════ */
+let AC=null,master=null;
+function audio(){ if(AC||!S.tgl.sound)return AC;
+  try{ AC=new (window.AudioContext||window.webkitAudioContext)();
+    const comp=AC.createDynamicsCompressor(); master=AC.createGain(); master.gain.value=.5;
+    master.connect(comp); comp.connect(AC.destination);}catch(e){S.tgl.sound=false;}
+  return AC; }
+function noiseBuf(dur){ const b=AC.createBuffer(1,AC.sampleRate*dur,AC.sampleRate),d=b.getChannelData(0);
+  for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1; return b; }
+function env(g,t0,a,peak,dec){ g.gain.setValueAtTime(0,t0); g.gain.linearRampToValueAtTime(peak,t0+a); g.gain.exponentialRampToValueAtTime(.0001,t0+a+dec); }
+function sfx(kind){ if(!S.tgl.sound||!audio())return; if(AC.state==='suspended')AC.resume(); const t=AC.currentTime;
+  if(kind==='shot'){ const n=AC.createBufferSource();n.buffer=noiseBuf(.22);
+    const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.value=1400;f.Q.value=.6;
+    const g=AC.createGain();env(g,t,.002,.55,.2); n.connect(f).connect(g).connect(master);n.start(t);
+    const o=AC.createOscillator();o.type='sine';o.frequency.setValueAtTime(120,t);o.frequency.exponentialRampToValueAtTime(48,t+.12);
+    const g2=AC.createGain();env(g2,t,.002,.5,.14);o.connect(g2).connect(master);o.start(t);o.stop(t+.2); }
+  else if(kind==='ding'){ [1160,1740,2320].forEach((fr,i)=>{const o=AC.createOscillator();o.type='triangle';o.frequency.value=fr*rnd(.97,1.03);
+    const g=AC.createGain();env(g,t,.001,.22/(i+1),.55);o.connect(g).connect(master);o.start(t);o.stop(t+.7);}); }
+  else if(kind==='step'){ const n=AC.createBufferSource();n.buffer=noiseBuf(.08);const f=AC.createBiquadFilter();f.type='lowpass';f.frequency.value=260;
+    const g=AC.createGain();env(g,t,.004,.16,.08);n.connect(f).connect(g).connect(master);n.start(t); }
+  else if(kind==='magout'||kind==='magin'){ const n=AC.createBufferSource();n.buffer=noiseBuf(.06);const f=AC.createBiquadFilter();f.type='highpass';f.frequency.value=kind==='magout'?900:500;
+    const g=AC.createGain();env(g,t,.001,.3,.07);n.connect(f).connect(g).connect(master);n.start(t);
+    const o=AC.createOscillator();o.type='square';o.frequency.value=kind==='magout'?300:190;const g2=AC.createGain();env(g2,t,.001,.12,.05);o.connect(g2).connect(master);o.start(t);o.stop(t+.1); }
+  else if(kind==='charge'){ const n=AC.createBufferSource();n.buffer=noiseBuf(.09);const f=AC.createBiquadFilter();f.type='bandpass';f.frequency.value=2200;
+    const g=AC.createGain();env(g,t,.001,.32,.09);n.connect(f).connect(g).connect(master);n.start(t); }
+  else if(kind==='thud'){ const o=AC.createOscillator();o.type='sine';o.frequency.setValueAtTime(90,t);o.frequency.exponentialRampToValueAtTime(38,t+.25);
+    const g=AC.createGain();env(g,t,.004,.5,.3);o.connect(g).connect(master);o.start(t);o.stop(t+.4); }
+  else if(kind==='tick'){ const o=AC.createOscillator();o.type='sine';o.frequency.value=1700;const g=AC.createGain();env(g,t,.001,.06,.03);o.connect(g).connect(master);o.start(t);o.stop(t+.05); } }
+window.addEventListener('pointerdown',()=>{ if(S.tgl.sound){audio(); if(AC&&AC.state==='suspended')AC.resume();} },{once:false});
 
-const clock = new THREE.Clock();
-let animSpeed = 1;
-let mixer = null;                 // объявлено заранее — цикл рендера стартует сразу
-let grid = null;
-function makeGrid() {
-  grid = new THREE.GridHelper(10, 20, 0x3a4656, 0x222b36);
-  grid.visible = false;
-  scene.add(grid);
+/* ═══════════════════ renderer / scene ═══════════════════ */
+const stage=$('stage');
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.42;
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+stage.prepend(renderer.domElement);
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x16212d);
+scene.fog=new THREE.Fog(0x16212d,13,36);
+const camera=new THREE.PerspectiveCamera(46,1,.1,80);
+const camStart=new THREE.Vector3(7.2,3.4,8.2), camEnd=new THREE.Vector3(3.05,1.72,2.35);
+camera.position.copy(camStart);
+const controls=new OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true; controls.dampingFactor=.08;
+controls.target.set(0,1.14,.18); controls.minDistance=.35; controls.maxDistance=13;
+controls.maxPolarAngle=Math.PI*.52; controls.autoRotateSpeed=.55;
+let introT=0,lastInteract=performance.now();
+controls.addEventListener('start',()=>{introT=1;lastInteract=performance.now();});
+renderer.domElement.addEventListener('wheel',()=>{lastInteract=performance.now();},{passive:true});
+
+const pmrem=new THREE.PMREMGenerator(renderer);
+scene.environment=pmrem.fromScene(new RoomEnvironment(),.04).texture;
+
+/* lights — яркий полигон: небо+пол, тёплый ключ, холодный рим, заливка, прожекты */
+const hemi=new THREE.HemisphereLight(0x8fb0d0,0x2a323c,1.15); scene.add(hemi);
+const key=new THREE.DirectionalLight(0xffd9a0,3.3); key.position.set(4,6.5,3);
+key.castShadow=true; key.shadow.mapSize.set(2048,2048);
+Object.assign(key.shadow.camera,{left:-5,right:5,top:7,bottom:-3,near:.5,far:24});
+key.shadow.bias=-.0015; key.target.position.set(0,1,1.5); scene.add(key,key.target);
+const rim=new THREE.DirectionalLight(0x3ec6ff,2.3); rim.position.set(-5,3.5,-6); scene.add(rim);
+const fill=new THREE.DirectionalLight(0xffb27a,1.1); fill.position.set(-3,2,4); scene.add(fill);
+const bounce=new THREE.DirectionalLight(0xbfd6ea,.55); bounce.position.set(2,1.5,7); scene.add(bounce);
+const muzzleLight=new THREE.PointLight(0xffa030,0,8,2); scene.add(muzzleLight);
+const spots=[];
+[[0,4.3,1.5,40],[0,4.3,7.5,44],[0,4.3,13.5,44],[0,4.6,.8,30]].forEach(a=>{
+  const sp=new THREE.SpotLight(0xffd9a0,a[3],16,.6,.6,1.5); sp.position.set(a[0],a[1],a[2]);
+  sp.target.position.set(a[0],0,a[2]); scene.add(sp,sp.target); spots.push(sp); });
+
+/* ═══════════════════ range environment ═══════════════════ */
+const SHARED=new Set(); const share=m=>{SHARED.add(m);return m;};
+const floorCanvas=document.createElement('canvas'); floorCanvas.width=floorCanvas.height=1024;
+function drawFloor(){ const c=floorCanvas.getContext('2d'),W=1024;
+  c.fillStyle='#171f2a';c.fillRect(0,0,W,W);
+  for(let i=0;i<2600;i++){c.fillStyle=`rgba(${140+rnd(60)|0},${150+rnd(60)|0},${165+rnd(60)|0},${rnd(.02,.06)})`;c.fillRect(rnd(W),rnd(W),rnd(1,3),rnd(1,3));}
+  const px=(x)=>(x/32+.5)*W, py=(z)=>((z-2.5)/32+.5)*W;
+  c.strokeStyle='rgba(62,198,255,.07)';c.lineWidth=1;
+  for(let m=-16;m<=16;m++){c.beginPath();c.moveTo(px(m),0);c.lineTo(px(m),W);c.stroke();c.beginPath();c.moveTo(0,py(m+2.5));c.lineTo(W,py(m+2.5));c.stroke();}
+  c.strokeStyle='rgba(255,160,40,.5)';c.lineWidth=3;c.setLineDash([16,12]);
+  [-1,1].forEach(s=>{c.beginPath();c.moveTo(px(s),py(.4));c.lineTo(px(s),py(16.5));c.stroke();});
+  c.setLineDash([]);
+  c.strokeStyle='rgba(255,160,40,.85)';c.lineWidth=5;c.beginPath();c.moveTo(px(-1.6),py(.4));c.lineTo(px(1.6),py(.4));c.stroke();
+  c.font='700 22px "Russo One", monospace';c.textAlign='center';
+  [5,10,15].forEach(d=>{c.fillStyle='rgba(255,196,107,.6)';c.save();c.translate(px(-1.5),py(d));c.rotate(Math.PI);c.fillText(d+' М',0,0);c.restore();
+    c.strokeStyle='rgba(255,196,107,.3)';c.lineWidth=2;c.beginPath();c.moveTo(px(-1),py(d));c.lineTo(px(1),py(d));c.stroke();});
+  c.fillStyle='rgba(62,198,255,.4)';c.save();c.translate(px(2.6),py(2));c.rotate(Math.PI);c.font='700 30px "Russo One", monospace';c.fillText('BRIX · ПОЛИГОН',0,0);c.restore();
+  c.fillStyle='rgba(255,160,40,.55)';c.save();c.translate(px(0),py(.1));c.rotate(Math.PI);c.font='700 17px "Russo One", monospace';c.fillText('ОГНЕВАЯ ЛИНИЯ',0,0);c.restore(); }
+drawFloor();
+const floorTex=new THREE.CanvasTexture(floorCanvas); floorTex.colorSpace=THREE.SRGBColorSpace; floorTex.anisotropy=8;
+const floorBase=new THREE.Mesh(new THREE.PlaneGeometry(32,32),share(new THREE.MeshStandardMaterial({color:0x1a222d,roughness:.94,metalness:.05})));
+floorBase.rotation.x=-Math.PI/2; floorBase.position.z=2.5; floorBase.receiveShadow=true; scene.add(floorBase);
+const floorMarks=new THREE.Mesh(new THREE.PlaneGeometry(32,32),share(new THREE.MeshBasicMaterial({map:floorTex,transparent:true,opacity:.92,depthWrite:false})));
+floorMarks.rotation.x=-Math.PI/2; floorMarks.position.set(0,.002,2.5); floorMarks.receiveShadow=true; scene.add(floorMarks);
+
+/* walls */
+const wallCanvas=document.createElement('canvas');wallCanvas.width=1024;wallCanvas.height=256;
+function drawWall(){const c=wallCanvas.getContext('2d');c.fillStyle='#1b2532';c.fillRect(0,0,1024,256);
+  c.strokeStyle='rgba(62,198,255,.08)';c.lineWidth=2;for(let x=0;x<1024;x+=86){c.beginPath();c.moveTo(x,0);c.lineTo(x,256);c.stroke();}
+  for(let x=-40;x<1064;x+=40){c.fillStyle=(x/40)%2?'#ffa028':'#131a22';c.save();c.beginPath();c.moveTo(x,256);c.lineTo(x+40,256);c.lineTo(x+60,216);c.lineTo(x+20,216);c.closePath();c.fill();c.restore();}
+  c.fillStyle='rgba(223,233,242,.5)';c.font='700 44px "Russo One", monospace';c.textAlign='center';c.fillText('BRIX · ОГНЕВОЙ РУБЕЖ · 15 М',512,110);}
+drawWall();
+const wallTex=new THREE.CanvasTexture(wallCanvas);wallTex.colorSpace=THREE.SRGBColorSpace;
+const wall=new THREE.Mesh(new THREE.BoxGeometry(22,5,.4),share(new THREE.MeshStandardMaterial({map:wallTex,roughness:.85,metalness:.2})));
+wall.position.set(0,2.5,18.6);scene.add(wall);
+[[-8,2,8],[8,2,8]].forEach(p=>{const w=new THREE.Mesh(new THREE.BoxGeometry(.4,4.4,26),share(new THREE.MeshStandardMaterial({color:0x131b24,roughness:.9})));w.position.set(...p);scene.add(w);});
+/* bullet trap plates */
+for(let i=0;i<3;i++){const p=new THREE.Mesh(new THREE.BoxGeometry(3.4,2.4,.12),share(new THREE.MeshStandardMaterial({color:0x2b3540,metalness:.7,roughness:.45})));
+  p.position.set((i-1)*3.6,1.3,17.6);p.rotation.x=-.32;scene.add(p);}
+/* lamps + volumetric cones */
+const coneTex=(()=>{const cv=document.createElement('canvas');cv.width=8;cv.height=128;const c=cv.getContext('2d');
+  const g=c.createLinearGradient(0,0,0,128);g.addColorStop(0,'rgba(255,220,160,.5)');g.addColorStop(1,'rgba(255,220,160,0)');
+  c.fillStyle=g;c.fillRect(0,0,8,128);const t=new THREE.CanvasTexture(cv);return t;})();
+const cones=[];
+[[0,4.3,1.5],[0,4.3,7.5],[0,4.3,13.5]].forEach(p=>{
+  const shade=new THREE.Mesh(new THREE.ConeGeometry(.3,.24,16,1,true),share(new THREE.MeshStandardMaterial({color:0x1c2530,metalness:.6,roughness:.5,side:THREE.DoubleSide})));
+  shade.position.set(p[0],p[1]+.1,p[2]);scene.add(shade);
+  const bulb=new THREE.Mesh(new THREE.SphereGeometry(.07,10,8),share(new THREE.MeshBasicMaterial({color:0xffe4b0})));
+  bulb.position.set(...p);scene.add(bulb);
+  const wire=new THREE.Mesh(new THREE.CylinderGeometry(.012,.012,1.6),share(new THREE.MeshStandardMaterial({color:0x0d1116})));
+  wire.position.set(p[0],p[1]+.95,p[2]);scene.add(wire);
+  const cone=new THREE.Mesh(new THREE.ConeGeometry(2.1,4.3,24,1,true),share(new THREE.MeshBasicMaterial({map:coneTex,transparent:true,opacity:.16,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide})));
+  cone.position.set(p[0],p[1]-2.15,p[2]);scene.add(cone);cones.push(cone);});
+/* dust */
+const DUST_N=260,dustPos=new Float32Array(DUST_N*3),dustPh=new Float32Array(DUST_N);
+for(let i=0;i<DUST_N;i++){dustPos[i*3]=rnd(-4,4);dustPos[i*3+1]=rnd(.1,4.4);dustPos[i*3+2]=rnd(-3,16);dustPh[i]=rnd(6.28);}
+const dustGeo=new THREE.BufferGeometry();dustGeo.setAttribute('position',new THREE.BufferAttribute(dustPos,3));
+const dust=new THREE.Points(dustGeo,share(new THREE.PointsMaterial({color:0xffd9a0,size:.02,transparent:true,opacity:.35,blending:THREE.AdditiveBlending,depthWrite:false})));
+scene.add(dust);
+
+/* steel target */
+const target=new THREE.Group();target.position.set(.1,0,12);scene.add(target);
+const steelMat=share(new THREE.MeshStandardMaterial({color:0x77828e,metalness:.75,roughness:.35,emissive:0xff8c1f,emissiveIntensity:0}));
+const platePivot=new THREE.Group();platePivot.position.y=1.82;target.add(platePivot);
+const torso=new THREE.Mesh(new THREE.BoxGeometry(.46,.62,.03),steelMat);torso.position.y=-.55;platePivot.add(torso);
+const headP=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,.03,20),steelMat);headP.rotation.x=Math.PI/2;headP.position.y=-.13;platePivot.add(headP);
+const standMat=share(new THREE.MeshStandardMaterial({color:0x22303e,roughness:.7,metalness:.3}));
+[[-.3],[.3]].forEach(x=>{const leg=new THREE.Mesh(new THREE.BoxGeometry(.06,1.9,.06),standMat);leg.position.set(x[0],.95,0);target.add(leg);});
+const bar=new THREE.Mesh(new THREE.BoxGeometry(.72,.07,.07),share(new THREE.MeshStandardMaterial({color:0xffa028,roughness:.5})));bar.position.y=1.86;target.add(bar);
+const blobTex=(()=>{const cv=document.createElement('canvas');cv.width=cv.height=128;const c=cv.getContext('2d');
+  const g=c.createRadialGradient(64,64,4,64,64,62);g.addColorStop(0,'rgba(0,0,0,.5)');g.addColorStop(1,'rgba(0,0,0,0)');c.fillStyle=g;c.fillRect(0,0,128,128);return new THREE.CanvasTexture(cv);})();
+const blob=new THREE.Mesh(new THREE.PlaneGeometry(1.5,1.5),share(new THREE.MeshBasicMaterial({map:blobTex,transparent:true,depthWrite:false})));
+blob.rotation.x=-Math.PI/2;blob.position.set(.1,.005,12);scene.add(blob);
+[[-1.6,15],[1.7,16.5]].forEach(p=>{const g=new THREE.Group();g.position.set(p[0],0,p[1]);
+  const t2=new THREE.Mesh(new THREE.BoxGeometry(.4,.55,.03),standMat);t2.position.y=1.25;g.add(t2);
+  const l=new THREE.Mesh(new THREE.BoxGeometry(.05,1.5,.05),standMat);l.position.y=.75;g.add(l);scene.add(g);});
+let plateAng=0,plateVel=0,hitFlash=0;
+
+/* ═══════════════════ shared bot/weapon materials ═══════════════════ */
+const M={
+  suit:share(new THREE.MeshStandardMaterial({color:0x2f6db5,roughness:.72,metalness:.05,envMapIntensity:.4})),
+  suitD:share(new THREE.MeshStandardMaterial({color:0x24568f,roughness:.78,envMapIntensity:.35})),
+  strap:share(new THREE.MeshStandardMaterial({color:0x1a2530,roughness:.85})),
+  rubber:share(new THREE.MeshStandardMaterial({color:0x14181d,roughness:.92})),
+  mask:share(new THREE.MeshStandardMaterial({color:0x232a31,roughness:.6,metalness:.15})),
+  lens:share(new THREE.MeshStandardMaterial({color:0x0d2b33,roughness:.25,metalness:.2,emissive:0x35e0ff,emissiveIntensity:.55})),
+  pouch:share(new THREE.MeshStandardMaterial({color:0x2b5a94,roughness:.7})),
+  buckle:share(new THREE.MeshStandardMaterial({color:0xd98a2b,roughness:.45,metalness:.4})),
+  wood:share(new THREE.MeshStandardMaterial({color:0x7a4a26,roughness:.55,metalness:.05,envMapIntensity:.6})),
+  woodD:share(new THREE.MeshStandardMaterial({color:0x5e3419,roughness:.6})),
+  metal:share(new THREE.MeshStandardMaterial({color:0x23262b,roughness:.34,metalness:.85,envMapIntensity:.9})),
+  metalD:share(new THREE.MeshStandardMaterial({color:0x17191d,roughness:.42,metalness:.8,envMapIntensity:.8})),
+  bake:share(new THREE.MeshStandardMaterial({color:0x8a4a1f,roughness:.5,metalness:.1,envMapIntensity:.6})),
+  brass:share(new THREE.MeshStandardMaterial({color:0xd9a441,roughness:.3,metalness:.9,emissive:0x442200,emissiveIntensity:.25})) };
+
+/* ═══════════════════ procedural bot ═══════════════════ */
+function bone(name,x,y,z,parent){const b=new THREE.Bone();b.name=name;b.position.set(x,y,z);parent.add(b);return b;}
+function limb(b,childPos,r,mat,r2){const len=childPos.length();
+  const g=new THREE.CapsuleGeometry(r,Math.max(.01,len-r*1.4),4,10);
+  const m=new THREE.Mesh(g,mat);m.castShadow=true;
+  m.position.copy(childPos).multiplyScalar(.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),childPos.clone().normalize());
+  m.userData.boneName=b.name;b.add(m);return m;}
+function box(w,h,d,mat,x,y,z,parent,rx=0,ry=0,rz=0){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+  m.position.set(x,y,z);m.rotation.set(rx,ry,rz);m.castShadow=true;m.userData.boneName=parent.name;parent.add(m);return m;}
+function ball(r,mat,x,y,z,parent,sx=1,sy=1,sz=1){const m=new THREE.Mesh(new THREE.SphereGeometry(r,14,12),mat);
+  m.position.set(x,y,z);m.scale.set(sx,sy,sz);m.castShadow=true;m.userData.boneName=parent.name;parent.add(m);return m;}
+
+function buildBot(){
+  const root=new THREE.Group();root.name='BrixMannequin';
+  const hips=bone('Hips',0,1.0,0,root);
+  const spine=bone('Spine',0,.12,0,hips), chest=bone('Chest',0,.16,0,spine);
+  const neck=bone('Neck',0,.20,0,chest), head=bone('Head',0,.09,0,neck);
+  box(.30,.17,.20,M.suit,0,-.02,0,hips); box(.31,.05,.21,M.strap,0,.055,0,hips);
+  box(.06,.04,.02,M.buckle,0,.055,.105,hips);
+  limb(spine,new THREE.Vector3(0,.16,0),.145,M.suit);
+  limb(chest,new THREE.Vector3(0,.18,0),.158,M.suit);
+  box(.075,.095,.05,M.pouch,-.085,-.02,.15,chest); box(.075,.095,.05,M.pouch,0,-.03,.16,chest); box(.075,.095,.05,M.pouch,.085,-.02,.15,chest);
+  box(.05,.24,.02,M.strap,-.1,.05,.145,chest,0,0,.35); box(.05,.24,.02,M.strap,.1,.05,.145,chest,0,0,-.35);
+  const tank=new THREE.Mesh(new THREE.CylinderGeometry(.055,.055,.24,12),M.suitD);tank.position.set(.06,.02,-.17);tank.castShadow=true;tank.userData.boneName='Chest';chest.add(tank);
+  limb(neck,new THREE.Vector3(0,.09,0),.05,M.rubber);
+  ball(.135,M.suit,0,.07,.005,head,1,1.05,1.05);
+  ball(.112,M.mask,0,.055,.045,head,1,.95,.9);
+  const lensG=new THREE.CylinderGeometry(.034,.034,.02,14);
+  [-1,1].forEach(s=>{const l=new THREE.Mesh(lensG,M.lens);l.rotation.x=Math.PI/2;l.position.set(s*.047,.075,.128);l.userData.boneName='Head';head.add(l);});
+  const snout=new THREE.Mesh(new THREE.CylinderGeometry(.042,.05,.07,12),M.mask);snout.rotation.x=Math.PI/2;snout.position.set(0,.005,.12);snout.castShadow=true;snout.userData.boneName='Head';head.add(snout);
+  const filt=new THREE.Mesh(new THREE.CylinderGeometry(.03,.03,.045,12),M.strap);filt.rotation.z=Math.PI/2;filt.position.set(.085,-.01,.09);filt.userData.boneName='Head';head.add(filt);
+
+  const mk=(side)=>{const s=side==='L'?-1:1, S3=side;
+    const sh=bone('Shoulder'+S3,s*.10,.14,0,chest);
+    ball(.075,M.suitD,s*.03,0,0,sh);
+    const ua=bone('UpperArm'+S3,s*.09,-.02,0,sh);
+    const fa=bone('Forearm'+S3,s*.24,-.14,0,ua);
+    const ha=bone('Hand'+S3,s*.22,-.16,0,fa);
+    limb(ua,fa.position.clone(),.055,M.suit); ball(.055,M.suitD,0,0,0,fa);
+    limb(fa,ha.position.clone(),.047,M.suit);
+    box(.075,.09,.032,M.rubber,s*.028,-.045,0,ha);
+    const fingers=[];
+    const fx=[.027,.009,-.009,-.027],fn=['Index','Middle','Ring','Pinky'];
+    fn.forEach((nm,i)=>{const x=fx[i]*s;
+      const f1=bone('Finger'+nm+'1'+S3,x,-.088,.004,ha);
+      const f2=bone('Finger'+nm+'2'+S3,0,-.032,0,f1);
+      box(.014,.03,.014,M.rubber,0,-.015,0,f1); box(.013,.026,.013,M.rubber,0,-.012,0,f2);
+      fingers.push(f1,f2);});
+    const t1=bone('FingerThumb1'+S3,s*.045,-.03,.012,ha);
+    const t2=bone('FingerThumb2'+S3,s*.012,-.028,.004,t1);
+    box(.015,.028,.015,M.rubber,0,-.013,0,t1); box(.014,.024,.014,M.rubber,0,-.011,0,t2);
+    const th=bone('Thigh'+S3,s*.10,-.02,0,hips);
+    const ca=bone('Calf'+S3,0,-.44,0,th);
+    const fo=bone('Foot'+S3,0,-.44,0,ca);
+    limb(th,ca.position.clone(),.075,M.suit); ball(.06,M.suitD,0,0,0,ca);
+    limb(ca,fo.position.clone(),.056,M.suit);
+    box(.095,.09,.22,M.rubber,0,-.075,.05,fo); box(.1,.05,.08,M.strap,0,-.05,-.045,fo);
+    return {sh,ua,fa,ha,th,ca,fo};};
+  const L=mk('L'),R=mk('R');
+  return {root,bones:{hips,spine,chest,neck,head,
+    shoulderL:L.sh,upperArmL:L.ua,forearmL:L.fa,handL:L.ha,thighL:L.th,calfL:L.ca,footL:L.fo,
+    shoulderR:R.sh,upperArmR:R.ua,forearmR:R.fa,handR:R.ha,thighR:R.th,calfR:R.ca,footR:R.fo}};
 }
-makeGrid();
-const floorM = new THREE.Mesh(new THREE.CircleGeometry(6, 40),
-  new THREE.MeshStandardMaterial({ color: 0x141a22, roughness: 0.95 }));
-floorM.rotation.x = -Math.PI / 2;
-floorM.receiveShadow = true;
-scene.add(floorM);
 
-function resize() {
-  const w = vp.clientWidth, h = vp.clientHeight;
-  camera.aspect = w / h; camera.updateProjectionMatrix();
-  renderer.setSize(w, h, false);
+/* ═══════════════════ procedural AK ═══════════════════ */
+function buildAK(){
+  const g=new THREE.Group();g.name='BrixAK';
+  const bx=(w,h,d,mat,x,y,z,rx=0,ry=0,rz=0,parent=g)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);m.position.set(x,y,z);m.rotation.set(rx,ry,rz);m.castShadow=true;parent.add(m);return m;};
+  const cyl=(r,l,mat,x,y,z,rx=Math.PI/2,parent=g)=>{const m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,l,12),mat);m.position.set(x,y,z);m.rotation.x=rx;m.castShadow=true;parent.add(m);return m;};
+  bx(.062,.075,.30,M.metal,0,0,-.02);                       // receiver
+  bx(.058,.022,.26,M.metalD,0,.047,-.02);                   // dust cover
+  bx(.05,.028,.045,M.metalD,0,.052,.10);                    // rear sight
+  cyl(.011,.30,M.metalD,0,.015,.40);                        // barrel
+  cyl(.014,.18,M.metal,0,.048,.27);                         // gas tube
+  cyl(.016,.05,M.metalD,0,.015,.565);                       // muzzle brake
+  cyl(.006,.05,M.metalD,0,.075,.44,0);                      // front post
+  const hood=new THREE.Mesh(new THREE.TorusGeometry(.02,.004,8,16),M.metalD);hood.position.set(0,.078,.44);hood.castShadow=true;g.add(hood);
+  cyl(.004,.34,M.metalD,0,-.008,.36);                       // cleaning rod
+  bx(.055,.05,.16,M.wood,0,-.012,.25);                      // lower handguard (цевьё)
+  bx(.05,.036,.14,M.wood,0,.055,.26);                       // upper handguard
+  [-1,1].forEach(s=>{for(let i=0;i<3;i++)bx(.004,.02,.03,M.woodD,s*.028,-.012,.20+i*.045);});
+  bx(.05,.09,.24,M.wood,0,-.02,-.30,-.07);                  // stock
+  bx(.052,.115,.02,M.woodD,0,-.037,-.425,-.07);             // butt plate
+  bx(.035,.10,.045,M.bake,0,-.095,-.075,.21);               // pistol grip
+  bx(.006,.005,.07,M.metalD,0,-.052,-.028);                 // trigger guard bottom
+  bx(.006,.03,.005,M.metalD,0,-.04,.005);bx(.006,.03,.005,M.metalD,0,-.04,-.062);
+  bx(.008,.028,.012,M.metal,0,-.043,-.028,.25);             // trigger
+  bx(.03,.014,.02,M.metal,0.045,.03,.02);                   // charging handle
+  bx(.004,.05,.014,M.metalD,.034,.008,-.06,0,0,.2);         // selector
+  const mag=new THREE.Group();mag.name='Magazine';g.add(mag);
+  let mp=new THREE.Vector3(0,-.075,.045),ang=.12;
+  for(let i=0;i<4;i++){const seg=bx(.045,.078,.06,M.bake,mp.x,mp.y,mp.z,ang,0,0,mag);
+    if(i<3){ang+=.24;mp=mp.clone().add(new THREE.Vector3(0,-Math.cos(ang)*.068,Math.sin(ang)*.068));}}
+  [-1,1].forEach(s=>{const loop=new THREE.Mesh(new THREE.TorusGeometry(.012,.003,6,12),M.metalD);loop.position.set(s*.03,-.03,s>0?.18:-.22);loop.rotation.y=Math.PI/2;g.add(loop);});
+  const mk=(x,y,z)=>{const o=new THREE.Object3D();o.position.set(x,y,z);g.add(o);return o;};
+  return {group:g,markers:{grip:mk(0,-.085,-.075),fore:mk(0,-.032,.25),muzzle:mk(0,.015,.59),eject:mk(.038,.03,.02)},mag,scale:.86,detachable:true};
 }
-window.addEventListener('resize', resize);
-resize();
-(function loop() {
+
+/* ═══════════════════ weapon rig ═══════════════════ */
+let dirty=true; /* флаг «превью устарело» — объявлен ДО mountWeapon/installProcAK, иначе TDZ-ошибка */
+const weaponRoot=new THREE.Group();scene.add(weaponRoot);
+let weaponContent=null,weaponMarkers=null,weaponMag=null,weaponDetachable=false,weaponIsProc=true;
+function disposeTree(o){o.traverse(n=>{if(n.geometry)n.geometry.dispose();
+  if(n.material&&!SHARED.has(n.material)){const ms=Array.isArray(n.material)?n.material:[n.material];
+    ms.forEach(m=>{for(const k in m)if(m[k]&&m[k].isTexture)m[k].dispose();m.dispose();});}});}
+function mountWeapon(content,markers,mag,detachable,label,isProc){
+  if(weaponContent){weaponRoot.remove(weaponContent);disposeTree(weaponContent);}
+  weaponContent=content;weaponMarkers=markers;weaponMag=mag;weaponDetachable=detachable;weaponIsProc=isProc;
+  weaponRoot.add(content);
+  content.traverse(n=>{if(n.isMesh){n.castShadow=true;if(n.material&&'envMapIntensity'in n.material)n.material.envMapIntensity=.8;}});
+  $('weaponName').textContent=label;$('chipWeapon').textContent=label;dirty=true;
+}
+function installProcAK(){const ak=buildAK();ak.group.scale.setScalar(ak.scale);
+  mountWeapon(ak.group,ak.markers,ak.mag,true,'встроенный АК',true);}
+function adoptGLB(obj,label){
+  const wrap=new THREE.Group();const inner=new THREE.Group();inner.add(obj);wrap.add(inner);
+  obj.traverse(n=>{if(n.isMesh){n.castShadow=true;n.frustumCulled=false;}});
+  const bb=new THREE.Box3().setFromObject(obj);const size=bb.getSize(new THREE.Vector3());
+  let axis=S.axis;
+  if(axis==='auto'){axis=size.x>=size.y&&size.x>=size.z?'px':size.y>=size.z?'py':'pz';}
+  const q=new THREE.Quaternion();
+  if(axis==='px')q.setFromEuler(new THREE.Euler(0,-Math.PI/2,0));
+  else if(axis==='nx')q.setFromEuler(new THREE.Euler(0,Math.PI/2,0));
+  else if(axis==='py')q.setFromEuler(new THREE.Euler(Math.PI/2,0,0));
+  else if(axis==='ny')q.setFromEuler(new THREE.Euler(-Math.PI/2,0,0));
+  else if(axis==='nz')q.setFromEuler(new THREE.Euler(0,Math.PI,0));
+  if(S.flip){const f=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,0,1),Math.PI);q.premultiply(f);}
+  inner.quaternion.copy(q);
+  inner.updateMatrixWorld(true);
+  const b2=new THREE.Box3().setFromObject(inner);const s2=b2.getSize(new THREE.Vector3());
+  const L=Math.max(s2.z,.001);const sc=.88/L;inner.scale.setScalar(sc);
+  inner.updateMatrixWorld(true);
+  const b3=new THREE.Box3().setFromObject(inner);const c=b3.getCenter(new THREE.Vector3());
+  inner.position.sub(new THREE.Vector3(c.x,b3.max.y-.10*sc* L/.88*0+.10*(b3.max.y-b3.min.y)/1,b3.min.z+.42*(b3.max.z-b3.min.z)));
+  inner.updateMatrixWorld(true);
+  const b4=new THREE.Box3().setFromObject(inner);
+  const fy=(f)=>b4.min.y+(b4.max.y-b4.min.y)*f, fz=(f)=>b4.min.z+(b4.max.z-b4.min.z)*f;
+  const mk=(x,y,z)=>{const o=new THREE.Object3D();o.position.set(x,y,z);wrap.add(o);return o;};
+  const markers={grip:mk(0,fy(.22),fz(.33)),fore:mk(0,fy(.38),fz(.66)),muzzle:mk(0,fy(.72),b4.max.z),eject:mk((b4.max.x-b4.min.x)*.3,fy(.6),fz(.42))};
+  mountWeapon(wrap,markers,null,false,label,false);
+  toast('Оружие загружено: '+label+' · ось выровнена по стволу','ok');
+}
+installProcAK();
+
+/* carry / drop mags */
+let carryMag=null;
+const dropMags=[];
+function spawnDropMag(){ if(!weaponDetachable||!weaponMag)return;
+  const m=weaponMag.clone(true);const wp=new THREE.Vector3(),wq=new THREE.Quaternion();
+  weaponMag.getWorldPosition(wp);weaponMag.getWorldQuaternion(wq);
+  m.position.copy(wp);m.quaternion.copy(wq);m.scale.setScalar(.86*S.wScale);
+  scene.add(m);dropMags.push({o:m,v:new THREE.Vector3(rnd(-.3,.3),rnd(-.5,0),rnd(.2,.7)),av:new THREE.Vector3(rnd(-4,4),rnd(-4,4),rnd(-4,4)),life:4});
+  weaponMag.visible=false;
+  while(dropMags.length>3){const d=dropMags.shift();scene.remove(d.o);} }
+
+/* ═══════════════════ bot wrapper + rig binding ═══════════════════ */
+let wrapper=new THREE.Group();scene.add(wrapper);
+let bot=null,rig=null,mixer=null,clips=[],skelHelper=null,botMeshes=[],unitScale=1;
+const REST=new Map();let fingerRecs=[],handRecs={};
+let blobURLs=[];
+
+function classifyBones(root){
+  const all=[];root.traverse(n=>{if(n.isBone)all.push(n);});
+  const norm=n=>n.name.replace(/^mixamorig[:_]?/i,'').replace(/^bip_/i,'bip').toLowerCase();
+  const sideOf=n=>{const s=norm(n);
+    if(/left|_l$|_l[^a-z]|\.l$|^l_|collar_l|_l\d/.test(s)||/l$/.test(s)&&/hand|arm|foot|leg|shoulder|upleg|thigh|calf|knee|collar/.test(s))return 'L';
+    if(/right|_r$|_r[^a-z]|\.r$|^r_|collar_r|_r\d/.test(s)||/r$/.test(s)&&/hand|arm|foot|leg|shoulder|upleg|thigh|calf|knee|collar/.test(s))return 'R';
+    return null;};
+  const find=(pats,side)=>{for(const p of pats){for(const b of all){const s=norm(b);
+    if(p.test(s)){if(side===null)return b;if(sideOf(b)===side)return b;}}}return null;};
+  const map={};
+  map.hips=find([/hips?$/,/pelvis/,/bippelvis/],null);
+  map.spine=find([/spine1?$/,/spine_?1/,/abdomen/,/waist/,/bipspine$/],null)||map.hips;
+  map.chest=find([/spine[23]/,/chest/,/torso/,/bipspine[12]/],null)||map.spine;
+  map.neck=find([/neck/],null);map.head=find([/head/],null);
+  for(const sd of ['L','R']){
+    map['shoulder'+sd]=find([/shoulder/,/collar/,/clavicle/],sd);
+    map['upperArm'+sd]=find([/upperarm/,/^arm/,/uparm/,/bipupperarm/,/arm$/],sd);
+    map['forearm'+sd]=find([/forearm/,/lowerarm/,/biplowerarm/,/elbow/],sd);
+    map['hand'+sd]=find([/hand/,/wrist/,/biphand/],sd);
+    map['thigh'+sd]=find([/upleg/,/thigh/,/biphip/,/upperleg/],sd);
+    map['calf'+sd]=find([/^leg/,/calf/,/shin/,/bipknee/,/lowerleg/,/knee/],sd);
+    map['foot'+sd]=find([/foot/,/ankle/,/bipfoot/],sd);}
+  const fingers=all.filter(b=>/thumb|index|middle|ring|pinky|finger/i.test(b.name));
+  return {map,fingers,all};
+}
+function bindRig(){
+  REST.clear();fingerRecs=[];handRecs={};botMeshes=[];
+  const yaw0=wrapper.rotation.y;wrapper.rotation.y=0;wrapper.updateMatrixWorld(true);
+  const info=classifyBones(wrapper);
+  rig=info.map;rig.all=info.all;rig.fingerBones=info.fingers;
+  botFBX=info.all.some(b=>/mixamorig/i.test(b.name));
+  info.all.forEach(b=>REST.set(b,{q:b.quaternion.clone(),p:b.position.clone()}));
+  wrapper.traverse(n=>{if(n.isMesh){botMeshes.push(n);n.frustumCulled=false;}});
+  const wq=new THREE.Quaternion();
+  /* hand bases */
+  for(const sd of ['L','R']){const hand=rig['hand'+sd];if(!hand)continue;
+    const fr=info.fingers.filter(f=>sideMatch(f,sd));
+    let knuckle=new THREE.Vector3(0,0,1),palm=new THREE.Vector3(sd==='R'?-1:1,0,0);
+    const roots=fr.filter(f=>f.parent===hand);
+    if(roots.length){knuckle.set(0,0,0);
+      roots.forEach(f=>knuckle.add(f.position.clone().normalize()));
+      knuckle.normalize().applyQuaternion(hand.getWorldQuaternion(new THREE.Quaternion()));
+      const idx=roots.find(f=>/index/i.test(f.name))||roots[0];
+      const pky=roots.find(f=>/pinky/i.test(f.name));
+      const thb=roots.find(f=>/thumb/i.test(f.name));
+      if(idx&&pky&&idx!==pky){const spread=pky.getWorldPosition(new THREE.Vector3()).sub(idx.getWorldPosition(new THREE.Vector3()));
+        palm.crossVectors(knuckle,spread).normalize();
+        if(thb){const tv=thb.getWorldPosition(new THREE.Vector3()).sub(hand.getWorldPosition(new THREE.Vector3()));
+          if(palm.dot(tv)<0)palm.negate();}}
+      else if(idx&&thb){
+        /* только index+thumb (учёный/mixamo): пальцы — по index, ладонь — анатомический базис */
+        knuckle.copy(idx.position).normalize().applyQuaternion(hand.getWorldQuaternion(new THREE.Quaternion()));
+        const td=thb.getWorldPosition(new THREE.Vector3()).sub(hand.getWorldPosition(new THREE.Vector3()));
+        if(td.lengthSq()>1e-10){td.normalize();
+          palm.copy(sd==='R'?new THREE.Vector3().crossVectors(td,knuckle):new THREE.Vector3().crossVectors(knuckle,td)).normalize();}
+      }
+    } else {
+      /* пальцев нет вообще: пальцы продолжают предплечье, ладонь смотрит на корпус */
+      const faB=rig['forearm'+sd],hw=hand.getWorldPosition(new THREE.Vector3());
+      if(faB){const kd=hw.clone().sub(faB.getWorldPosition(new THREE.Vector3()));
+        if(kd.lengthSq()>1e-10){kd.normalize();
+          const hq=hand.getWorldQuaternion(new THREE.Quaternion());
+          let bb=-2;[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]].forEach(a=>{
+            const d=new THREE.Vector3(a[0],a[1],a[2]).applyQuaternion(hq),s=d.dot(kd);
+            if(s>bb){bb=s;knuckle.copy(d);}});
+          knuckle.normalize();
+          const inw=rig.hips?rig.hips.getWorldPosition(new THREE.Vector3()).sub(hw):hw.clone().setY(hw.y-1);
+          if(inw.lengthSq()>1e-10){inw.normalize();
+            let bp=-2;[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]].forEach(a=>{
+              const d=new THREE.Vector3(a[0],a[1],a[2]).applyQuaternion(hq);
+              if(Math.abs(d.dot(knuckle))<.5){const s=d.dot(inw);if(s>bp){bp=s;palm.copy(d);}}});}}}
+    }
+    handRecs[sd]={bone:hand,knuckle0:knuckle.clone(),palm0:palm.clone(),restQ:hand.quaternion.clone(),restWorldQ:hand.getWorldQuaternion(new THREE.Quaternion())};
+    /* fingers */
+    fr.forEach(f=>{
+      let depth=1,n=f;while(n.parent&&n.parent!==hand&&depth<4){n=n.parent;depth++;}
+      const isThumb=/thumb/i.test(f.name);
+      const childF=f.children.find(c=>c.isBone&&/thumb|index|middle|ring|pinky|finger/i.test(c.name));
+      const restQ=f.getWorldQuaternion(new THREE.Quaternion());
+      let dirBot;
+      if(childF)dirBot=childF.position.clone().normalize().applyQuaternion(restQ);
+      else dirBot=f.position.clone().normalize().applyQuaternion(f.parent.getWorldQuaternion(new THREE.Quaternion()));
+      const max=isThumb?(depth===1?40:45)*D2R:(depth===1?55:depth===2?65:40)*D2R;
+      fingerRecs.push({bone:f,side:sd,depth,isThumb,max,dirBot,restQ,handPalm:palm.clone(),axisLocal:new THREE.Vector3(1,0,0),sign:1});
+    });
+  }
+  recomputeFingerAxes();
+  wrapper.rotation.y=yaw0;
+  /* skeleton helper */
+  if(skelHelper){scene.remove(skelHelper);skelHelper.dispose?.();}
+  skelHelper=new THREE.SkeletonHelper(wrapper);
+  skelHelper.material.vertexColors=false;skelHelper.material.color=new THREE.Color(0xffa028);
+  skelHelper.material.depthTest=false;skelHelper.material.transparent=true;skelHelper.material.opacity=.9;
+  skelHelper.visible=S.tgl.skel;skelHelper.renderOrder=6;scene.add(skelHelper);
+  $('boneCount').textContent=info.all.length;
+  buildBoneSelect(info.all);
+  applyVisToggles();
+}
+function sideMatch(b,sd){const s=b.name.toLowerCase();
+  if(sd==='L')return /left|_l\b|_l$|\.l|l1|l2|l3|_l\d|\bl_|_l[^a-z]/.test(s)||/(finger|thumb|index|middle|ring|pinky).*l/.test(s);
+  return /right|_r\b|_r$|\.r|r1|r2|r3|_r\d|\br_|_r[^a-z]/.test(s)||/(finger|thumb|index|middle|ring|pinky).*r/.test(s);}
+function recomputeFingerAxes(){
+  const mode=S.curlAxis;
+  fingerRecs.forEach(r=>{
+    let axisBot;
+    if(mode==='auto'){axisBot=new THREE.Vector3(1,0,0);}
+    else{const map={x:[1,0,0],y:[0,1,0],z:[0,0,1],nx:[-1,0,0],ny:[0,-1,0],nz:[0,0,-1]};
+      const av=new THREE.Vector3(...map[mode]);
+      r.axisLocal.copy(av);
+      axisBot=av.clone().applyQuaternion(r.restQ);
+      r.sign=new THREE.Vector3().crossVectors(axisBot,r.dirBot).dot(r.handPalm)>=0?1:-1;return;}
+    r.axisLocal.copy(axisBot).applyQuaternion(r.restQ.clone().invert());
+    r.sign=new THREE.Vector3().crossVectors(axisBot,r.dirBot).dot(r.handPalm)>=0?1:-1;
+  });
+}
+function loadProcBot(){
+  if(mixer){mixer.stopAllAction();mixer=null;}
+  scene.remove(wrapper);disposeTree(wrapper);
+  blobURLs.forEach(u=>URL.revokeObjectURL(u));blobURLs=[];
+  wrapper=new THREE.Group();scene.add(wrapper);
+  bot=buildBot();wrapper.add(bot.root);
+  const bb=new THREE.Box3().setFromObject(bot.root);const h=bb.getSize(new THREE.Vector3()).y;
+  unitScale=1.8/h;bot.root.scale.setScalar(unitScale);bot.root.position.y=-bb.min.y*unitScale;
+  clips=[];S.clip=null;buildClipList();
+  bindRig();
+  $('modelName').textContent='манекен BRIX';$('chipModel').textContent='манекен BRIX';
+}
+function adoptBotModel(obj,label,anims){
+  if(mixer){mixer.stopAllAction();mixer=null;}
+  scene.remove(wrapper);disposeTree(wrapper);
+  blobURLs.forEach(u=>URL.revokeObjectURL(u));blobURLs=[];
+  wrapper=new THREE.Group();scene.add(wrapper);
+  wrapper.add(obj);
+  obj.traverse(n=>{if(n.isMesh){n.castShadow=true;n.frustumCulled=false;
+    const ms=Array.isArray(n.material)?n.material:[n.material];
+    ms.forEach(m=>{if(m.map)m.map.colorSpace=THREE.SRGBColorSpace;
+      if('envMapIntensity'in m)m.envMapIntensity=.4;
+      if('shininess'in m)m.shininess=Math.min(m.shininess||20,30);});}});
+  wrapper.updateMatrixWorld(true);
+  const bb=new THREE.Box3().setFromObject(obj);const sz=bb.getSize(new THREE.Vector3());
+  unitScale=1.8/Math.max(sz.y,.001);
+  obj.scale.multiplyScalar(unitScale);
+  wrapper.updateMatrixWorld(true);
+  const b2=new THREE.Box3().setFromObject(obj);const c=b2.getCenter(new THREE.Vector3());
+  obj.position.x-=c.x;obj.position.z-=c.z;obj.position.y-=b2.min.y;
+  clips=anims||[];S.clip=null;
+  if(clips.length){mixer=new THREE.AnimationMixer(obj);}
+  buildClipList();bindRig();
+  window.__BRIX={rig,weaponMarkers,wrapper,scene,THREE};
+  $('modelName').textContent=label;$('chipModel').textContent=label;
+  const nb=rig.all.length,fnd=rig.fingerBones.length;
+  toast(`Модель загружена: ${label} · костей: ${nb} · пальцев: ${fnd}`,'ok');
+  if(!rig.upperArmR||!rig.forearmR)toast('Руки не распознаны — IK хвата ограничен','warn');
+  if(!fnd)toast('Кости пальцев не найдены — сжатие не применится','warn');
+}
+
+/* ═══════════════════ file loading ═══════════════════ */
+const GRAY_PX='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNsaGhoAAAByAFj6o8LBQAAAABJRU5ErkJggg==';
+function handleFiles(files){
+  const arr=[...files];if(!arr.length)return;
+  const model=arr.find(f=>/\.(fbx|glb|gltf)$/i.test(f.name)&&!/ak4?7|kalash|weapon/i.test(f.name));
+  const weapon=arr.find(f=>/\.(glb|gltf)$/i.test(f.name)&&/ak4?7|kalash|weapon/i.test(f.name));
+  const json=arr.find(f=>/\.json$/i.test(f.name));
+  const texs=arr.filter(f=>/\.(png|jpe?g|webp|tga)$/i.test(f.name));
+  if(json){loadConfigFile(json);return;}
+  if(weapon){loadWeaponFile(weapon);}
+  if(model){loadModelFile(model,texs);}
+  else if(texs.length){applyTextures(texs);}
+  else if(!weapon&&!model){toast('Не вижу FBX/GLB или текстур в выбранных файлах','warn');}
+}
+function makeManager(texs,mainURL){
+  const map=new Map();texs.forEach(f=>map.set(f.name.toLowerCase(),URL.createObjectURL(f)));
+  const mgr=new THREE.LoadingManager();
+  mgr.setURLModifier(url=>{
+    if(url===mainURL)return url;
+    const base=decodeURIComponent(url.split(/[\\/]/).pop()).toLowerCase();
+    if(map.has(base))return map.get(base);
+    if(/\.(png|jpe?g|webp|tga|bmp|dds)$/i.test(base))return GRAY_PX;
+    return url;});
+  return {mgr,map};
+}
+function loadModelFile(file,texs){
+  const url=URL.createObjectURL(file);
+  const {mgr,map}=makeManager(texs,url);
+  const done=obj=>{blobURLs=[url,...map.values()];adoptBotModel(obj,file.name,obj.animations||[]);};
+  const fail=e=>{console.warn(e);URL.revokeObjectURL(url);toast('Не удалось прочитать модель: '+file.name,'err');};
+  if(/\.fbx$/i.test(file.name)){new FBXLoader(mgr).load(url,done,undefined,fail);}
+  else{new GLTFLoader(mgr).load(url,g=>{blobURLs=[url,...map.values()];adoptBotModel(g.scene,file.name,g.animations);},undefined,fail);}
+}
+function loadWeaponFile(file){
+  const url=URL.createObjectURL(file);
+  new GLTFLoader().load(url,g=>{URL.revokeObjectURL(url);adoptGLB(g.scene,file.name);},undefined,
+    e=>{console.warn(e);URL.revokeObjectURL(url);toast('GLB оружия не читается (сжатый DRACO?) — оставлен встроенный АК','err');});
+}
+function applyTextures(texs){
+  let n=0;const tl=new THREE.TextureLoader();
+  texs.forEach(f=>{const base=f.name.replace(/\.[^.]+$/,'').toLowerCase();
+    const url=URL.createObjectURL(f);
+    botMeshes.forEach(mesh=>{const ms=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+      ms.forEach(m=>{const mn=(m.name||'').toLowerCase();
+        if(mn&&base.includes(mn.replace(/_mat.*$/,''))||mn.includes(base)){
+          tl.load(url,t=>{t.colorSpace=THREE.SRGBColorSpace;t.flipY=false;m.map=t;m.needsUpdate=true;});n++;}});});});
+  toast(n?`Текстуры применены: ${texs.length} файл(ов)`:'Текстуры загружены — совпадений имён материалов нет, оставлены как есть',n?'ok':'warn');
+}
+
+/* ═══════════════════ pose helpers ═══════════════════ */
+const _v=new THREE.Vector3(),_v2=new THREE.Vector3(),_q=new THREE.Quaternion(),_q2=new THREE.Quaternion(),_e=new THREE.Euler();
+let WQ=new THREE.Quaternion();
+function rotB(b,ax,rad){ if(!b||Math.abs(rad)<1e-6)return;
+  _v.set(ax==='x'?1:0,ax==='y'?1:0,ax==='z'?1:0).applyQuaternion(WQ);
+  b.getWorldQuaternion(_q);_v.applyQuaternion(_q.invert()).normalize();
+  _q2.setFromAxisAngle(_v,rad);b.quaternion.multiply(_q2);}
+function moveB(b,x,y,z){ if(!b)return;
+  b.parent.getWorldQuaternion(_q).invert();
+  const s=wrapper.getWorldScale(_v2).x||1;
+  _v.set(x,y,z).applyQuaternion(WQ).applyQuaternion(_q).divideScalar(s);
+  b.position.add(_v);}
+function resetPose(){REST.forEach((r,b)=>{b.quaternion.copy(r.q);b.position.copy(r.p);});}
+function applyWorldQuat(b,qw){b.parent.getWorldQuaternion(_q);
+  _q2.copy(_q).invert().multiply(qw).multiply(_q);b.quaternion.premultiply(_q2);}
+
+/* two-bone IK */
+function solveIK(upper,lower,end,target,pole){
+  if(!upper||!lower||!end)return false;
+  upper.updateWorldMatrix(true,false);lower.updateWorldMatrix(true,false);end.updateWorldMatrix(true,false);
+  const Sp=upper.getWorldPosition(new THREE.Vector3());
+  const Ep=lower.getWorldPosition(new THREE.Vector3());
+  const Wp=end.getWorldPosition(new THREE.Vector3());
+  const L1=Sp.distanceTo(Ep),L2=Ep.distanceTo(Wp);
+  if(L1<1e-5||L2<1e-5)return false;
+  const toT=target.clone().sub(Sp);let d=toT.length();
+  const maxD=(L1+L2)*.999,minD=Math.abs(L1-L2)+1e-4;
+  const stretched=d>maxD;d=clamp(d,minD,maxD);
+  const dir=toT.normalize();
+  const T=Sp.clone().addScaledVector(dir,d);
+  const poleDir=pole.clone().sub(Sp);
+  const axis=new THREE.Vector3().crossVectors(dir,poleDir);
+  if(axis.lengthSq()<1e-10){axis.set(0,0,1);if(Math.abs(dir.dot(axis))>.9)axis.set(1,0,0);axis.cross(dir);}
+  axis.normalize();
+  const cosA=clamp((L1*L1+d*d-L2*L2)/(2*L1*d),-1,1),a=Math.acos(cosA);
+  const dA=dir.clone().applyAxisAngle(axis,a),dB=dir.clone().applyAxisAngle(axis,-a);
+  const pp=poleDir.clone().addScaledVector(dir,-poleDir.dot(dir));
+  const up=dA.dot(pp)>=dB.dot(pp)?dA:dB;
+  const q=new THREE.Quaternion().setFromUnitVectors(Ep.clone().sub(Sp).normalize(),up);
+  applyWorldQuat(upper,q);upper.updateWorldMatrix(true,true);
+  const E2=lower.getWorldPosition(new THREE.Vector3());
+  const W2=end.getWorldPosition(new THREE.Vector3());
+  const q2=new THREE.Quaternion().setFromUnitVectors(W2.clone().sub(E2).normalize(),T.clone().sub(E2).normalize());
+  applyWorldQuat(lower,q2);lower.updateWorldMatrix(true,true);
+  return !stretched;
+}
+function frameQ(k,p){const z=p.clone().normalize();
+  const y=k.clone().addScaledVector(z,-k.dot(z)).normalize();
+  const x=new THREE.Vector3().crossVectors(y,z).normalize();
+  return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x,y,z));}
+function orientHand(sd,knuckleW,palmW,weight){
+  const rec=handRecs[sd];if(!rec||weight<=0)return;
+  const k0=rec.knuckle0.clone().applyQuaternion(WQ),p0=rec.palm0.clone().applyQuaternion(WQ);
+  const q0=frameQ(k0,p0),q1=frameQ(knuckleW,palmW);
+  const delta=q1.multiply(q0.invert());
+  const restW=rec.restWorldQ.clone().premultiply(WQ);
+  const targetQ=delta.multiply(restW);
+  const pq=rec.bone.parent.getWorldQuaternion(new THREE.Quaternion());
+  const local=pq.invert().multiply(targetQ);
+  rec.bone.quaternion.slerp(local,weight);
+}
+
+/* ═══════════════════ animation state — v3 · gait engine ═══════════════════ */
+const W={idle:1,walk:0,run:0,aim:0,shoot:0,reload:0};
+let t=0,deathT=0,deathSeed=0,deathThud=false;
+let recoilZ=0,recoilZv=0,recoilP=0,recoilPv=0,recoilY=0,recoilYv=0;
+let fireAcc=0,shotCount=0,triggerPulse=0;
+let reloadT=0,reloadActive=false,reloadEv={};
+let gaitPh=0,gaitCad=.82,gaitPitch=0,gaitRoll=0;
+let prevStepL=1,prevStepR=-1;
+let holdW=1,weaponDropped=false,gripReturn=1;
+const dropVel=new THREE.Vector3(),dropAng=new THREE.Vector3();let dropSleep=false;
+const anchorCur={fwd:.2,up:-.02,right:.07,pitch:0,roll:0};
+let botFBX=false;   /* FBX-модель (mixamorig): кость груди выше — якорь оружия опускаем */
+let ikROk=true,ikLOk=true;
+
+const DEATH={
+  hipsY:[[0,0],[.15,-.07],[.4,-.34],[.7,-.72],[1,-.87]],
+  hipsZ:[[0,0],[.3,-.05],[.7,-.24],[1,-.3]],
+  hipsRX:[[0,0],[.25,-.3],[.55,-.95],[.85,-1.42],[1,-1.52]],
+  hipsRZ:[[0,0],[.4,.08],[.8,.2],[1,.24]],
+  spineX:[[0,0],[.18,-.34],[.5,.3],[1,.4]],
+  chestX:[[0,0],[.18,-.42],[.55,.26],[1,.18]],
+  headX:[[0,0],[.18,-.5],[.6,-.12],[1,-.38]],
+  thighL:[[0,0],[.2,-.35],[.55,-1.1],[.85,-.35],[1,-.25]],
+  thighR:[[0,0],[.2,-.15],[.55,-.55],[.85,.2],[1,.3]],
+  calfL:[[0,0],[.2,.6],[.5,1.65],[.85,.4],[1,.3]],
+  calfR:[[0,0],[.25,.45],[.55,1.3],[.85,.25],[1,.12]],
+  armX:[[0,0],[.18,-.5],[.6,-1.15],[1,-1.45]],
+  armZ:[[0,0],[.25,.28],[.7,.55],[1,.62]],
+  foreX:[[0,0],[.25,-.35],[.7,-.6],[1,-.32]] };
+const RELOAD_KEYS=[
+  [0.00,'w',0,-.03,.25,1],[0.12,'w',0,-.16,.07,1],[0.20,'w',0,-.17,.07,1],
+  [0.34,'w',.02,-.36,.16,.9],[0.42,'b',-.16,1.02,.10,.5],[0.55,'b',-.13,1.16,.16,1],
+  [0.66,'w',0,-.26,.10,1],[0.76,'w',0,-.15,.065,1],[0.82,'w',.05,.02,.02,.35],
+  [0.88,'w',.05,.03,-.06,.3],[0.94,'w',0,-.05,.22,.8],[1.00,'w',0,-.03,.25,1]];
+function reloadLeft(u,out){
+  let i=1;while(i<RELOAD_KEYS.length&&u>RELOAD_KEYS[i][0])i++;
+  const A=RELOAD_KEYS[Math.min(i-1,RELOAD_KEYS.length-1)],B=RELOAD_KEYS[Math.min(i,RELOAD_KEYS.length-1)];
+  const s=B[0]===A[0]?0:sstep((u-A[0])/(B[0]-A[0]),0,1);
+  const ev=(k)=>{const v=new THREE.Vector3(k[2],k[3],k[4]);
+    return k[1]==='w'?weaponRoot.localToWorld(v):v.applyQuaternion(WQ);};
+  out.pos.copy(ev(A)).lerp(ev(B),s);out.curl=A[5]+(B[5]-A[5])*s;
+}
+function setState(name,silent){
+  if(S.anim===name)return;
+  if(S.anim==='RELOAD')finishReload(true);
+  S.prev=S.anim;S.anim=name;S.clip=null;
+  if(mixer)mixer.stopAllAction();
+  if(name==='DEATH'){deathSeed=rnd(1);deathThud=false;}
+  if(name==='RELOAD'){reloadT=0;reloadActive=true;reloadEv={};}
+  if(name==='SHOOT'){fireAcc=0;shotCount=0;}
+  document.body.dataset.state=name;
+  $('stateMark').textContent=name;
+  document.querySelectorAll('.stateBtn').forEach(b=>b.classList.toggle('active',b.dataset.state===name));
+  document.querySelectorAll('.clipbtn').forEach(b=>b.classList.remove('active'));
+  if(!silent)sfx('tick');dirty=true;
+}
+function finishReload(abort){
+  reloadActive=false;
+  if(carryMag){carryMag.parent?.remove(carryMag);carryMag=null;}
+  if(weaponMag)weaponMag.visible=true;
+}
+
+/* ═══════════════════ FX pools ═══════════════════ */
+const flashTex=(()=>{const cv=document.createElement('canvas');cv.width=cv.height=128;const c=cv.getContext('2d');
+  c.translate(64,64);const g=c.createRadialGradient(0,0,2,0,0,60);
+  g.addColorStop(0,'rgba(255,255,230,1)');g.addColorStop(.25,'rgba(255,190,80,.9)');g.addColorStop(1,'rgba(255,120,20,0)');
+  c.fillStyle=g;for(let i=0;i<6;i++){c.rotate(Math.PI/3);c.beginPath();c.moveTo(0,-4);c.lineTo(58,0);c.lineTo(0,4);c.fill();}
+  c.beginPath();c.arc(0,0,16,0,7);c.fill();return new THREE.CanvasTexture(cv);})();
+const flash=new THREE.Sprite(new THREE.SpriteMaterial({map:flashTex,blending:THREE.AdditiveBlending,depthWrite:false,transparent:true}));
+flash.scale.setScalar(.14);flash.visible=false;scene.add(flash);let flashLife=0;
+const smokeTex=(()=>{const cv=document.createElement('canvas');cv.width=cv.height=64;const c=cv.getContext('2d');
+  const g=c.createRadialGradient(32,32,2,32,32,30);g.addColorStop(0,'rgba(200,200,210,.55)');g.addColorStop(1,'rgba(200,200,210,0)');
+  c.fillStyle=g;c.fillRect(0,0,64,64);return new THREE.CanvasTexture(cv);})();
+const brassGeo=new THREE.CylinderGeometry(.004,.004,.02,6);
+const sparkGeo=new THREE.SphereGeometry(.008,5,4);
+const tracerGeo=new THREE.CylinderGeometry(.005,.005,1,5);
+const pools={brass:[],spark:[],smoke:[],tracer:[]};
+for(let i=0;i<36;i++){const m=new THREE.Mesh(brassGeo,M.brass);m.visible=false;scene.add(m);
+  pools.brass.push({o:m,v:new THREE.Vector3(),av:new THREE.Vector3(),life:0,b:0});}
+for(let i=0;i<26;i++){const m=new THREE.Mesh(sparkGeo,new THREE.MeshBasicMaterial({color:0xffc46b,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false}));
+  m.visible=false;scene.add(m);pools.spark.push({o:m,v:new THREE.Vector3(),life:0,max:.3});}
+for(let i=0;i<12;i++){const m=new THREE.Sprite(new THREE.SpriteMaterial({map:smokeTex,transparent:true,opacity:.3,depthWrite:false}));
+  m.visible=false;scene.add(m);pools.smoke.push({o:m,v:new THREE.Vector3(),life:0,max:1.2});}
+for(let i=0;i<10;i++){const m=new THREE.Mesh(tracerGeo,new THREE.MeshBasicMaterial({color:0xffd27a,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false}));
+  m.visible=false;scene.add(m);pools.tracer.push({o:m,life:0,max:.07});}
+function spawn(pool,fn){const p=pools[pool].find(p=>p.life<=0);if(p)fn(p);return p;}
+const ringTex=(()=>{const cv=document.createElement('canvas');cv.width=cv.height=64;const c=cv.getContext('2d');
+  c.strokeStyle='#ffa028';c.lineWidth=5;c.beginPath();c.arc(32,32,22,0,7);c.stroke();
+  c.fillStyle='#ffa028';c.beginPath();c.arc(32,32,4,0,7);c.fill();return new THREE.CanvasTexture(cv);})();
+const boneMarker=new THREE.Sprite(new THREE.SpriteMaterial({map:ringTex,transparent:true,depthTest:false}));
+boneMarker.scale.setScalar(.1);boneMarker.visible=false;boneMarker.renderOrder=8;scene.add(boneMarker);
+
+/* ═══════════════════ shooting ═══════════════════ */
+const muzzleW=new THREE.Vector3(),ejectW=new THREE.Vector3(),fwdW=new THREE.Vector3(),rightW=new THREE.Vector3(),upW=new THREE.Vector3();
+function fireShot(){
+  shotCount++;triggerPulse=1;
+  const str=S.recoil;
+  recoilZv+=1.5*str;recoilPv+=(.05+rnd(.015))*str*2.4;recoilYv+=(rnd()-.32)*.09*str;
+  weaponRoot.updateWorldMatrix(true,true);
+  weaponMarkers.muzzle.getWorldPosition(muzzleW);
+  weaponMarkers.eject.getWorldPosition(ejectW);
+  fwdW.set(0,0,1).applyQuaternion(weaponRoot.quaternion);
+  rightW.set(1,0,0).applyQuaternion(weaponRoot.quaternion);
+  upW.set(0,1,0).applyQuaternion(weaponRoot.quaternion);
+  /* flash */
+  flash.position.copy(muzzleW).addScaledVector(fwdW,.04);
+  flash.material.rotation=rnd(6.28);flash.scale.setScalar(rnd(.11,.18));flash.visible=true;flashLife=.05;
+  muzzleLight.position.copy(flash.position);muzzleLight.intensity=42;
+  /* smoke */
+  spawn('smoke',p=>{p.o.position.copy(muzzleW).addScaledVector(fwdW,.06);
+    p.v.copy(fwdW).multiplyScalar(.5).add(new THREE.Vector3(rnd(-.1,.1),rnd(.15,.35),rnd(-.1,.1)));
+    p.life=p.max=rnd(.7,1.2);p.o.scale.setScalar(.06);p.o.material.opacity=.28;p.o.visible=true;});
+  /* brass */
+  spawn('brass',p=>{p.o.position.copy(ejectW);
+    p.v.copy(rightW).multiplyScalar(rnd(1.2,2)).addScaledVector(upW,rnd(1.5,2.4)).addScaledVector(fwdW,rnd(-.2,.4));
+    p.av.set(rnd(-14,14),rnd(-14,14),rnd(-14,14));p.life=3.5;p.b=0;p.o.visible=true;});
+  /* aim dir with climb + spread */
+  const spread=S.preset==='ads'?.0035:.006;
+  const dir=fwdW.clone().addScaledVector(upW,recoilP*.85+rnd(-spread,spread)).addScaledVector(rightW,recoilY*.6+rnd(-spread,spread)).normalize();
+  /* hit test */
+  let hit=null,kind='wall';
+  const oz=muzzleW.z,dz=dir.z;
+  if(dz>.05){const tt=(12-oz)/dz;const hx=muzzleW.x+dir.x*tt,hy=muzzleW.y+dir.y*tt;
+    const inTorso=Math.abs(hx-.1)<.24&&hy>0.95&&hy<1.60;
+    const inHead=(hx-.1)**2+(hy-1.69)**2<.0144;
+    if(tt>0&&(inTorso||inHead)){hit=new THREE.Vector3(hx,hy,11.98);kind='steel';}
+    else{const tw=(17.5-oz)/dz;hit=new THREE.Vector3(muzzleW.x+dir.x*tw,Math.max(.02,muzzleW.y+dir.y*tw),17.5);}}
+  if(!hit)hit=muzzleW.clone().addScaledVector(dir,30);
+  /* tracer */
+  if(S.tgl.tracers){spawn('tracer',p=>{const len=hit.distanceTo(muzzleW);
+    p.o.position.copy(muzzleW).lerp(hit,.5);p.o.scale.set(1,len,1);
+    p.o.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+    const tracer=shotCount%3===0;
+    p.o.material.color.set(tracer?0x9dff57:0xffd27a);p.o.material.opacity=tracer?.9:.3;
+    p.o.visible=true;p.life=p.max=tracer?.09:.05;});}
+  /* impact */
+  if(kind==='steel'){S.hits++;$('hitsVal').textContent=S.hits;
+    $('hudHits').classList.add('pulse');setTimeout(()=>$('hudHits').classList.remove('pulse'),120);
+    plateVel+=1.6;hitFlash=1;sfx('ding');
+    for(let i=0;i<6;i++)spawn('spark',p=>{p.o.position.copy(hit);
+      p.v.set(rnd(-1.6,1.6),rnd(.2,2.2),rnd(-2.2,-.4));p.life=p.max=rnd(.15,.35);
+      p.o.material.color.set(0xffc46b);p.o.visible=true;});}
+  else{for(let i=0;i<3;i++)spawn('spark',p=>{p.o.position.copy(hit);
+      p.v.set(rnd(-.8,.8),rnd(.2,1.2),rnd(-1.5,-.2));p.life=p.max=rnd(.1,.25);
+      p.o.material.color.set(0x8aa0b4);p.o.visible=true;});}
+  sfx('shot');
+  const ch=$('crosshair');ch.classList.add('fire');setTimeout(()=>ch.classList.remove('fire'),70);
+}
+
+/* ═══════════════════ per-frame pose ═══════════════════ */
+const gripW=new THREE.Vector3(),foreW=new THREE.Vector3(),chestW=new THREE.Vector3();
+const poleR=new THREE.Vector3(),poleL=new THREE.Vector3(),tmpV=new THREE.Vector3();
+const reloadOut={pos:new THREE.Vector3(),curl:1};
+function updatePose(dt){
+  const dts=dt*S.speed*(S.paused?0:1);
+  t+=dts;
+  /* cadence gait engine — темп шага плавно живёт между ШАГ и БЕГ */
+  gaitCad=damp(gaitCad,.82*W.walk+1.5*W.run,5,dt);
+  gaitPh+=dts*2*Math.PI*gaitCad;
+  gaitPitch=0;gaitRoll=0;
+  /* weights */
+  const tgt={idle:0,walk:0,run:0,aim:0,shoot:0,reload:0};
+  if(!S.clip&&S.anim!=='DEATH')tgt[S.anim.toLowerCase()]=1;
+  for(const k in W)W[k]=damp(W[k],tgt[k],7,dt);
+  deathT=clamp(deathT+(S.anim==='DEATH'?dts/2.2:-dts/1.1),0,1);
+  holdW=1-sstep(deathT,.05,.3);
+  /* springs */
+  recoilZv+=(-140*recoilZ-16*recoilZv)*dts;recoilZ+=recoilZv*dts;
+  recoilPv+=(-120*recoilP-13*recoilPv)*dts;recoilP=clamp(recoilP+recoilPv*dts,-.02,.14);
+  recoilYv+=(-110*recoilY-14*recoilYv)*dts;recoilY+=recoilYv*dts;
+  triggerPulse=Math.max(0,triggerPulse-dts*8);
+  /* reload timeline */
+  let reloadU=0;
+  if(reloadActive){reloadT+=dts;reloadU=clamp(reloadT/2.8,0,1);
+    const ev=(u,key,fn)=>{if(reloadU>=u&&!reloadEv[key]){reloadEv[key]=true;fn();}};
+    ev(.22,'magout',()=>{sfx('magout');spawnDropMag();});
+    ev(.56,'carry',()=>{if(weaponDetachable&&weaponMag&&!carryMag){
+      carryMag=weaponMag.clone(true);carryMag.visible=true;carryMag.position.set(0,-.02,.03);carryMag.rotation.set(-.4,0,0);carryMag.scale.setScalar(1);
+      const h=handRecs[S.gripSide==='R'?'L':'R'];h?.bone.add(carryMag);}});
+    ev(.77,'magin',()=>{sfx('magin');if(carryMag){carryMag.parent?.remove(carryMag);carryMag=null;}if(weaponMag)weaponMag.visible=true;});
+    ev(.87,'charge',()=>sfx('charge'));
+    if(reloadU>=1){finishReload();setState(S.prev==='RELOAD'?'IDLE':S.prev,true);}}
+  /* death weapon drop / regrip */
+  if(holdW<.5&&!weaponDropped){weaponDropped=true;dropSleep=false;gripReturn=0;
+    weaponRoot.updateWorldMatrix(true,false);
+    dropVel.set(rnd(-.4,.4),rnd(.3,.8),rnd(.6,1.2));dropAng.set(rnd(-3,3),rnd(-3,3),rnd(-3,3));
+    sfx('tick');}
+  if(holdW>=.5&&weaponDropped){weaponDropped=false;gripReturn=0;}
+  if(!weaponDropped)gripReturn=Math.min(1,gripReturn+dts*2.6);
+  /* firing */
+  if(S.anim==='SHOOT'&&!S.paused&&holdW>.5){fireAcc+=dts;const iv=60/S.rate;
+    while(fireAcc>=iv){fireAcc-=iv;fireShot();}}
+  else fireAcc=0;
+  /* ── bones ── */
+  wrapper.rotation.y=S.yaw*D2R;wrapper.updateMatrixWorld(true);
+  WQ=wrapper.getWorldQuaternion(new THREE.Quaternion());
+  resetPose();
+  if(S.clip&&mixer){mixer.timeScale=S.speed*(S.paused?0:1);mixer.update(dts);}
+  else if(deathT>0.001){
+    /* смерть v2: подкашиваются колени → заваливается назад-набок → удар о пол */
+    const u=deathT,r1=(deathSeed-.5);
+    moveB(rig.hips,0,kf(u,DEATH.hipsY),kf(u,DEATH.hipsZ));
+    rotB(rig.hips,'x',kf(u,DEATH.hipsRX));rotB(rig.hips,'z',kf(u,DEATH.hipsRZ)+r1*.25*u);
+    rotB(rig.spine,'x',kf(u,DEATH.spineX));
+    rotB(rig.chest,'x',kf(u,DEATH.chestX));rotB(rig.head,'x',kf(u,DEATH.headX));
+    rotB(rig.thighL,'x',kf(u,DEATH.thighL)+r1*.2*u);rotB(rig.thighR,'x',kf(u,DEATH.thighR)-r1*.2*u);
+    rotB(rig.calfL,'x',kf(u,DEATH.calfL));rotB(rig.calfR,'x',kf(u,DEATH.calfR));
+    rotB(rig.upperArmL,'x',kf(u,DEATH.armX)+r1*.4*u);rotB(rig.upperArmR,'x',kf(u,DEATH.armX)-r1*.4*u);
+    rotB(rig.upperArmL,'z',-kf(u,DEATH.armZ));rotB(rig.upperArmR,'z',kf(u,DEATH.armZ));
+    rotB(rig.forearmL,'x',kf(u,DEATH.foreX));rotB(rig.forearmR,'x',kf(u,DEATH.foreX));
+    if(u>.82&&!deathThud){deathThud=true;sfx('thud');}
+    if(u<.5)deathThud=false;
+  } else {
+    const aimish=W.aim+W.shoot, wk=W.walk, rn=W.run, mv=Math.min(1,wk+rn), still=1-mv;
+    const ph=gaitPh, swL=Math.sin(ph), cwL=Math.cos(ph), swR=-swL, cwR=-cwL;
+    /* шаги — звук в момент касания пятки (cos переходит − → +) */
+    if(mv>.4&&!S.paused){if(cwL>0&&prevStepL<=0)sfx('step');if(cwR>0&&prevStepR<=0)sfx('step');}
+    prevStepL=cwL;prevStepR=cwR;
+    const breathe=Math.sin(t*1.55)*still;
+    const shift=Math.sin(t*.38)*still;                    /* перенос веса в стойке */
+    const lookYaw=(Math.sin(t*.33)*.55+Math.sin(t*.11)*.45)*.17*still*(1-.8*aimish);
+    const lookPitch=(Math.sin(t*.21)*.6+Math.sin(t*.47)*.4)*.06*(1-aimish);
+    const lean=.05+.11*rn+.05*aimish+.03*W.shoot;
+    const bobA=.042*wk+.062*rn;
+    const gaitYaw=Math.sin(ph)*.085*mv;
+    gaitPitch=Math.sin(2*ph+1.1)*.016*mv; gaitRoll=Math.sin(ph+.4)*.02*mv;
+    /* бёдра: дыхание и перенос веса в стойке · качание и подскок в движении */
+    moveB(rig.hips,
+      shift*.013+Math.cos(ph)*.013*mv,
+      Math.sin(t*1.55)*.006*still+bobA*(.5+.5*Math.cos(2*ph))-.012*mv,0);
+    rotB(rig.hips,'y',gaitYaw+shift*.03-.12*aimish);
+    rotB(rig.hips,'z',Math.cos(ph)*.05*mv+shift*.02);
+    rotB(rig.hips,'x',.02*aimish+.04*wk+.11*rn);
+    /* ноги: колено сгибается ТОЛЬКО в фазе маха (cos<0) — иначе выглядит как ходьба назад */
+    const ampT=.52*wk+.72*rn, kAmp=.95*wk+1.25*rn;
+    const tL=-.05-.05*aimish+swL*ampT, tR=.08+.08*aimish+swR*ampT;
+    const knL=(.14+kAmp*Math.max(0,-cwL))*mv, knR=(.14+kAmp*Math.max(0,-cwR))*mv;
+    rotB(rig.thighL,'x',tL); rotB(rig.thighL,'z',-.07);
+    rotB(rig.thighR,'x',tR); rotB(rig.thighR,'z',.07);
+    rotB(rig.calfL,'x',.10+knL); rotB(rig.calfR,'x',.14+knR);
+    /* стопа: отталкивание носком в конце опоры, пятка первая при касании, носок приподнят в махе */
+    rotB(rig.footL,'x',-(tL+.10+knL)*.55
+      +Math.max(0,swL)*(.30*wk+.45*rn)
+      -Math.max(0,-swL)*(.35*wk+.50*rn)
+      -Math.max(0,-cwL)*.18*mv);
+    rotB(rig.footR,'x',-(tR+.14+knR)*.55
+      +Math.max(0,swR)*(.30*wk+.45*rn)
+      -Math.max(0,-swR)*(.35*wk+.50*rn)
+      -Math.max(0,-cwR)*.18*mv);
+    rotB(rig.footL,'y',.10); rotB(rig.footR,'y',-.22-.1*aimish);
+    /* корпус: наклон ВПЕРЁД в движении (позитивный X = вперёд), контр-вращение плеч против таза */
+    rotB(rig.spine,'x',lean*.5+breathe*.012);
+    rotB(rig.chest,'x',lean*.55+breathe*.016-recoilP*.3);
+    rotB(rig.chest,'y',-gaitYaw*.95+recoilY*.22);
+    rotB(rig.chest,'z',-Math.cos(ph)*.03*mv-shift*.015);
+    rotB(rig.shoulderL,'z',breathe*.016); rotB(rig.shoulderR,'z',-breathe*.016);
+    rotB(rig.neck,'x',lookPitch*.4);
+    rotB(rig.head,'x',.07*aimish+lookPitch+breathe*.008);
+    rotB(rig.head,'y',lookYaw+gaitYaw*.4+.07*aimish);
+  }
+  wrapper.updateMatrixWorld(true);
+  /* ── weapon anchor ── */
+  const P=PRESETS[S.preset]||PRESETS.ready;
+  const aimish=W.aim+W.shoot;
+  const liftUp=.10*aimish,liftFwd=-.03*aimish,liftRight=-P.right*.7*aimish;
+  const k=8;
+  anchorCur.fwd=damp(anchorCur.fwd,P.fwd+liftFwd,k,dt);
+  anchorCur.up=damp(anchorCur.up,P.up+liftUp+(botFBX?.10:0),k,dt);
+  anchorCur.right=damp(anchorCur.right,P.right+liftRight,k,dt);
+  anchorCur.pitch=damp(anchorCur.pitch,P.pitch,k,dt);
+  anchorCur.roll=damp(anchorCur.roll,P.roll,k,dt);
+  rig.chest?rig.chest.getWorldPosition(chestW):chestW.set(0,1.3,0);
+  const swayAmp=(1-.5*W.walk)*(1-.55*aimish);
+  const swayX=Math.sin(t*.9)*.004*swayAmp,swayY=Math.sin(t*1.7)*.005*swayAmp+Math.abs(Math.sin(t*2*Math.PI*.9))*.012*W.walk;
+  const rlRoll=reloadActive?kf(reloadU,[[0,0],[.15,-.2],[.8,-.2],[1,0]]):0;
+  const rlPitch=reloadActive?kf(reloadU,[[0,0],[.15,-.14],[.85,-.12],[1,0]]):0;
+  const rlYaw=reloadActive?kf(reloadU,[[0,0],[.15,.12],[.85,.1],[1,0]]):0;
+  tmpV.set(anchorCur.right+S.off[0]+swayX,anchorCur.up+S.off[1]+swayY,anchorCur.fwd+S.off[2]).applyQuaternion(WQ);
+  const anchorPos=chestW.clone().add(tmpV).addScaledVector(new THREE.Vector3(0,0,1).applyQuaternion(WQ),-recoilZ*.05);
+  /* гасим качание корпуса на оружии: ствол держит линию цели при ШАГе и БЕГе */
+  _e.set((anchorCur.pitch-S.rot[0])*D2R-recoilP+rlPitch+Math.sin(t*1.7)*.004*swayAmp-gaitPitch,
+         S.rot[1]*D2R+rlYaw+recoilY+Math.sin(t*.7)*.006*swayAmp,
+         (anchorCur.roll+S.rot[2])*D2R+rlRoll+gaitRoll,'YXZ');
+  const anchorQ=new THREE.Quaternion().setFromEuler(_e).premultiply(WQ);
+  weaponRoot.scale.setScalar(S.wScale);
+  if(weaponDropped){
+    if(!dropSleep){
+      dropVel.y-=9.8*dts;weaponRoot.position.addScaledVector(dropVel,dts);
+      _e.set(dropAng.x*dts,dropAng.y*dts,dropAng.z*dts);
+      weaponRoot.quaternion.multiply(new THREE.Quaternion().setFromEuler(_e));
+      if(weaponRoot.position.y<.06){weaponRoot.position.y=.06;
+        if(Math.abs(dropVel.y)>1)sfx('tick');
+        dropVel.y*=-.28;dropVel.x*=.6;dropVel.z*=.6;dropAng.multiplyScalar(.5);
+        if(dropVel.length()<.2){dropSleep=true;
+          const yawOnly=new THREE.Euler(0,new THREE.Euler().setFromQuaternion(weaponRoot.quaternion,'YXZ').y,Math.PI/2,'YXZ');
+          weaponRoot.quaternion.setFromEuler(yawOnly);}}
+    }
+  } else {
+    const g=sstep(gripReturn,0,1);
+    weaponRoot.position.lerp(anchorPos,g<1?Math.max(.12,g):1);
+    weaponRoot.quaternion.slerp(anchorQ,g<1?Math.max(.12,g):1);
+  }
+  weaponRoot.updateWorldMatrix(true,true);
+  /* ── arms IK ── */
+  const gsd=S.gripSide,ssd=gsd==='R'?'L':'R';
+  const gHand=rig['hand'+gsd],sHand=rig['hand'+ssd];
+  const gUpper=rig['upperArm'+gsd],gFore=rig['forearm'+gsd];
+  const sUpper=rig['upperArm'+ssd],sFore=rig['forearm'+ssd];
+  weaponMarkers.grip.getWorldPosition(gripW);
+  weaponMarkers.fore.getWorldPosition(foreW);
+  const wq=weaponRoot.quaternion;
+  const gTarget=gripW.clone().add(new THREE.Vector3(gsd==='R'?.014:-.014,.015,-.02).applyQuaternion(wq));
+  const sTarget=foreW.clone().add(new THREE.Vector3(ssd==='L'?-.012:.012,-.02,-.01).applyQuaternion(wq));
+  if(holdW>.02&&gUpper&&gFore&&gHand){
+    const sh=rig['upperArm'+gsd].getWorldPosition(new THREE.Vector3());
+    poleR.copy(sh).add(new THREE.Vector3(gsd==='R'?-.42:.42,-.95,-.15).applyQuaternion(WQ));
+    ikROk=solveIK(gUpper,gFore,gHand,gTarget,poleR);
+    const wrist=(gsd==='R'?S.wristR:S.wristL)*D2R;
+    const kn=new THREE.Vector3(0,-.35,1).normalize().applyAxisAngle(new THREE.Vector3(0,0,1),wrist).applyQuaternion(wq);
+    const pm=new THREE.Vector3(gsd==='R'?-1:1,0,.15).normalize().applyAxisAngle(new THREE.Vector3(0,0,1),wrist).applyQuaternion(wq);
+    orientHand(gsd,kn,pm,holdW);
+  } else ikROk=false;
+  const leftEnabled=(PRESETS[S.preset]||PRESETS.ready).left||reloadActive;
+  if(holdW>.02&&leftEnabled&&sUpper&&sFore&&sHand){
+    let target=sTarget,curlOverride=null;
+    if(reloadActive){reloadLeft(reloadU,reloadOut);target=reloadOut.pos;curlOverride=reloadOut.curl;}
+    const sh=sUpper.getWorldPosition(new THREE.Vector3());
+    poleL.copy(sh).add(new THREE.Vector3(ssd==='L'?.35:-.35,-.9,.12).applyQuaternion(WQ));
+    ikLOk=solveIK(sUpper,sFore,sHand,target,poleL);
+    const wrist=(ssd==='L'?S.wristL:S.wristR)*D2R;
+    const kn=new THREE.Vector3(ssd==='L'?.2:-.2,-.4,1).normalize().applyAxisAngle(new THREE.Vector3(0,0,1),wrist).applyQuaternion(wq);
+    const pm=new THREE.Vector3(ssd==='L'?.85:-.85,.5,0).normalize().applyAxisAngle(new THREE.Vector3(0,0,1),wrist).applyQuaternion(wq);
+    orientHand(ssd,kn,pm,holdW);
+    S._leftCurlOverride=curlOverride;
+  } else {ikLOk=false;S._leftCurlOverride=null;
+    /* relaxed support arm swing in walk */
+    if(!leftEnabled&&W.walk>.05&&sUpper){rotB(sUpper,'x',Math.sin(t*2*Math.PI*.9+(ssd==='L'?0:Math.PI))*.3*W.walk);rotB(sFore,'x',-.25*W.walk);}
+  }
+  /* ── fingers ── */
+  const cG=(gsd==='R'?S.curlR:S.curlL)/100,cS=(ssd==='R'?S.curlR:S.curlL)/100;
+  fingerRecs.forEach(r=>{
+    let c=r.side===gsd?cG:cS;
+    if(r.side===gsd&&/index/i.test(r.bone.name))c=c*.35+triggerPulse*.22;
+    if(r.side===gsd&&reloadActive)c*=.55;
+    if(r.side===ssd&&S._leftCurlOverride!==null&&S._leftCurlOverride!==undefined)c=S._leftCurlOverride*(ssd==='R'?S.curlR:S.curlL)/100;
+    c*=holdW;
+    if(r.isThumb)c*=.7;
+    _q2.setFromAxisAngle(r.axisLocal,r.sign*r.max*c);
+    r.bone.quaternion.multiply(_q2);
+  });
+  /* ── user offsets ── */
+  for(const name in S.userPose){const b=rig.all?.find(x=>x.name===name);if(!b)continue;
+    const o=S.userPose[name];_e.set(o[0]*D2R,o[1]*D2R,o[2]*D2R);
+    b.quaternion.multiply(_q2.setFromEuler(_e));}
+  wrapper.updateMatrixWorld(true);
+  /* marker */
+  const selB=$('boneSel').value;
+  if(selB){const b=rig.all?.find(x=>x.name===selB);
+    if(b){boneMarker.visible=true;b.getWorldPosition(boneMarker.position);}else boneMarker.visible=false;}
+  else boneMarker.visible=false;
+  /* IK chips */
+  setIK($('ikR'),$('ikRTxt'),$('chipIKr'),holdW>.02&&gUpper,ikROk,gsd+' · грип+спуск');
+  setIK($('ikL'),$('ikLTxt'),$('chipIKl'),holdW>.02&&leftEnabled&&sUpper,ikLOk,ssd+(reloadActive?' · магазин':' · цевьё'));
+  $('boneChip').textContent=(gsd==='R'?'Right':'Left')+'Hand';
+}
+function setIK(dot,txt,topDot,on,ok,label){
+  const cls=!on?'off':ok?'ok':'warn';
+  dot.className='dot '+cls;topDot.className='dot '+cls;
+  const s=label+(on&&!ok?' · натянут':'');if(txt.textContent!==s)txt.textContent=s;
+}
+
+/* ═══════════════════ FX update ═══════════════════ */
+function updateFX(dt){
+  const dts=dt*S.speed*(S.paused?0:1);
+  if(flashLife>0){flashLife-=dts;if(flashLife<=0)flash.visible=false;}
+  muzzleLight.intensity=Math.max(0,muzzleLight.intensity-dts*900);
+  pools.brass.forEach(p=>{if(p.life<=0)return;p.life-=dts;
+    p.v.y-=9.8*dts;p.o.position.addScaledVector(p.v,dts);
+    p.o.rotation.x+=p.av.x*dts;p.o.rotation.z+=p.av.z*dts;
+    if(p.o.position.y<.01){p.o.position.y=.01;p.v.y*=-.32;p.v.x*=.7;p.v.z*=.7;p.av.multiplyScalar(.6);p.b++;}
+    if(p.life<=0||p.b>3)p.o.visible=false;});
+  pools.spark.forEach(p=>{if(p.life<=0)return;p.life-=dts;
+    p.v.y-=6*dts;p.o.position.addScaledVector(p.v,dts);
+    p.o.material.opacity=Math.max(0,p.life/p.max);
+    if(p.life<=0)p.o.visible=false;});
+  pools.smoke.forEach(p=>{if(p.life<=0)return;p.life-=dts;
+    p.o.position.addScaledVector(p.v,dts);p.v.multiplyScalar(1-dts*.8);p.v.y+=dts*.25;
+    const u=1-p.life/p.max;p.o.scale.setScalar(.06+u*.3);p.o.material.opacity=.28*(1-u);
+    if(p.life<=0)p.o.visible=false;});
+  pools.tracer.forEach(p=>{if(p.life<=0)return;p.life-=dts;
+    if(p.life<=0)p.o.visible=false;});
+  dropMags.forEach(d=>{if(d.life<=0)return;d.life-=dts;
+    d.v.y-=9.8*dts;d.o.position.addScaledVector(d.v,dts);
+    d.o.rotation.x+=d.av.x*dts;d.o.rotation.z+=d.av.z*dts;
+    if(d.o.position.y<.03){d.o.position.y=.03;d.v.y*=-.25;d.v.x*=.6;d.v.z*=.6;d.av.multiplyScalar(.5);}
+    if(d.life<=0){scene.remove(d.o);}});
+  /* target plate */
+  plateVel+=(-20*plateAng-3*plateVel)*dts;plateAng+=plateVel*dts;
+  platePivot.rotation.x=plateAng;
+  hitFlash=Math.max(0,hitFlash-dts*3);steelMat.emissiveIntensity=hitFlash*1.6;
+  /* dust */
+  if(dust.visible){const a=dustGeo.attributes.position.array;
+    for(let i=0;i<DUST_N;i++){a[i*3+1]-=dts*.05;a[i*3]+=Math.sin(t*.4+dustPh[i])*dts*.03;
+      if(a[i*3+1]<.05)a[i*3+1]=4.4;}
+    dustGeo.attributes.position.needsUpdate=true;}
+}
+
+/* ═══════════════════ UI wiring ═══════════════════ */
+const bindings=[];
+function bindRange(id,outId,get,set,fmt){
+  const el=$(id),out=$(outId);
+  const paint=()=>{const v=get();el.value=v;out.textContent=fmt(v);
+    const p=(el.value-el.min)/(el.max-el.min)*100;el.style.setProperty('--p',p+'%');};
+  el.addEventListener('input',()=>{set(parseFloat(el.value));paint();dirty=true;});
+  bindings.push(paint);paint();return paint;
+}
+function bindSelect(id,get,set){const el=$(id);
+  const paint=()=>{el.value=get();};
+  el.addEventListener('change',()=>{set(el.value);dirty=true;});
+  bindings.push(paint);paint();}
+function bindToggle(id,get,set){const el=$(id);
+  const paint=()=>{el.checked=get();};
+  el.addEventListener('change',()=>{set(el.checked);dirty=true;});
+  bindings.push(paint);paint();}
+const refreshUI=()=>bindings.forEach(f=>f());
+const f0=v=>v.toFixed(0),f2=v=>v.toFixed(2),fdeg=v=>v.toFixed(0)+'°',fm=v=>(v*100).toFixed(0);
+bindRange('speedRange','speedVal',()=>S.speed,v=>S.speed=v,v=>v.toFixed(1)+'×');
+bindRange('yawRange','yawVal',()=>S.yaw,v=>S.yaw=v,fdeg);
+bindRange('wScaleRange','wScaleVal',()=>S.wScale,v=>S.wScale=v,v=>v.toFixed(2)+'×');
+bindRange('offXRange','offXVal',()=>S.off[0],v=>S.off[0]=v,fm);
+bindRange('offYRange','offYVal',()=>S.off[1],v=>S.off[1]=v,fm);
+bindRange('offZRange','offZVal',()=>S.off[2],v=>S.off[2]=v,fm);
+bindRange('rotXRange','rotXVal',()=>S.rot[0],v=>S.rot[0]=v,fdeg);
+bindRange('rotYRange','rotYVal',()=>S.rot[1],v=>S.rot[1]=v,fdeg);
+bindRange('rotZRange','rotZVal',()=>S.rot[2],v=>S.rot[2]=v,fdeg);
+bindRange('wristRRange','wristRVal',()=>S.wristR,v=>S.wristR=v,fdeg);
+bindRange('wristLRange','wristLVal',()=>S.wristL,v=>S.wristL=v,fdeg);
+bindRange('curlRRange','curlRVal',()=>S.curlR,v=>S.curlR=v,v=>v.toFixed(0)+'%');
+bindRange('curlLRange','curlLVal',()=>S.curlL,v=>S.curlL=v,v=>v.toFixed(0)+'%');
+bindRange('rateRange','rateVal',()=>S.rate,v=>S.rate=v,v=>v.toFixed(0)+' в/мин');
+bindRange('recoilRange','recoilVal',()=>S.recoil,v=>S.recoil=v,v=>v.toFixed(2)+'×');
+bindSelect('presetSel',()=>S.preset,v=>{S.preset=v;sfx('tick');});
+bindSelect('axisSel',()=>S.axis,v=>{S.axis=v;rebuildWeaponAxis();});
+bindSelect('gripBoneSel',()=>S.gripSide,v=>S.gripSide=v);
+bindSelect('curlAxisSel',()=>S.curlAxis,v=>{S.curlAxis=v;recomputeFingerAxes();});
+bindSelect('qualitySel',()=>S.quality,v=>{S.quality=v;applyQuality();});
+bindToggle('tglSkel',()=>S.tgl.skel,v=>{S.tgl.skel=v;applyVisToggles();});
+bindToggle('tglMesh',()=>S.tgl.mesh,v=>{S.tgl.mesh=v;applyVisToggles();});
+bindToggle('tglWire',()=>S.tgl.wire,v=>{S.tgl.wire=v;applyVisToggles();});
+bindToggle('tglGrid',()=>S.tgl.grid,v=>{S.tgl.grid=v;applyVisToggles();});
+bindToggle('tglShadows',()=>S.tgl.shadows,v=>{S.tgl.shadows=v;applyQuality();});
+bindToggle('tglDust',()=>S.tgl.dust,v=>{S.tgl.dust=v;applyQuality();});
+bindToggle('tglTracers',()=>S.tgl.tracers,v=>S.tgl.tracers=v);
+function applyVisToggles(){
+  if(skelHelper)skelHelper.visible=S.tgl.skel;
+  botMeshes.forEach(m=>{m.visible=S.tgl.mesh;
+    const ms=Array.isArray(m.material)?m.material:[m.material];
+    ms.forEach(mm=>{if('wireframe'in mm)mm.wireframe=S.tgl.wire;});});
+  floorMarks.visible=S.tgl.grid;
+}
+function applyQuality(){
+  const q=S.quality;
+  const pr=q==='high'?Math.min(devicePixelRatio,1.75):q==='med'?Math.min(devicePixelRatio,1.25):1;
+  renderer.setPixelRatio(pr);
+  renderer.shadowMap.enabled=S.tgl.shadows&&q!=='low';
+  key.castShadow=S.tgl.shadows&&q!=='low';
+  dust.visible=S.tgl.dust&&q!=='low';
+  cones.forEach(c=>c.visible=S.tgl.dust&&q==='high');
+  spots.forEach(s=>s.visible=q!=='low');
+  onResize();
+}
+/* weapon axis rebuild for GLB (proc stays) */
+let lastGLB=null;
+function rebuildWeaponAxis(){ if(!weaponIsProc&&lastGLB){adoptGLB(lastGLB.clone(true),$('weaponName').textContent);} }
+const _adoptGLB=adoptGLB;
+adoptGLB=function(obj,label){lastGLB=obj;_adoptGLB(obj,label);};
+/* transport */
+document.querySelectorAll('.stateBtn').forEach(b=>b.addEventListener('click',()=>setState(b.dataset.state)));
+$('stopBtn').onclick=()=>setState('IDLE');
+$('pauseBtn').onclick=()=>{S.paused=!S.paused;
+  $('pauseIco').innerHTML=S.paused?'<path d="M3 2l9 5-9 5z" fill="currentColor"/>':'<path d="M3 2h3v10H3zM8 2h3v10H8z" fill="currentColor"/>';
+  toast(S.paused?'Пауза — сцена заморожена':'Воспроизведение','info');};
+/* sound */
+function paintSound(){$('sndLbl').textContent='ЗВУК: '+(S.tgl.sound?'ВКЛ':'ВЫКЛ');
+  $('sndIco').querySelector('.waves').style.opacity=S.tgl.sound?1:.15;
+  $('sndBtn').style.color=S.tgl.sound?'':'var(--dim)';}
+$('sndBtn').onclick=()=>{S.tgl.sound=!S.tgl.sound;if(S.tgl.sound){audio();AC?.resume();sfx('tick');}paintSound();};
+paintSound();
+/* camera */
+const CAMS={front:[0,1.5,4.2,0,1.15,.2],side:[3.6,1.45,.3,0,1.2,.2],back:[-.6,1.7,-3.6,0,1.15,.1],grip:[.8,1.32,.95,.05,1.24,.28]};
+let camAnim=null;
+function flyCam(name){const c=CAMS[name];if(!c)return;
+  camAnim={t:0,p0:camera.position.clone(),p1:new THREE.Vector3(c[0],c[1],c[2]),t0:controls.target.clone(),t1:new THREE.Vector3(c[3],c[4],c[5])};
+  introT=1;lastInteract=performance.now();sfx('tick');}
+document.querySelectorAll('.camBtn').forEach(b=>b.onclick=()=>flyCam(b.dataset.cam));
+let camCycle=0;const camNames=['front','side','back','grip'];
+/* files */
+$('modelFile').addEventListener('change',e=>{handleFiles(e.target.files);e.target.value='';});
+$('weaponBtn').onclick=()=>$('weaponFile').click();
+$('weaponFile').addEventListener('change',e=>{if(e.target.files[0])loadWeaponFile(e.target.files[0]);e.target.value='';});
+$('configBtn').onclick=()=>$('configFile').click();
+$('configFile').addEventListener('change',e=>{if(e.target.files[0])loadConfigFile(e.target.files[0]);e.target.value='';});
+$('mannequinBtn').onclick=()=>{loadProcBot();toast('Манекен BRIX восстановлен','ok');};
+$('alignBtn').onclick=()=>{S.rot=[0,0,0];S.axis='auto';S.flip=false;
+  if(S.preset!=='ready'&&S.preset!=='ads')S.preset='ready';
+  rebuildWeaponAxis();refreshUI();toast('Калаш выровнен: ствол строго вперёд, крен 0°','ok');};
+$('flipBtn').onclick=()=>{S.flip=!S.flip;rebuildWeaponAxis();dirty=true;};
+$('gripDefaultBtn').onclick=()=>{S.curlR=78;S.curlL=88;S.curlAxis='auto';recomputeFingerAxes();refreshUI();toast('Обхват восстановлен: R 78% · L 88%','ok');};
+$('hitsResetBtn').onclick=()=>{S.hits=0;$('hitsVal').textContent='0';toast('Счёт мишени сброшен','info');};
+/* drag & drop */
+let dragDepth=0;
+window.addEventListener('dragenter',e=>{e.preventDefault();dragDepth++;$('dropOverlay').classList.add('on');});
+window.addEventListener('dragleave',e=>{e.preventDefault();if(--dragDepth<=0){dragDepth=0;$('dropOverlay').classList.remove('on');}});
+window.addEventListener('dragover',e=>e.preventDefault());
+window.addEventListener('drop',e=>{e.preventDefault();dragDepth=0;$('dropOverlay').classList.remove('on');
+  if(e.dataTransfer?.files?.length)handleFiles(e.dataTransfer.files);});
+/* bone select + pose */
+function buildBoneSelect(all){
+  const sel=$('boneSel');const cur=sel.value;
+  sel.innerHTML='<option value="">— выбери кость или кликни по боту —</option>';
+  const groups={'Корпус':[],'Руки':[],'Ноги':[],'Пальцы':[],'Прочее':[]};
+  all.forEach(b=>{const n=b.name.toLowerCase();
+    if(/thumb|index|middle|ring|pinky|finger/.test(n))groups['Пальцы'].push(b);
+    else if(/hip|spine|chest|neck|head|torso|pelvis/.test(n))groups['Корпус'].push(b);
+    else if(/arm|hand|shoulder|collar|clavicle|wrist|elbow/.test(n))groups['Руки'].push(b);
+    else if(/leg|foot|thigh|calf|knee|ankle|toe/.test(n))groups['Ноги'].push(b);
+    else groups['Прочее'].push(b);});
+  for(const g in groups){if(!groups[g].length)continue;
+    const og=document.createElement('optgroup');og.label=g;
+    groups[g].forEach(b=>{const o=document.createElement('option');o.value=b.name;o.textContent=b.name;og.appendChild(o);});
+    sel.appendChild(og);}
+  sel.value=[...sel.options].some(o=>o.value===cur)?cur:'';
+  paintPoseSliders();
+}
+const posePaints=[];
+['X','Y','Z'].forEach((ax,i)=>{
+  posePaints.push(bindRange('pose'+ax+'Range','pose'+ax+'Val',
+    ()=>{const b=$('boneSel').value;return b&&S.userPose[b]?S.userPose[b][i]:0;},
+    v=>{const b=$('boneSel').value;if(!b)return;
+      if(!S.userPose[b])S.userPose[b]=[0,0,0];S.userPose[b][i]=v;
+      if(S.userPose[b].every(x=>!x))delete S.userPose[b];},fdeg));});
+function paintPoseSliders(){const b=$('boneSel').value;
+  ['poseXRange','poseYRange','poseZRange'].forEach(id=>$(id).disabled=!b);
+  $('boneSelVal').textContent=b?'aktiv':'';posePaints.forEach(f=>f());}
+$('boneSel').addEventListener('change',()=>{paintPoseSliders();sfx('tick');});
+/* click-select bone */
+const ray=new THREE.Raycaster(),ptr=new THREE.Vector2();let downXY=null;
+renderer.domElement.addEventListener('pointerdown',e=>{downXY=[e.clientX,e.clientY];});
+renderer.domElement.addEventListener('pointerup',e=>{
+  if(!downXY)return;const dx=e.clientX-downXY[0],dy=e.clientY-downXY[1];downXY=null;
+  if(dx*dx+dy*dy>25)return;
+  const r=renderer.domElement.getBoundingClientRect();
+  ptr.set((e.clientX-r.left)/r.width*2-1,-((e.clientY-r.top)/r.height)*2+1);
+  ray.setFromCamera(ptr,camera);
+  const hits=ray.intersectObjects(botMeshes,false);
+  if(!hits.length)return;
+  let name=hits[0].object.userData.boneName;
+  if(!name){let best=null,bd=1e9;
+    rig.all.forEach(b=>{const d=b.getWorldPosition(new THREE.Vector3()).distanceTo(hits[0].point);if(d<bd){bd=d;best=b;}});
+    name=best?.name;}
+  if(name){$('boneSel').value=name;paintPoseSliders();sfx('tick');
+    toast('Кость выбрана: '+name,'info');}
+});
+/* poses record / reset + undo */
+function renderPoses(){
+  const w=$('poseList');w.innerHTML='';
+  S.poses.forEach((p,i)=>{const c=document.createElement('span');c.className='posechip';
+    c.innerHTML=`<span>${p.name}</span><i class="x">✕</i>`;
+    c.firstChild.onclick=()=>{S.userPose=JSON.parse(JSON.stringify(p.data));posePaints.forEach(f=>f());dirty=true;toast(p.name+' применена','ok');};
+    c.querySelector('.x').onclick=ev=>{ev.stopPropagation();
+      const snap=JSON.parse(JSON.stringify(S.poses));
+      S.poses.splice(i,1);renderPoses();dirty=true;
+      toast(p.name+' удалена','warn',{label:'Вернуть',fn:()=>{S.poses=snap;renderPoses();dirty=true;}});};
+    w.appendChild(c);});
+}
+$('recordBtn').onclick=()=>{
+  if(!Object.keys(S.userPose).length){toast('Сначала покрути кости — поза пустая','warn');return;}
+  S.poses.push({name:'Поза '+(S.poses.length+1),data:JSON.parse(JSON.stringify(S.userPose))});
+  renderPoses();dirty=true;toast('Поза записана: '+S.poses[S.poses.length-1].name,'ok');};
+$('resetBonesBtn').onclick=()=>{
+  if(!Object.keys(S.userPose).length){toast('Кости уже в базовой позе','info');return;}
+  const snap=JSON.parse(JSON.stringify(S.userPose));S.userPose={};posePaints.forEach(f=>f());dirty=true;
+  toast('Кости сброшены','warn',{label:'Вернуть',fn:()=>{S.userPose=snap;posePaints.forEach(f=>f());dirty=true;}});};
+/* clips */
+function buildClipList(){
+  const w=$('clipList');w.innerHTML='';$('clipCount').textContent=clips.length;
+  if(!clips.length){w.innerHTML='<span class="note" style="font-family:var(--mono);font-size:10px">В файле нет клипов — работают процедурные.</span>';return;}
+  clips.forEach((c,i)=>{const b=document.createElement('button');b.className='btn sm clipbtn';
+    b.textContent='▶ '+c.name+' · '+c.duration.toFixed(2)+'s';
+    b.onclick=()=>{setState('IDLE',true);S.clip=c;
+      document.querySelectorAll('.stateBtn').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('.clipbtn').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+      const a=mixer.clipAction(c);a.reset().play();
+      document.body.dataset.state='CLIP';$('stateMark').textContent='CLIP';
+      toast('Клип: '+c.name+' · IK хвата поверх анимации','ok');dirty=true;};
+    w.appendChild(b);});
+}
+/* config */
+function configObj(){return{version:2,studio:'BRIX BOT STUDIO',
+  anim:S.clip?S.clip.name:S.anim,speed:+S.speed.toFixed(2),
+  grip:{bone:(S.gripSide==='R'?'Right':'Left')+'Hand',preset:S.preset,
+    offset:S.off.map(v=>+v.toFixed(3)),rot:S.rot.map(v=>+v.toFixed(1)),
+    axis:S.axis,flip:S.flip,scale:+S.wScale.toFixed(2),wristR:S.wristR,wristL:S.wristL},
+  fingers:{right:S.curlR,left:S.curlL,axis:S.curlAxis},
+  fire:{rate:S.rate,recoil:+S.recoil.toFixed(2)},
+  modelYaw:S.yaw,poses:S.poses};}
+function exportJSON(){const blob=new Blob([JSON.stringify(configObj(),null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='bot-anim.json';a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);toast('bot-anim.json выгружен — применяй к боту арены «ПОЛИГОН»','ok');}
+$('exportBtn').onclick=exportJSON;$('exportBtn2').onclick=exportJSON;
+$('copyBtn').onclick=async()=>{const txt=JSON.stringify(configObj(),null,2);
+  try{await navigator.clipboard.writeText(txt);toast('JSON скопирован в буфер','ok');}
+  catch(e){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();
+    document.execCommand('copy');ta.remove();toast('JSON скопирован','ok');}};
+function loadConfigFile(file){const rd=new FileReader();
+  rd.onload=()=>{try{applyConfig(JSON.parse(rd.result));}catch(e){toast('Конфиг не читается: '+e.message,'err');}};
+  rd.readAsText(file);}
+function applyConfig(c){
+  if(c.grip){S.preset=PRESETS[c.grip.preset]?c.grip.preset:'ready';
+    S.gripSide=c.grip.bone&&/left/i.test(c.grip.bone)?'L':'R';
+    if(Array.isArray(c.grip.offset))S.off=c.grip.offset.slice(0,3).map(Number);
+    if(Array.isArray(c.grip.rot))S.rot=c.grip.rot.slice(0,3).map(Number);
+    S.axis=c.grip.axis||'auto';S.flip=!!c.grip.flip;S.wScale=Number(c.grip.scale)||1;
+    S.wristR=Number(c.grip.wristR)||0;S.wristL=Number(c.grip.wristL)||0;}
+  if(c.fingers){S.curlR=clamp(Number(c.fingers.right)||0,0,100);S.curlL=clamp(Number(c.fingers.left)||0,0,100);
+    S.curlAxis=c.fingers.axis||'auto';recomputeFingerAxes();}
+  if(c.fire){S.rate=clamp(Number(c.fire.rate)||600,300,900);S.recoil=clamp(Number(c.fire.recoil)||1,0,2);}
+  S.yaw=Number(c.modelYaw)||0;S.speed=clamp(Number(c.speed)||1,.1,2);
+  S.poses=Array.isArray(c.poses)?c.poses:[];S.userPose={};
+  renderPoses();refreshUI();rebuildWeaponAxis();
+  const st=['IDLE','WALK','RUN','AIM','SHOOT','RELOAD','DEATH'].includes(c.anim)?c.anim:'IDLE';
+  setState(st,true);posePaints.forEach(f=>f());
+  toast('Конфиг применён: хват · пальцы · позы · анимация','ok');dirty=true;}
+/* keyboard */
+window.addEventListener('keydown',e=>{
+  if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)&&e.target.type!=='range')return;
+  const map={'1':'IDLE','2':'WALK','7':'RUN','3':'AIM','4':'SHOOT','5':'RELOAD','6':'DEATH'};
+  if(map[e.key]){setState(map[e.key]);e.preventDefault();}
+  else if(e.code==='Space'){$('pauseBtn').click();e.preventDefault();}
+  else if(e.key==='m'||e.key==='M'||e.key==='ь'){$('sndBtn').click();}
+  else if(e.key==='g'||e.key==='G'||e.key==='п'){S.tgl.skel=!S.tgl.skel;applyVisToggles();refreshUI();}
+  else if(e.key==='c'||e.key==='C'||e.key==='с'){flyCam(camNames[++camCycle%4]);}
+  else if(e.key==='e'||e.key==='E'||e.key==='у'){exportJSON();}
+});
+/* json preview */
+let jsonTimer=0;
+function updatePreview(){ $('jsonPrev').textContent=JSON.stringify(configObj(),null,1); }
+
+/* ═══════════════════ resize / loop ═══════════════════ */
+function onResize(){const w=stage.clientWidth,h=stage.clientHeight;
+  if(!w||!h)return;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+new ResizeObserver(onResize).observe(stage);
+window.addEventListener('resize',onResize);
+
+const clock=new THREE.Clock();
+let fpsAcc=0,fpsN=0,fpsTimer=0;
+function loop(){
   requestAnimationFrame(loop);
-  const dt = clock.getDelta();
-  if (mixer) mixer.update(dt * animSpeed);
-  orbit.update();
-  renderer.render(scene, camera);
-})();
-
-function toast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('on');
-  clearTimeout(t._h);
-  t._h = setTimeout(() => t.classList.remove('on'), 2600);
+  const dt=Math.min(clock.getDelta(),.05);
+  /* intro dolly */
+  if(introT<1){introT=Math.min(1,introT+dt/1.4);const e=1-Math.pow(1-introT,3);
+    camera.position.lerpVectors(camStart,camEnd,e);}
+  if(camAnim){camAnim.t=Math.min(1,camAnim.t+dt/.8);const e=1-Math.pow(1-camAnim.t,3);
+    camera.position.lerpVectors(camAnim.p0,camAnim.p1,e);
+    controls.target.lerpVectors(camAnim.t0,camAnim.t1,e);
+    if(camAnim.t>=1)camAnim=null;}
+  controls.autoRotate=performance.now()-lastInteract>9000&&!camAnim&&introT>=1;
+  controls.update();
+  try{ updatePose(dt); updateFX(dt); }catch(err){ console.error(err); }
+  renderer.render(scene,camera);
+  /* hud */
+  fpsAcc+=dt;fpsN++;fpsTimer+=dt;jsonTimer+=dt;
+  if(fpsTimer>.5){$('fpsVal').textContent=Math.round(fpsN/fpsAcc);
+    $('triVal').textContent=(renderer.info.render.triangles/1000).toFixed(1)+'k';
+    fpsAcc=0;fpsN=0;fpsTimer=0;}
+  if(dirty&&jsonTimer>.3){updatePreview();dirty=false;jsonTimer=0;}
 }
 
-/* ================= загрузка модели ================= */
-let botRoot = null, skeleton = null, bones = [], clips = [];
-let blobMap = {};
-
-function urlMod(loader) {
-  loader.manager = new THREE.LoadingManager();
-  loader.manager.setURLModifier((url) => {
-    const clean = decodeURIComponent(url).replace(/^\.?\//, '').split('/').pop().toLowerCase();
-    if (blobMap[clean]) return blobMap[clean];
-    return url;
-  });
-}
-
-function clearModel() {
-  if (botRoot) { scene.remove(botRoot); botRoot = null; }
-  if (skeleton) { scene.remove(skeleton); skeleton = null; }
-  if (mixer) { mixer.stopAllAction(); mixer.uncacheRoot(mixer.getRoot()); mixer = null; }
-  clips = []; bones = [];
-}
-
-function findBones(root) {
-  const out = [];
-  root.traverse((o) => { if (o.isBone || (o.isObject3D && /mixamorig|bip|bone|joint|arm|hand|leg|spine|head|finger|thumb/i.test(o.name || ''))) out.push(o); });
-  return out;
-}
-
-function pick(arr, re) { return arr.filter((b) => re.test(b.name || '')); }
-/* ✅ v0.4.66: нормализация имени кости — CamelCase (mixamorigRightArm),
-   snake_case (arm_R) и точечные (arm.r) приводятся к «arm r» виду.
-   Старый regex с [^a-z]-границами НЕ находил mixamo-кости (слитные
-   имена без разделителей), из-за чего анимации вообще не позировали
-   руки/ноги — бот и держал оружие «тупо» (поза просто не применялась). */
-function normName(n) {
-  return (n || '').replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/[^A-Za-z0-9]+/g, ' ').toLowerCase();
-}
-function pickSide(arr, re, side) {
-  const want = side === 'r' ? ['right', ' r '] : ['left', ' l '];
-  const avoid = side === 'r' ? ['left'] : ['right'];
-  return arr.filter((b) => {
-    const n = ' ' + normName(b.name) + ' ';
-    if (!re.test(n)) return false;
-    return want.some((w) => n.indexOf(w) !== -1) &&
-      !avoid.some((w) => n.indexOf(w) !== -1);
-  });
-}
-function pickPref(arr, side, res) {
-  for (const re of res) {
-    const hits = pickSide(arr, re, side);
-    if (hits.length) return hits;
+/* ═══════════════════ boot — сразу калаш из игры и бот-учёный ═══════════════════ */
+const bootStep=(p,msg)=>{$('bootBar').style.width=p+'%';$('bootMsg').textContent=msg;};
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const ASSET_BASES=['../assets/','assets/','../BRIX/assets/'];
+async function loadAKAuto(){
+  for(const b of ASSET_BASES){
+    try{ const g=await new GLTFLoader().loadAsync(b+'models/ak47.glb');
+      adoptGLB(g.scene,'ak47.glb · из игры'); return true; }catch(e){}
   }
-  return [];
-}
-
-window.__studio = { scene, camera, orbit,
-  get bot() { return botRoot; }, get bones() { return bones; } };
-
-function afterModelLoad(obj, kind) {
-  clearModel();
-  botRoot = obj;
-  window.__ST = { get botRoot() { return botRoot; }, get bones() { return bones; }, rig: rigGroups };
-  obj.traverse((o) => {
-    if (o.isMesh) {
-      o.castShadow = true;
-      o.frustumCulled = false;
-      if (o.material) { const mats = Array.isArray(o.material) ? o.material : [o.material]; mats.forEach((m) => { m.side = THREE.FrontSide; if (m.map) m.map.anisotropy = 4; }); }
+  return false; }
+async function loadScientistAuto(){
+  for(const b of ASSET_BASES){ const base=b+'models/bot-scientist/';
+    try{ const mgr=new THREE.LoadingManager();
+      mgr.setURLModifier(url=>{ if(/\.fbx(\?|$)/i.test(url))return url;
+        return base+'textures/'+decodeURIComponent(url.split(/[\\/]/).pop()); });
+      const obj=await new FBXLoader(mgr).loadAsync(base+'ScientistRigged.fbx');
+      adoptBotModel(obj,'учёный · ScientistRigged.fbx',obj.animations||[]);
+      return true; }catch(e){ console.warn('[studio] учёный не грузится с '+base,e); }
+  }
+  return false; }
+async function boot(){
+  try{
+    bootStep(16,'сборка полигона…');onResize();
+    loadProcBot();
+    bootStep(38,'риг и хват — база готова…');
+    renderPoses();updatePreview();applyQuality();
+    document.fonts?.ready.then(()=>{drawFloor();floorTex.needsUpdate=true;drawWall();wallTex.needsUpdate=true;});
+    if(location.protocol.startsWith('http')){
+      bootStep(60,'грузим калаш (ak47.glb) и учёного (ScientistRigged.fbx)…');
+      const jobs=Promise.allSettled([loadAKAuto(),loadScientistAuto()]);
+      const res=await Promise.race([jobs,sleep(6000).then(()=>'timeout')]);
+      if(res==='timeout'){toast('Ассеты ещё грузятся — калаш и учёный появятся через пару секунд','warn');}
+      else{ const ok=res.map(r=>r.status==='fulfilled'&&r.value===true);
+        if(!ok[0])toast('ak47.glb не найден рядом со студией — стоит встроенный АК','warn');
+        if(!ok[1])toast('ScientistRigged.fbx не найден — работает манекен BRIX','warn'); }
     }
-  });
-  /* ✅ нормализация масштаба: FBX из Rust — в САНТИМЕТРАХ (~104 юнита
-     рост) → приводим к метрам (~1.8), иначе камера/туман не видят модель */
-  const preBox = new THREE.Box3().setFromObject(obj);
-  const preH = preBox.max.y - preBox.min.y;
-  if (isFinite(preH) && (preH > 3 || preH < 0.5)) {
-    const k = 1.8 / preH;
-    obj.scale.setScalar(k);
-    obj.position.y -= preBox.min.y * k;
-    obj.position.x -= (preBox.min.x + preBox.max.x) / 2 * k;
-    obj.position.z -= (preBox.min.z + preBox.max.z) / 2 * k;
-  }
-  scene.add(obj);
-  bones = findBones(obj);
-  // скелет
-  document.getElementById('btnSkeleton').disabled = false;
-  document.getElementById('btnGrid').disabled = false;
-  // клипы
-  const anims = (kind === 'fbx' ? obj.animations : (obj.userData && obj.userData.glbAnimations) || obj.animations) || [];
-  const info = document.getElementById('modelInfo');
-  info.textContent = 'Костей: ' + bones.length + ' · Клипов в файле: ' + anims.length;
-  buildAnimList(anims);
-  buildBoneList();
-  buildFingerControls();
-  fillGripBoneSelect();
-  enableAll();
-  // рамка камеры по росту модели (уже нормализованной)
-  const box = new THREE.Box3().setFromObject(obj);
-  const h = Math.max(0.5, box.max.y - box.min.y);
-  camera.position.set(h * 0.9, h * 0.62, h * 1.35);
-  orbit.target.set(0, Math.min(1.1, h * 0.5), 0);
-  sun.shadow.camera.left = -3; sun.shadow.camera.right = 3;
-  sun.shadow.camera.top = 3; sun.shadow.camera.bottom = -3;
-  sun.shadow.camera.updateProjectionMatrix();
-  if (!anims.length) toast('В модели нет клипов — используй базовые анимации');
-}
-
-function loadFiles(files) {
-  blobMap = {};
-  let fbxFile = null, glbFile = null;
-  for (const f of files) {
-    const name = f.name.toLowerCase();
-    const url = URL.createObjectURL(f);
-    blobMap[name] = url;
-    if (name.endsWith('.fbx')) fbxFile = f;
-    if (name.endsWith('.glb') || name.endsWith('.gltf')) glbFile = f;
-  }
-  if (!fbxFile && !glbFile) { toast('Нет FBX/GLB в выбранных файлах'); return; }
-  if (fbxFile) {
-    const loader = new FBXLoader();
-    urlMod(loader);
-    loader.load(blobMap[fbxFile.name.toLowerCase()], (obj) => afterModelLoad(obj, 'fbx'),
-      undefined, (e) => { console.error(e); toast('Ошибка чтения FBX — загрузи текстуры вместе с ним'); });
-    toast('Читаю FBX: ' + fbxFile.name);
-  } else {
-    const loader = new GLTFLoader();
-    urlMod(loader);
-    loader.load(blobMap[glbFile.name.toLowerCase()], (gltf) => {
-      const obj = gltf.scene;
-      obj.animations = gltf.animations || [];
-      afterModelLoad(obj, 'glb');
-    }, undefined, (e) => { console.error(e); toast('Ошибка чтения GLB'); });
-    toast('Читаю GLB: ' + glbFile.name);
+    bootStep(100,'готово — бот и калаш на сцене');
+    loop();
+    setTimeout(()=>{$('boot').classList.add('off');setTimeout(()=>$('boot').remove(),700);},450);
+  }catch(err){
+    console.error(err);$('boot').classList.add('err');
+    $('bootMsg').textContent='Ошибка запуска: '+err.message+' — проверь доступ к CDN (three.js) и WebGL.';
   }
 }
-
-document.getElementById('btnLoadModel').onclick = () => document.getElementById('fileModel').click();
-document.getElementById('fileModel').onchange = (e) => { if (e.target.files.length) loadFiles([...e.target.files]); };
-window.addEventListener('dragover', (e) => { e.preventDefault(); document.getElementById('drop').classList.add('on'); });
-window.addEventListener('dragleave', () => document.getElementById('drop').classList.remove('on'));
-window.addEventListener('drop', (e) => {
-  e.preventDefault();
-  document.getElementById('drop').classList.remove('on');
-  if (e.dataTransfer.files.length) loadFiles([...e.dataTransfer.files]);
-});
-
-/* ================= анимации ================= */
-let actions = [], activeAction = null, animSpeedStep = 0;
-const SPEEDS = [0.5, 1, 1.5, 2];
-
-function buildAnimList(glbClips) {
-  const listEl = document.getElementById('animList');
-  listEl.innerHTML = '';
-  actions = [];
-  clips = [];
-  mixer = botRoot ? new THREE.AnimationMixer(botRoot) : null;
-  if (window.__ST) { window.__ST.mixer = mixer; window.__ST.clips = clips; }
-  (glbClips || []).forEach((c) => { clips.push({ name: 'ФАЙЛ · ' + c.name, clip: c }); });
-  const proc = makeProceduralClips();
-  /* ✅ v0.4.66: раньше пушался СЫРОЙ AnimationClip, а playClip читает
-     clips[idx].clip → undefined → TypeError 'uuid' и поза НИКОГДА не
-     применялась (бот и держал кала́ш «тупо» — без позы). */
-  proc.forEach((c) => clips.push({ name: c.name, clip: c }));
-  clips.forEach((c, i) => {
-    const b = document.createElement('button');
-    b.textContent = c.name;
-    b.onclick = () => playClip(i, b);
-    listEl.appendChild(b);
-  });
-}
-
-function playClip(idx, btn) {
-  if (!mixer) return;
-  [...document.querySelectorAll('#animList button')].forEach((b) => b.classList.remove('sel'));
-  if (btn) btn.classList.add('sel');
-  if (activeAction) activeAction.fadeOut(0.2);
-  const clip = clips[idx].clip;
-  activeAction = mixer.clipAction(clip);
-  activeAction.reset().fadeIn(0.2).play();
-  document.getElementById('btnPlay').textContent = '■ Стоп';
-  playing = true;
-}
-
-let playing = false;
-document.getElementById('btnPlay').onclick = () => {
-  if (!mixer) return;
-  playing = !playing;
-  if (activeAction) {
-    if (playing) activeAction.play(); else activeAction.stop();
-  }
-  document.getElementById('btnPlay').textContent = playing ? '■ Стоп' : '▶ Играть';
-};
-document.getElementById('btnSpeed').onclick = (e) => {
-  animSpeedStep = (animSpeedStep + 1) % SPEEDS.length;
-  animSpeed = SPEEDS[animSpeedStep];
-  e.target.textContent = 'Скорость ' + animSpeed + '×';
-};
-
-/* ---- процедурные базовые анимации по костям (любой риг) ---- */
-function qTrack(times, quats) {
-  return new THREE.QuaternionKeyframeTrack('.bones[' + times._bn + '].quaternion',
-    times.t, quats.flat());
-}
-function makeClipFor(name, dur, boneFn) {
-  // boneFn(bone, t01, eulerTarget)
-  const fps = 20, n = Math.max(2, Math.round(dur * fps) + 1);
-  const e = new THREE.Euler(), q = new THREE.Quaternion();
-  const tracks = [];
-  const used = new Set();
-  const groups = rigGroups();
-  const defs = boneFn(groups);
-  defs.forEach((d) => {
-    const bone = d.bone;
-    if (!bone || used.has(bone.name)) return;
-    used.add(bone.name);
-    const times = [], vals = [];
-    const baseQ = bone.quaternion.clone();
-    for (let i = 0; i < n; i++) {
-      const t01 = i / (n - 1);
-      d.fn(t01, e);
-      q.setFromEuler(e);
-      // локальный поворот поверх базового
-      const fin = baseQ.clone().multiply(q);
-      times.push(i / fps);
-      vals.push(fin.x, fin.y, fin.z, fin.w);
-    }
-    const track = new THREE.QuaternionKeyframeTrack(bone.name + '.quaternion', times, vals);
-    tracks.push(track);
-  });
-  if (!tracks.length) return null;
-  return new THREE.AnimationClip(name, dur, tracks);
-}
-
-let _rig = null;
-function rigGroups() {
-  if (_rig) return _rig;
-  const g = {
-    spine: pick(bones, /spine|chest|torso|upperbody|body/i)[0] || null,
-    spine1: pick(bones, /spine_?0?1|spine1|chest/i)[1] || pick(bones, /spine|chest/i)[1] || null,
-    head: pick(bones, /head(?!.*(top|end))/i)[0] || null,
-    armR: (pickPref(bones, 'r', [/upperarm/i, /arm/i, /shoulder|clavicle/i])[0]) || null,
-    armL: (pickPref(bones, 'l', [/upperarm/i, /arm/i, /shoulder|clavicle/i])[0]) || null,
-    foreR: (pickPref(bones, 'r', [/fore ?arm|lower ?arm/i, /elbow/i])[0]) || null,
-    foreL: (pickPref(bones, 'l', [/fore ?arm|lower ?arm/i, /elbow/i])[0]) || null,
-    handR: ((pickSide(bones, /hand|wrist/i, 'r').sort((a, b) => a.name.length - b.name.length)[0])) || null,
-    handL: ((pickSide(bones, /hand|wrist/i, 'l').sort((a, b) => a.name.length - b.name.length)[0])) || null,
-    thighR: (pickPref(bones, 'r', [/thigh|up ?leg|hip/i, /leg/i])[0]) || null,
-    thighL: (pickPref(bones, 'l', [/thigh|up ?leg|hip/i, /leg/i])[0]) || null,
-    calfR: (pickPref(bones, 'r', [/calf|lower ?leg|knee|shin/i, /(?<!up )leg/i])[0]) || null,
-    calfL: (pickPref(bones, 'l', [/calf|lower ?leg|knee|shin/i, /(?<!up )leg/i])[0]) || null
-  };
-  _rig = g;
-  return g;
-}
-
-function makeProceduralClips() {
-  const out = [];
-  // IDLE — дыхание + лёгкое покачивание
-  /* ✅ v0.4.66: IDLE = «низкая готовность» (low ready) — оружие у груди,
-     ствол вперёд-вниз, как держат в FPS на патрулировании */
-  const idle = makeClipFor('IDLE', 3.2, (g) => {
-    const defs = [];
-    if (g.spine) defs.push({ bone: g.spine, fn: (t, e) => { e.set(0.04 + Math.sin(t * Math.PI * 2) * 0.02, 0, Math.cos(t * Math.PI * 2) * 0.015); } });
-    if (g.head) defs.push({ bone: g.head, fn: (t, e) => { e.set(Math.sin(t * Math.PI * 2 + 1) * 0.03, Math.sin(t * Math.PI) * 0.05, 0); } });
-    if (g.armR) defs.push({ bone: g.armR, fn: (t, e) => { e.set(0, 1.15 + Math.sin(t * Math.PI * 2) * 0.02, 0.35); } });
-    if (g.armL) defs.push({ bone: g.armL, fn: (t, e) => { e.set(0, -1.1 + Math.sin(t * Math.PI * 2 + 1) * 0.02, -0.35); } });
-    if (g.foreR) defs.push({ bone: g.foreR, fn: (t, e) => { e.set(1.4, 0.28, 0); } });
-    if (g.foreL) defs.push({ bone: g.foreL, fn: (t, e) => { e.set(1.35, -0.42, 0); } });
-    return defs;
-  });
-  if (idle) out.push(idle);
-  // WALK — шаг на месте
-  const walk = makeClipFor('WALK', 1.1, (g) => {
-    const defs = [];
-    const legSwing = (t) => Math.sin(t * Math.PI * 2) * 0.55;
-    if (g.thighR) defs.push({ bone: g.thighR, fn: (t, e) => { e.set(legSwing(t), 0, 0); } });
-    if (g.thighL) defs.push({ bone: g.thighL, fn: (t, e) => { e.set(-legSwing(t), 0, 0); } });
-    if (g.calfR) defs.push({ bone: g.calfR, fn: (t, e) => { const s = Math.sin(t * Math.PI * 2); e.set(s > 0 ? -s * 0.7 : 0, 0, 0); } });
-    if (g.calfL) defs.push({ bone: g.calfL, fn: (t, e) => { const s = Math.sin(t * Math.PI * 2 + Math.PI); e.set(s > 0 ? -s * 0.7 : 0, 0, 0); } });
-    /* ✅ v0.4.66: руки держат оружие (низкая готовность), а не машут */
-    if (g.armR) defs.push({ bone: g.armR, fn: (t, e) => { e.set(Math.sin(t * Math.PI * 4) * 0.02, 1.15, 0.35); } });
-    if (g.armL) defs.push({ bone: g.armL, fn: (t, e) => { e.set(0, -1.1, -0.35); } });
-    if (g.foreR) defs.push({ bone: g.foreR, fn: (t, e) => { e.set(1.4, 0.28, 0); } });
-    if (g.foreL) defs.push({ bone: g.foreL, fn: (t, e) => { e.set(1.35, -0.42, 0); } });
-    if (g.spine) defs.push({ bone: g.spine, fn: (t, e) => { e.set(0.04, Math.sin(t * Math.PI * 4) * 0.04, 0); } });
-    return defs;
-  });
-  if (walk) out.push(walk);
-  // AIM — оружие у плеча (статичная стойка + микро-доводка)
-  /* ✅ v0.4.66: AIM = как игрок в 1-м лице — оружие поднято к плечу,
-     ствол горизонтально вперёд, правая на рукоятке, левая на цевье */
-  const aim = makeClipFor('AIM', 1.6, (g) => {
-    const defs = [];
-    if (g.armR) defs.push({ bone: g.armR, fn: (t, e) => { e.set(0, 1.52 + Math.sin(t * Math.PI * 2) * 0.015, 0.5); } });
-    if (g.foreR) defs.push({ bone: g.foreR, fn: (t, e) => { e.set(1.78, 0.28, 0); } });
-    if (g.armL) defs.push({ bone: g.armL, fn: (t, e) => { e.set(0, -1.45 + Math.sin(t * Math.PI * 2 + 1) * 0.015, -0.5); } });
-    if (g.foreL) defs.push({ bone: g.foreL, fn: (t, e) => { e.set(1.7, -0.42, 0); } });
-    if (g.spine) defs.push({ bone: g.spine, fn: (t, e) => { e.set(0.06, Math.sin(t * Math.PI * 2) * 0.02, 0); } });
-    if (g.head) defs.push({ bone: g.head, fn: (t, e) => { e.set(-0.05, 0, 0); } });
-    return defs;
-  });
-  if (aim) out.push(aim);
-  // SHOOT — отдача поверх AIM
-  const shoot = makeClipFor('SHOOT', 0.45, (g) => {
-    const defs = [];
-    const kick = (t) => Math.max(0, Math.sin(t * Math.PI)) * 1.0;
-    if (g.armR) defs.push({ bone: g.armR, fn: (t, e) => { e.set(kick(t) * 0.14, 1.52, 0.5); } });
-    if (g.foreR) defs.push({ bone: g.foreR, fn: (t, e) => { e.set(1.78 + kick(t) * 0.22, 0.28, 0); } });
-    if (g.armL) defs.push({ bone: g.armL, fn: (t, e) => { e.set(kick(t) * 0.1, -1.45, -0.5); } });
-    if (g.foreL) defs.push({ bone: g.foreL, fn: (t, e) => { e.set(1.7 + kick(t) * 0.18, -0.42, 0); } });
-    if (g.spine) defs.push({ bone: g.spine, fn: (t, e) => { e.set(0.06 + kick(t) * 0.06, 0, 0); } });
-    return defs;
-  });
-  if (shoot) out.push(shoot);
-  // DEATH — падение назад
-  const death = makeClipFor('DEATH', 1.2, (g) => {
-    const defs = [];
-    const fall = (t) => { const k = Math.min(1, t * 1.25); return k * k; };
-    if (g.spine) defs.push({ bone: g.spine, fn: (t, e) => { e.set(-fall(t) * 1.35, 0, 0); } });
-    if (g.head) defs.push({ bone: g.head, fn: (t, e) => { e.set(-fall(t) * 0.5, 0, fall(t) * 0.3); } });
-    if (g.armR) defs.push({ bone: g.armR, fn: (t, e) => { e.set(-0.2 - fall(t) * 0.6, 0, -fall(t) * 1.1); } });
-    if (g.armL) defs.push({ bone: g.armL, fn: (t, e) => { e.set(-0.2 - fall(t) * 0.6, 0, fall(t) * 1.1); } });
-    if (g.thighR) defs.push({ bone: g.thighR, fn: (t, e) => { e.set(fall(t) * 0.7, 0, 0); } });
-    if (g.thighL) defs.push({ bone: g.thighL, fn: (t, e) => { e.set(fall(t) * 0.5, 0, 0); } });
-    if (g.calfR) defs.push({ bone: g.calfR, fn: (t, e) => { e.set(-fall(t) * 0.9, 0, 0); } });
-    if (g.calfL) defs.push({ bone: g.calfL, fn: (t, e) => { e.set(-fall(t) * 0.6, 0, 0); } });
-    return defs;
-  });
-  if (death) out.push(death);
-  return out;
-}
-
-/* ================= скелет/сетка ================= */
-document.getElementById('btnSkeleton').onclick = (e) => {
-  if (!botRoot) return;
-  if (skeleton) { scene.remove(skeleton); skeleton = null; e.target.textContent = 'Скелет: выкл'; }
-  else { skeleton = new THREE.SkeletonHelper(botRoot); scene.add(skeleton); e.target.textContent = 'Скелет: вкл'; }
-};
-document.getElementById('btnGrid').onclick = (e) => {
-  grid.visible = !grid.visible;
-  e.target.textContent = 'Сетка: ' + (grid.visible ? 'вкл' : 'выкл');
-};
-
-/* ================= хват (наш ak47.glb) ================= */
-let akModel = null, akHolder = null;
-/* ✅ v0.4.66: пресеты подобраны ПОД ПОЗУ AIM (руки у груди) — кала́ш
-   горизонтально, ствол вперёд (+Z персонажа), правая на рукоятке,
-   левая на цевье. Старый chest [6,178,4] вращал оружие по оси кости
-   (выглядело «тупо», особенно без позы из-за бага клипов). */
-const AK_PRESETS = {
-  chest: { p: [0.01, -0.08, 0.07], r: [152, 58, -42] },
-  hip: { p: [0.05, -0.3, -0.05], r: [18, 168, -12] },
-  down: { p: [0.02, -0.34, -0.02], r: [82, 172, 0] }
-};
-
-/* авто-загрузка модели учёного (если студия открыта из папки BRIX) */
-function tryAutoBot() {
-  const fbx = new FBXLoader();
-  // текстуры лежат рядом (textures/*.png) — маппим имена файлов на папку
-  fbx.manager = new THREE.LoadingManager();
-  fbx.manager.setURLModifier(function (url) {
-    if (/\.fbx(\?|$)/i.test(url)) return url;   // сам FBX не переписываем
-    const clean = decodeURIComponent(url).replace(/^\.?\//, '').split('/').pop().toLowerCase();
-    return '../assets/models/bot-scientist/textures/' + clean;
-  });
-  fbx.load('../assets/models/bot-scientist/ScientistRigged.fbx', (obj) => {
-    if (botRoot) return;
-    afterModelLoad(obj, 'fbx');
-    toast('Модель учёного загружена (assets/models/bot-scientist)');
-  }, (xhr) => {
-    if (xhr.total) document.getElementById('modelInfo').textContent =
-      'Загрузка FBX: ' + Math.round(xhr.loaded / xhr.total * 100) + '%';
-  }, (err) => {
-    console.error('[studio] FBX auto-load fail', err);
-    const el = document.getElementById('modelInfo');
-    el.textContent = 'FBX не загрузился автоматически — выбери файлы вручную (пункт 1)';
-    el.style.color = '#ff8a7a';
-  });
-}
-tryAutoBot();
-
-function tryAutoAk() {
-  // студия лежит в BRIX/tools → модель рядом: ../assets/models/ak47.glb
-  const loader = new GLTFLoader();
-  ['../assets/models/ak47.glb', '../BRIX/assets/models/ak47.glb', 'assets/models/ak47.glb'].forEach((u) => {
-    loader.load(u, (gltf) => {
-      if (akModel) return;
-      attachAk(gltf.scene);
-      toast('Кала́ш загружен автоматически');
-    }, undefined, () => {});
-  });
-}
-tryAutoAk();
-
-document.getElementById('btnLoadAk').onclick = () => document.getElementById('fileAk').click();
-document.getElementById('fileAk').onchange = (e) => {
-  const f = e.target.files[0];
-  if (!f) return;
-  const loader = new GLTFLoader();
-  loader.load(URL.createObjectURL(f), (gltf) => attachAk(gltf.scene), undefined, () => toast('Ошибка GLB'));
-};
-
-function fillGripBoneSelect() {
-  const sel = document.getElementById('gripBone');
-  sel.innerHTML = '';
-  const arms = bones.filter((b) => /hand|wrist|palm|forearm|lowerarm|arm/i.test(b.name || ''));
-  const rs = arms.filter((b) => /r$|right|_r\b|\br\b/i.test(b.name || ''));
-  (rs.length ? rs : arms).forEach((b) => {
-    const o = document.createElement('option');
-    o.value = b.name;
-    o.textContent = b.name;
-    sel.appendChild(o);
-  });
-  if (!sel.options.length) {
-    const o = document.createElement('option');
-    o.value = '';
-    o.textContent = '— кости рук не найдены —';
-    sel.appendChild(o);
-  } else {
-    const hand = rs.find((b) => /hand|wrist/i.test(b.name || '')) || rs[0];
-    if (hand) sel.value = hand.name;
-  }
-  sel.onchange = () => attachAk(akModel);
-}
-
-function attachAk(model) {
-  if (!model) return;
-  /* ✅ нормализация: кала́ш приводим к длине ~0.85 м и ЦЕНТРИМ в
-     держателе (у ak47.glb бывают разные масштабы/пивоты) */
-  const pre = new THREE.Box3().setFromObject(model);
-  const size = pre.getSize(new THREE.Vector3());
-  const len = Math.max(size.x, size.y, size.z) || 1;
-  const k = 0.85 / len;
-  model.scale.setScalar(k);
-  model.updateMatrixWorld(true);
-  const box2 = new THREE.Box3().setFromObject(model);
-  const c = box2.getCenter(new THREE.Vector3());
-  model.position.sub(c);
-  if (akHolder && akHolder.parent) akHolder.parent.remove(akHolder);
-  const boneName = document.getElementById('gripBone').value;
-  const bone = bones.find((b) => b.name === boneName) ||
-    bones.find((b) => /hand|wrist/i.test(b.name || ''));
-  if (!bone) { toast('Кость руки не найдена — хват недоступен'); return; }
-  akModel = model;
-  akHolder = new THREE.Group();
-  akHolder.name = '__brix_ak_holder';
-  akHolder.add(model);
-  bone.add(akHolder);
-  /* ✅ компенсация СЖАТИЯ кости (у mixamo-ригов кости часто со scale
-     ~0.01, а то и 0): держатель растягивается обратно — кала́ш всегда
-     0.85 м в МИРОВЫХ координатах */
-  const ws = new THREE.Vector3();
-  bone.getWorldScale(ws);
-  const bs = Math.abs(ws.x) > 1e-6 ? Math.abs(ws.x) : 1;
-  akHolder.scale.setScalar(1 / bs);
-  applyAkTransform();
-  /* ✅ v0.4.66: сразу правильный хват — пресет «у груди», чтобы кала́ш
-     не висел по оси кости (то, что выглядело «тупо») */
-  const gp = AK_PRESETS.chest;
-  document.getElementById('akX').value = gp.p[0];
-  document.getElementById('akY').value = gp.p[1];
-  document.getElementById('akZ').value = gp.p[2];
-  document.getElementById('akRX').value = gp.r[0];
-  document.getElementById('akRY').value = gp.r[1];
-  document.getElementById('akRZ').value = gp.r[2];
-  applyAkTransform();
-  ['akX', 'akY', 'akZ', 'akRX', 'akRY', 'akRZ'].forEach((id) => { document.getElementById(id).disabled = false; });
-  if (window.__ST) window.__ST.akHolder = akHolder;
-}
-
-function applyAkTransform() {
-  if (!akHolder) return;
-  const gx = +document.getElementById('akX').value;
-  const gy = +document.getElementById('akY').value;
-  const gz = +document.getElementById('akZ').value;
-  const rx = +document.getElementById('akRX').value * Math.PI / 180;
-  const ry = +document.getElementById('akRY').value * Math.PI / 180;
-  const rz = +document.getElementById('akRZ').value * Math.PI / 180;
-  akHolder.position.set(gx, gy, gz);
-  akHolder.rotation.set(rx, ry, rz);
-  document.getElementById('ox').textContent = gx.toFixed(2);
-  document.getElementById('oy').textContent = gy.toFixed(2);
-  document.getElementById('oz').textContent = gz.toFixed(2);
-  document.getElementById('rx').textContent = Math.round(+document.getElementById('akRX').value) + '°';
-  document.getElementById('ry').textContent = Math.round(+document.getElementById('akRY').value) + '°';
-  document.getElementById('rz').textContent = Math.round(+document.getElementById('akRZ').value) + '°';
-}
-['akX', 'akY', 'akZ', 'akRX', 'akRY', 'akRZ'].forEach((id) => {
-  document.getElementById(id).addEventListener('input', applyAkTransform);
-});
-
-document.querySelectorAll('[data-grip]').forEach((b) => {
-  b.onclick = () => {
-    const preset = AK_PRESETS[b.getAttribute('data-grip')];
-    if (!akHolder) { toast('Сначала загрузи кала́ш'); return; }
-    document.getElementById('akX').value = preset.p[0];
-    document.getElementById('akY').value = preset.p[1];
-    document.getElementById('akZ').value = preset.p[2];
-    document.getElementById('akRX').value = preset.r[0];
-    document.getElementById('akRY').value = preset.r[1];
-    document.getElementById('akRZ').value = preset.r[2];
-    applyAkTransform();
-    toast('Хват: ' + b.textContent);
-  };
-});
-
-/* ================= пальцы ================= */
-let fingerBonesR = [], fingerBonesL = [];
-function buildFingerControls() {
-  fingerBonesR = bones.filter((b) => /finger|thumb|index|middle|ring|pinky/i.test(b.name || '') &&
-    /r$|right|_r\b|\br\b/i.test(b.name || ''));
-  fingerBonesL = bones.filter((b) => /finger|thumb|index|middle|ring|pinky/i.test(b.name || '') &&
-    /l$|left|_l\b|\bl\b/i.test(b.name || ''));
-  document.getElementById('fingerInfo').innerHTML = fingerBonesR.length + fingerBonesL.length
-    ? 'Найдено фаланг: ' + (fingerBonesR.length + fingerBonesL.length) + ' — ползунок сжимает кисть на хват.'
-    : 'Кости пальцев в риге не найдены — сжатие недоступно (не страшно: хват работает и без него).';
-  document.getElementById('curlR').disabled = !fingerBonesR.length;
-  document.getElementById('curlL').disabled = !fingerBonesL.length;
-}
-
-function curlFingers(list, k) {
-  list.forEach((b) => {
-    const base = b.userData.__baseQ || (b.userData.__baseQ = b.quaternion.clone());
-    const e = new THREE.Euler(k * 0.9, 0, k * 0.25);
-    const q = new THREE.Quaternion().setFromEuler(e);
-    b.quaternion.copy(base).multiply(q);
-  });
-}
-document.getElementById('curlR').addEventListener('input', (e) => {
-  document.getElementById('fcurlR').textContent = e.target.value + '%';
-  curlFingers(fingerBonesR, +e.target.value / 100);
-});
-document.getElementById('curlL').addEventListener('input', (e) => {
-  document.getElementById('fcurlL').textContent = e.target.value + '%';
-  curlFingers(fingerBonesL, +e.target.value / 100);
-});
-
-/* ================= позы костей ================= */
-let selBone = null;
-function buildBoneList() {
-  const listEl = document.getElementById('boneList');
-  listEl.innerHTML = '';
-  bones.slice(0, 120).forEach((b) => {
-    const btn = document.createElement('button');
-    btn.textContent = b.name || '(кость)';
-    btn.onclick = () => {
-      [...listEl.children].forEach((c) => c.classList.remove('sel'));
-      btn.classList.add('sel');
-      selBone = b;
-      ['boneX', 'boneY', 'boneZ'].forEach((id) => { document.getElementById(id).disabled = false; });
-      document.getElementById('btnPoseSave').disabled = false;
-      document.getElementById('btnPoseReset').disabled = false;
-    };
-    listEl.appendChild(btn);
-  });
-}
-['boneX', 'boneY', 'boneZ'].forEach((id, axis) => {
-  document.getElementById(id).addEventListener('input', (e) => {
-    if (!selBone) return;
-    const deg = +e.target.value;
-    const out = document.getElementById(['bx0', 'by0', 'bz0'][axis]);
-    if (out) out.textContent = deg + '°';
-    const base = selBone.userData.__poseBaseQ || (selBone.userData.__poseBaseQ = selBone.quaternion.clone());
-    const eul = new THREE.Euler(
-      +document.getElementById('boneX').value * Math.PI / 180,
-      +document.getElementById('boneY').value * Math.PI / 180,
-      +document.getElementById('boneZ').value * Math.PI / 180);
-    selBone.quaternion.copy(base).multiply(new THREE.Quaternion().setFromEuler(eul));
-  });
-});
-document.getElementById('btnPoseReset').onclick = () => {
-  bones.forEach((b) => { if (b.userData.__poseBaseQ) b.quaternion.copy(b.userData.__poseBaseQ); });
-  ['boneX', 'boneY', 'boneZ'].forEach((id) => { document.getElementById(id).value = 0; });
-  ['bx0', 'by0', 'bz0'].forEach((id) => { document.getElementById(id).textContent = '0°'; });
-};
-
-const poses = [];
-document.getElementById('btnPoseSave').onclick = () => {
-  if (!selBone) return;
-  poses.push({
-    bone: selBone.name,
-    x: +document.getElementById('boneX').value,
-    y: +document.getElementById('boneY').value,
-    z: +document.getElementById('boneZ').value
-  });
-  toast('Поза записана: ' + selBone.name + ' (' + poses.length + ' всего)');
-};
-
-/* ================= конфиг ================= */
-function enableAll() {
-  ['btnPlay', 'btnSpeed'].forEach((id) => { document.getElementById(id).disabled = false; });
-}
-document.getElementById('btnExport').onclick = () => {
-  const cfg = {
-    app: 'BRIX Bot Studio', ver: 1, date: new Date().toISOString(),
-    grip: {
-      bone: document.getElementById('gripBone').value,
-      pos: [ +document.getElementById('akX').value, +document.getElementById('akY').value, +document.getElementById('akZ').value ],
-      rotDeg: [ +document.getElementById('akRX').value, +document.getElementById('akRY').value, +document.getElementById('akRZ').value ],
-      weapon: 'ak47'
-    },
-    fingers: { right: +document.getElementById('curlR').value, left: +document.getElementById('curlL').value },
-    anim: activeAction ? clips.find((c) => c.clip === activeAction.getClip())?.name : null,
-    speed: animSpeed,
-    poses: poses
-  };
-  const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'bot-anim.json';
-  a.click();
-  toast('Конфиг выгружен: bot-anim.json');
-};
-document.getElementById('btnImport').onclick = () => document.getElementById('fileCfg').click();
-document.getElementById('fileCfg').onchange = (e) => {
-  const f = e.target.files[0];
-  if (!f) return;
-  f.text().then((txt) => {
-    try {
-      const cfg = JSON.parse(txt);
-      if (cfg.grip) {
-        document.getElementById('gripBone').value = cfg.grip.bone || '';
-        if (cfg.grip.pos) {
-          document.getElementById('akX').value = cfg.grip.pos[0];
-          document.getElementById('akY').value = cfg.grip.pos[1];
-          document.getElementById('akZ').value = cfg.grip.pos[2];
-        }
-        if (cfg.grip.rotDeg) {
-          document.getElementById('akRX').value = cfg.grip.rotDeg[0];
-          document.getElementById('akRY').value = cfg.grip.rotDeg[1];
-          document.getElementById('akRZ').value = cfg.grip.rotDeg[2];
-        }
-        if (akModel) applyAkTransform();
-      }
-      if (cfg.fingers) {
-        document.getElementById('curlR').value = cfg.fingers.right || 0;
-        document.getElementById('curlL').value = cfg.fingers.left || 0;
-        curlFingers(fingerBonesR, (cfg.fingers.right || 0) / 100);
-        curlFingers(fingerBonesL, (cfg.fingers.left || 0) / 100);
-      }
-      toast('Конфиг загружен' + (cfg.grip && !akModel ? ' (модель/кала́ш подставь и нажми пресет)' : ''));
-    } catch (err) { toast('Кривой JSON'); }
-  });
-};
-
-toast('Студия готова: загрузи модель бота (пункт 1)');
+window.addEventListener('error',e=>{ if(document.getElementById('boot')&&!$('boot').classList.contains('off')){
+  $('boot').classList.add('err');$('bootMsg').textContent='Ошибка: '+(e.message||'загрузка модулей')+' — нужен интернет для three.js CDN.';}});
+boot();
 </script>
 </body>
 </html>
