@@ -38,21 +38,15 @@
     showFatal(r.message || String(r));
   });
 
-  /* ---------- самопроверка файлов прямо в меню ----------
-     внизу слева: зелёная «✓ все файлы на месте» или красная — чего именно нет.
-     Рядом ссылка «обновить кэш» — жёсткая перезагрузка БЕЗ Ctrl+Shift+R:
-     сносит CacheStorage и берёт страницу с новым ?v= (браузер гарантированно
-     качает свежие файлы). */
-  var selfCheckMsg = '';
-  var selfCheckColor = '';
+  /* ---------- футер версии ---------- */
+  /* ✅ v0.5.12: строка самопроверки («✓ сборка vN — все файлы на
+     месте») и ссылка «обновить кэш» УБРАНЫ из меню — по просьбе
+     игрока (засоряли футер под новостями). Проверка файлов
+     осталась, но пишет только в консоль (F12). Жёсткая
+     перезагрузка доступна из консоли: BrixForceRefresh() */
 
   function versionHtml() {
-    var html = BrixState.t('footer.version');
-    if (selfCheckMsg) {
-      html += ' &nbsp;·&nbsp; <span style="color:' + selfCheckColor + '">' + selfCheckMsg + '</span>';
-    }
-    html += ' &nbsp; <a href="#" class="brixRefreshLink" style="color:#e8b45a;text-decoration:underline;white-space:nowrap">обновить кэш</a>';
-    return html;
+    return BrixState.t('footer.version');
   }
 
   function paintVersion() {
@@ -61,9 +55,6 @@
     var html = versionHtml();
     if (el) el.innerHTML = html;
     if (elM) elM.innerHTML = html;
-    Array.prototype.forEach.call(document.querySelectorAll('.brixRefreshLink'), function (a) {
-      a.onclick = function (ev) { ev.preventDefault(); forceRefresh(); };
-    });
   }
 
   /** жёсткая перезагрузка с пробивкой кэша (можно звать из консоли: BrixForceRefresh()) */
@@ -83,10 +74,10 @@
   window.BrixForceRefresh = forceRefresh;
 
   function runSelfCheck() {
-    function paint(msg, color) {
-      selfCheckMsg = msg;
-      selfCheckColor = color;
-      paintVersion();
+    /* ✅ v0.5.12: результаты ТОЛЬКО в консоль (F12) — в меню больше
+       никакой диагностики */
+    function paint(msg) {
+      console.warn('[SelfCheck] ' + msg);
     }
 
     // 1) новые скрипты вообще загружены? (если index.html старый — их нет)
@@ -158,7 +149,7 @@
       if (missing.length) {
         paint('✗ сервер не отдаёт: ' + missing.join(' , ') + ' — в папке игры нет assets/ из архива', '#ff6b5e');
       } else {
-        paint('✓ сборка v0.4.7 — все файлы на месте', '#8fd07a');
+        paint('✓ сборка v' + (window.BRIX_VER || '?') + ' — все файлы на месте');
       }
     });
   }
@@ -250,8 +241,19 @@
     }
   }
 
-  /* ---------- окно бета-теста при каждом открытии игры ---------- */
+  /* ---------- окно бета-теста ✅ v0.5.12: ОДИН РАЗ на устройство ----------
+     Раньше показывалось при каждом открытии игры — раздражало. Теперь
+     флаг в localStorage: первый визит — окно, дальше сразу в меню
+     (для НОВЫХ игроков после окна/без него открывается «Укажите ник») */
   function showBetaOnce() {
+    var shown = false;
+    try { shown = localStorage.getItem('brix-beta-shown') === '1'; } catch (e) {}
+    try { localStorage.setItem('brix-beta-shown', '1'); } catch (e) {}
+    if (shown) {
+      /* бета-окно уже показывали — но ник всё равно нужен с первого раза */
+      if (!BrixState.data.nickSet) BrixModals.nickModal(null, true);
+      return;
+    }
     BrixModals.betaWelcome(function () {
       // ✅ v0.3.4: первый вход на устройстве — сразу «Укажите свой ник».
       // Ник сохраняется; аккаунт один на устройство (все вкладки — он же)
@@ -350,8 +352,13 @@
     menuAudio.setEnabled(BrixState.data.settings.sound);
     menuAudio.setVolumes(BrixState.data.settings.musicVol, BrixState.data.settings.sfxVol);
 
-    // сплэш-экран уже скрыт (гидрация синхронная)
-    document.getElementById('splash').classList.add('hidden');
+    // ✅ v0.5.12: сплэш скрывает ЗАГРУЗЧИК ОБНОВЛЕНИЙ (patch.js):
+    // сначала реальная докачка изменившихся файлов (прогресс МБ на
+    // сплэше), нечего качать — меню сразу. Бета-окно после сплэша
+    BrixPatch.run(function () {
+      document.getElementById('splash').classList.add('hidden');
+      showBetaOnce();
+    });
 
     // 3D-фон меню
     BrixBackground.mount(document.getElementById('bgScene'));
@@ -382,8 +389,19 @@
     // ✅ v0.3.3: соцсеть — присутствие, заявки в друзья, онлайн сервера
     if (window.BrixFriends) BrixFriends.init();
 
-    // окно бета-теста при каждом открытии игры
-    showBetaOnce();
+    /* ✅ v0.5.10: предзагрузка иконок СРАЗУ в меню, в фоне (без
+       оверлея) — к моменту «ПОДКЛЮЧИТЬСЯ» они уже в кэше браузера.
+       Перед входом в игру gameworld.js дождётся остатка via
+       BrixPreload.whenReady() и только потом откроет WebSocket */
+    if (window.BrixPreload) BrixPreload.start();
+
+    /* ✅ v0.5.11: УМНАЯ ПРОВЕРКА СЕРВЕРОВ при загрузке меню — по одному
+       быстрому GET /status на порт (BrixLand 8787, BrixPvP 8788).
+       Не запущенный порт → карточка серая «НА ОБСЛУЖИВАНИИ», вход
+       блокирован. Один запрос на порт, не цикл — туннель не спамим */
+    if (window.BrixFriends && BrixFriends.probeAll) BrixFriends.probeAll();
+
+    // окно бета-теста открыл BrixPatch.run после скрытия сплэша (v0.5.12)
 
     // самопроверка файлов (результат — внизу слева в меню)
     runSelfCheck();

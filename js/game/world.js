@@ -63,8 +63,10 @@ window.BrixWorld = (function () {
         glowK: { value: 0 },         // закатный ореол у горизонта
         moonDir: { value: new THREE.Vector3(0.45, 0.5, 0.4).normalize() },
         moonI: { value: 0 },         // луна видна ночью
-        flashK: { value: 0 },        // ✅ v0.4.52: вспышка молнии 0..1
-        rainbowK: { value: 0 }       // ✅ v0.4.52: радуга 0..1
+        flashK: { value: 0 }         // ✅ v0.4.52: вспышка молнии 0..1
+        /* ✅ v0.5.13: радуга УДАЛЕНА — рисовалась двумя вертикальными
+           радужными «стенами» от горизонта до зенита (азимутальная
+           математика вместо полярной) и висела ясным днём */
       },
       vertexShader: [
         'varying vec3 vDir;',
@@ -83,7 +85,6 @@ window.BrixWorld = (function () {
         'uniform vec3 moonDir;',
         'uniform float moonI;',
         'uniform float flashK;',
-        'uniform float rainbowK;',
         'varying vec3 vDir;',
         'void main() {',
         '  vec3 d = normalize(vDir);',
@@ -99,21 +100,7 @@ window.BrixWorld = (function () {
         '  col += vec3(0.82, 0.88, 1.0) * (pow(m, 1500.0) * 2.4 + pow(m, 90.0) * 0.16) * moonI;',
         '  /* ✅ v0.4.52 молния: небо коротко вспыхивает (плавный спад ведёт storm.js) */',
         '  col += vec3(0.85, 0.9, 1.0) * flashK * (0.3 + 0.45 * (1.0 - t));',
-        '  /* ✅ v0.4.52 радуга: кольцо НАПРОТИВ солнца (~38-44 градуса от линии солнце-наблюдатель), */',
-        '  /* красный внутри, фиолетовый снаружи; появляется после дождя на солнце */',
-        '  if (rainbowK > 0.004) {',
-        '    vec2 dxz = normalize(d.xz + vec2(1e-5));',
-        '    vec2 sxz = normalize(vec2(sunDir.x, sunDir.z) + vec2(1e-5));',
-        '    float a = acos(clamp(dot(dxz, -sxz), -1.0, 1.0));',
-        '    float band = smoothstep(0.655, 0.678, a) * (1.0 - smoothstep(0.735, 0.762, a));',
-        '    if (band > 0.0 && d.y > 0.0) {',
-        '      float u = clamp((a - 0.655) / 0.107, 0.0, 1.0);',
-        '      vec3 rc = mix(vec3(1.0, 0.18, 0.1), vec3(1.0, 0.72, 0.05), smoothstep(0.0, 0.34, u));',
-        '      rc = mix(rc, vec3(0.25, 0.8, 0.3), smoothstep(0.34, 0.63, u));',
-        '      rc = mix(rc, vec3(0.3, 0.5, 0.95), smoothstep(0.63, 1.0, u));',
-        '      col = mix(col, rc, band * rainbowK * 0.42 * smoothstep(0.005, 0.07, d.y));',
-        '    }',
-        '  }',
+        '  /* ✅ v0.5.13 радуга удалена (баг-лучи вместо дуги) */',
         '  gl_FragColor = vec4(col, 1.0);',
         '}'
       ].join('\n')
@@ -261,7 +248,7 @@ window.BrixWorld = (function () {
           .set(Math.cos(az + Math.PI) * mce, mel, Math.sin(az + Math.PI) * mce).normalize();
         mat.uniforms.moonI.value = e.nightK;
         mat.uniforms.flashK.value = e.flashK || 0;      /* ✅ v0.4.52 */
-        mat.uniforms.rainbowK.value = e.rainbowK || 0;  /* ✅ v0.4.52 */
+        /* ✅ v0.5.13: радуга удалена */
         /* звёзды: ночь включает, тучи выключают */
         starMat.opacity = e.nightK * (1 - e.cloudDark * 0.92);
         /* ✅ v0.4.52 облака: в ясную — заметные (0.46), в хмуро бледнеют;
@@ -410,9 +397,15 @@ window.BrixWorld = (function () {
   var ORE_TOTAL = { sulfur: 20, iron: 40, stone: 60 }; // запас одной жилы
 
   function loadModel(url) {
-    return new Promise(function (ok, no) {
+    /* ✅ v0.5.9: СБОРКА МИРА НЕ ВИСНЕТ — промис НИКОГДА не реджектится:
+       glb.js на ошибку даёт заглушку-куб, а это страховка (пустая
+       группа) на случай, когда даже THREE-заглушку собрать нечем.
+       Раньше rejected-промис останавливал buildDecor навсегда —
+       экран загрузки замирал на 53%/79% */
+    return new Promise(function (ok) {
       var u = window.BrixAsset ? window.BrixAsset(url) : url;
-      BrixGLB.load(u, function (group) { ok(group); }, no);
+      BrixGLB.load(u, function (group) { ok(group); },
+        function () { ok(new THREE.Group()); });
     });
   }
 
@@ -779,11 +772,20 @@ window.BrixWorld = (function () {
     var grassTime = { value: 0 };
     var grassMesh = null;
     try {
-      var grassTex = await new Promise(function (ok, no) {
-        var loader = new THREE.TextureLoader();
-        loader.load(window.BrixAsset ? window.BrixAsset('assets/textures/grass.png') : 'assets/textures/grass.png',
-          ok, undefined, no);
-      });
+      /* ✅ v0.5.9: текстура травы с retry (3 попытки / 2 c / 10 c) —
+         через туннель grass.png мог прийти 504, и трава пропадала
+         без единого повтора. Заглушка не нужна: блок в try/catch,
+         без текстуры мир просто строится без травы */
+      var grassUrl = window.BrixAsset ? window.BrixAsset('assets/textures/grass.png') : 'assets/textures/grass.png';
+      var grassIm = window.BrixFetch
+        ? await BrixFetch.image(grassUrl)
+        : await new Promise(function (ok, no) {
+            var loader = new THREE.TextureLoader();
+            loader.load(grassUrl, ok, undefined, no);
+          });
+      if (!grassIm) throw new Error('grass.png не загрузился после 3 попыток');
+      var grassTex = new THREE.Texture(grassIm);
+      grassTex.needsUpdate = true;
       if (THREE.SRGBColorSpace) grassTex.colorSpace = THREE.SRGBColorSpace;
       grassTex.anisotropy = 4;
 

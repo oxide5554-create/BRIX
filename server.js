@@ -27,6 +27,7 @@ const http = require('http');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const zlib = require('zlib');   /* ✅ v0.5.14: gzip статики за туннелем */
 
 /* ✅ v0.4.64 ДВА СЕРВЕРА ОДНИМ КОДОМ: BRIX_REALM решает, КТО этот процесс.
    Запуск (см. START-GAME.bat):
@@ -68,17 +69,19 @@ if (REALM === 'brixland') {
    версии не присылает — и панель на 9 молчит). В консоли при старте
    печатается ПОЛНЫЙ ПУТЬ папки сервера — чтобы admins.json правился
    именно там, где сервер РЕАЛЬНО запущен */
-const SRV_VER = '0.4.66';   /* ✅ v0.4.52 — ЗАМЕНИ server.js И ПЕРЕЗАПУСТИ:
-   1) СИГНАЛЫ СЕРВЕРУ ИЗ АДМИН-ПАНЕЛИ: op 'wx' (погода ЯСНО/ХМУРО) и
-      op 'phase' (РАССВЕТ/ДЕНЬ/ЗАКАТ/СУМЕРКИ/НОЧЬ) — сервер меняет
-      envState, сразу рассылает 'dnc' всем + объявление 'atoast'
-      («Админ сменил погоду: …»), пишет world-env.json. Переход у
-      клиентов плавный (сглаживание в environment.js).
-   2) ФИКС «С БЕССМЕРТИЕМ ВСЁ РАВНО УМИРАЛ ОТ ВЫСОТЫ»: сервер теперь
-      не принимает 'pdeath' от god-соединения (клиент тоже не шлёт
-      урон при god — gameworld.js); двойная защита.
-   3) АТОСТ ОБЪЯВЛЕНИЙ: broadcast({t:'atoast', m}) — generic-доставка
-      net.js (v0.4.43) доводит без правок switch.
+const SRV_VER = '0.5.14';   /* ✅ v0.5.14 — СТАБИЛЬНОСТЬ ЗА ТУННЕЛЕМ:
+   keep-alive 65 с + clientError guard (net::ERR_HTTP2_PROTOCOL_ERROR на
+   случайных файлах за devtunnels-прокси — прокси переиспользовал
+   keep-alive соединение на границе 5-секундного таймаута Node).
+   Проверка: /status показывает ver 0.5.14. ДАЛЕЕ — история v0.5.9:
+   1) КОМАНДНЫЙ БОЙ НА АРЕНЕ (реалм brixpvp): боты-учёные считает
+      СЕРВЕР (brixpvp-bots.js + arena-solids.json) — СТАЛЬ (синие)
+      против ПЛАМЯ (красные), 10 ботов, при входе игрока один синий
+      уходит; боты стреляют в ближайшего врага ('bots' 10 Гц,
+      'bshot', 'bdead'/'bspawn', 'bscore', 'bwin' — победа до 30);
+      'bhit' — урон игрока по красному боту (своих не убить);
+      урон игрок-в-игрока на арене заблокирован; welcome.pvp —
+      снапшот ботов и счёта новичку.
    —— История: v0.4.51 — сутки/погода на сервере ('dnc' 1 Гц, welcome.dnc,
       world-env.json), холод ночью в зиме ×2.
    —— История: v0.4.50 — трупы 10 мин, С4 в горах, звук шприца.
@@ -233,7 +236,12 @@ const MIME = {
   '.ico': 'image/x-icon',
   '.bin': 'application/octet-stream',
   '.bat': 'text/plain; charset=utf-8',
-  '.md': 'text/plain; charset=utf-8'
+/* ✅ v0.5.14: текстовые типы отдаём в gzip (если браузер просит) —
+   код игры сжимается ~4×, меньше байт через туннель — меньше 504 */
+};
+const GZIP_EXT = {
+  '.js': 1, '.css': 1, '.html': 1, '.json': 1, '.svg': 1, '.txt': 1,
+  '.md': 1
 };
 
 /* ✅ v0.3.5: заявки в друзья игрокам, которых сейчас нет на сервере.
@@ -313,6 +321,23 @@ function serveFile(req, res, urlPath) {
   if (p === '/status') {
     const names = [];
     players.forEach((pl) => names.push(pl.name));
+    /* ✅ v0.5.12: РЕЕСТР ВСЕХ ИГРОКОВ прямо в /status — вкладка «ВСЕ
+       ИГРОКИ» в меню заполняется сразу (по HTTP-опросу каждые 3 c),
+       а не только после входа в игру, как было с 'plist' */
+    const regSeen = {};
+    const reg = [];
+    players.forEach((t) => {
+      if (t.aid) {
+        regSeen[t.aid] = true;
+        reg.push({ id: t.aid, name: t.name, on: 1, ls: Date.now() });
+      }
+    });
+    socialReg.forEach((v, k) => {
+      if (regSeen[k]) return;
+      reg.push({ id: k, name: v.name || 'Игрок', on: 0,
+        ls: Math.min(Date.now(), Number(v.ls) || 0) });
+    });
+    reg.sort((a, b2) => b2.ls - a.ls);
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'no-cache',
@@ -324,6 +349,9 @@ function serveFile(req, res, urlPath) {
       /* ✅ v0.4.64: КТО этот сервер — для вкладки «СЕРВЕРА» (список
          серверов с живыми счётчиками) и ПВП-режима клиента */
       realm: REALM, mode: SRV_MODE, name: SRV_NAME,
+      /* ✅ v0.5.12: реестр игроков [{id, name, on, ls}] — как 'plist',
+         но доступно из меню */
+      reg: reg.slice(0, 300),
       /* ✅ v0.4.17: диагностика панели разработчика — открой в браузере
          http://<адрес>:8787/status и видно: версию сервера, ПАПКУ,
          откуда он запущен, и какие ID он считает админами */
@@ -331,20 +359,83 @@ function serveFile(req, res, urlPath) {
     }));
     return;
   }
+  /* ✅ v0.5.12: МАНИФЕСТ ОБНОВЛЕНИЙ для загрузочного экрана клиента
+     (js/core/patch.js): список файлов кода и мелких ассетов с
+     размером и mtime. Клиент сравнивает со своими записями и
+     докачивает изменившееся, показывая РЕАЛЬНЫЕ МБ. no-cache */
+  if (p === '/manifest.json') {
+    const files = [];
+    const roots = ['index.html', 'js', 'css',
+      'assets/icons', 'assets/menu', 'assets/fonts', 'assets/textures'];
+    const walk = (rel) => {
+      const full = path.join(ROOT, rel);
+      let st;
+      try { st = fs.statSync(full); } catch (e) { return; }
+      if (st.isDirectory()) {
+        let ents = [];
+        try { ents = fs.readdirSync(full); } catch (e) {}
+        ents.forEach((n) => walk(rel + '/' + n));
+      } else if (st.isFile()) {
+        files.push({ u: '/' + rel.split(path.sep).join('/'),
+          s: st.size, m: Math.round(st.mtimeMs) });
+      }
+    };
+    roots.forEach(walk);
+    res.writeHead(200, {
+      'Content-Type': 'application/json; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.end(JSON.stringify({ ok: true, build: SRV_VER, files: files }));
+    return;
+  }
   if (p === '/' || p === '') p = '/index.html';
   const file = path.normalize(path.join(ROOT, decodeURIComponent(p)));
   // не даём выйти за пределы папки игры
   if (!file.startsWith(ROOT)) { res.writeHead(403); res.end('Forbidden'); return; }
-  fs.readFile(file, (err, data) => {
-    if (err) { res.writeHead(404); res.end('Not found: ' + p); return; }
-    const ext = path.extname(file).toLowerCase();
-    res.writeHead(200, {
-      'Content-Type': MIME[ext] || 'application/octet-stream',
-      'Cache-Control': 'no-cache',
-      'Access-Control-Allow-Origin': '*'
-    });
-    res.end(data);
+  /* ✅ v0.5.14 СТАТИКА: СТРИМИНГ + GZIP.
+     Было fs.readFile целиком: модель на 107 МБ буферизовалась в память
+     целиком до первого байта ответа — за туннелем параллельные запросы
+     /status и иконок ждали и падали в 504/ERR_HTTP2_PROTOCOL_ERROR.
+     Теперь: createReadStream — байты летят сразу; текстовые файлы
+     (js/css/html/json/svg) отдаются в gzip (~4× меньше байт через
+     туннель — именно код и грузится при каждом обновлении) */
+  const ext = path.extname(file).toLowerCase();
+  /* ✅ v0.5.9: КЭШ АССЕТОВ. Тяжёлые неизменяемые файлы (.glb, .png,
+     .mp3, .wav, папки /assets/, /models/, /icons/) — на ГОД с
+     immutable: через туннель при повторном заходе берутся из кэша
+     браузера, а не качаются заново (вечная загрузка на 53%/79%).
+     Код игры (html/js/css/json) — по-прежнему no-cache, чтобы
+     обновления применялись сразу. */
+  const cacheable =
+    ['.glb', '.gltf', '.bin', '.png', '.jpg', '.svg', '.ico',
+     '.mp3', '.wav', '.ogg'].indexOf(ext) !== -1 ||
+    /^(\/assets\/|\/models\/|\/icons\/)/.test(p);
+  const gzOk = GZIP_EXT[ext] &&
+    /gzip/.test(String(req.headers['accept-encoding'] || ''));
+  let st;
+  try { st = fs.statSync(file); } catch (eSt) {
+    res.writeHead(404); res.end('Not found: ' + p); return;
+  }
+  if (st.isDirectory()) { res.writeHead(404); res.end('Not found: ' + p); return; }
+  const headers = {
+    'Content-Type': MIME[ext] || 'application/octet-stream',
+    'Cache-Control': cacheable
+      ? 'public, max-age=31536000, immutable'
+      : 'no-cache',
+    'Access-Control-Allow-Origin': '*'
+  };
+  if (gzOk) {
+    headers['Content-Encoding'] = 'gzip';
+    headers['Vary'] = 'Accept-Encoding';
+  }
+  res.writeHead(200, headers);
+  let stream = fs.createReadStream(file);
+  if (gzOk) stream = stream.pipe(zlib.createGzip());
+  stream.on('error', function () {
+    try { res.destroy(); } catch (eSd) {}
   });
+  stream.pipe(res);
 }
 
 /* ---------- 2. WebSocket (свой, без npm) ---------- */
@@ -461,6 +552,24 @@ function rosterFor() {
 /* ✅ v0.4.64: раскладка чекблоков — СВОЙ сид у каждого реалма
    (BrixPvP — арена с лутом в своих точках, не как в BrixLand) */
 const OBJ_SEED = REALM === 'brixpvp' ? 77702 : 20261114;
+
+/* ============================================================
+   ✅ v0.5.0 БОТЫ «ПОЛИГОНА» (только реалм brixpvp): авторитетный
+   сим команд СТАЛЬ (синие) и ПЛАМЯ (красные) в brixpvp-bots.js.
+   10 бойцов (5+5), каждый ИГРОК — синий: при его входе один синий
+   бот уходит (состав сторон 5 на 5), при выходе возвращается.
+   Боты патрулируют, ищут БЛИЖАЙШЕГО врага с прямой видимостью,
+   стреляют очередями; счёт килов по командам, победа до 30.
+   Тик 10 Гц ниже (рядом с таймаутами) — 'bots' всем игрокам.
+   ============================================================ */
+const Bots = REALM === 'brixpvp' ? require('./brixpvp-bots.js') : null;
+if (Bots) {
+  Bots.init({
+    broadcast: broadcast,
+    players: players,
+    countInGame: countInGame
+  });
+}
 function makeObjRng(seed) {
   let a = (seed === undefined ? OBJ_SEED : seed) | 0;
   return () => {
@@ -1078,7 +1187,11 @@ function c4BoomDamage(bx, by, bz, byId) {
     broadcast({ t: 'debris', list: destroyed.slice(0, 8) }, null);   // максимум 8 деталей на взрыв
   }
   /* ИГРОКИ в радиусе 6.5 м — 250 урона (насмерть). ХП — авторитет сервера;
-     god, как всегда, неуязвим */
+     god, как всегда, неуязвим.
+     ✅ v0.5.2 ПВП-АРЕНА: СВОИХ НЕ УБИВАЕМ — в реалме brixpvp взрыв С4
+     вообще не трогает игроков (все одна команда СТАЛЬ; раньше С4 могла
+     убить игрока своей команды) */
+  if (Bots) return;
   players.forEach((t) => {
     if (t.dead || t.god || !t.state) return;
     const d2c4 = dist2(t.state.x, t.state.z, bx, bz);
@@ -2178,7 +2291,11 @@ server.on('upgrade', (req, sock) => {
           dnc: envPublic(),
           /* ✅ v0.4.46: СОХРАНЕНИЕ ЭТОГО ИГРОКА (позиция+инвентарь+слот
              хотбара) — client восстановит сразу после спавна */
-          psave: p.psaved || undefined
+          psave: p.psaved || undefined,
+          /* ✅ v0.5.0 ПВП-АРЕНА: боты «ПОЛИГОНА» + счёт команд + своя
+             команда (все игроки — СТАЛЬ, синие). Клиент строит бот-вью
+             сразу, счётчик килов СТАЛЬ/ПЛАМЯ — сверху */
+          pvp: Bots ? Bots.snapshot() : undefined
         });
         // ✅ v0.4.3: в join едет lvl/aid — у всех игроков список полный сразу
         broadcast({ t: 'join', id: p.id, n: p.name, c: p.c,
@@ -2244,6 +2361,14 @@ server.on('upgrade', (req, sock) => {
            появлялась. Теперь оба обработчика живут в ОДНОМ case: id нашли
            в barrelIndex — бочка, иначе — постройка */
         case 'bhit': {
+          /* ✅ v0.5.0 ПВП-АРЕНА: выстрел/удар игрока по БОТУ «ПОЛИГОНА».
+             Сервер авторитетен: свои (синие) неуязвимы, дистанция ≤ 90 м,
+             потолок урона 35; убийство — 'bdead' + счёт команды СТАЛЬ */
+          if (Bots && msg && msg.i !== undefined && msg.dmg !== undefined) {
+            const bres = Bots.handleBhit(p, msg);
+            if (bres) p.send(bres);
+            break;
+          }
           const rec = barrelIndex.get(String(msg.id || ''));
           if (rec && !rec.bar.brk) {
             if (!p.lastBHit) p.lastBHit = {};
@@ -2819,6 +2944,10 @@ server.on('upgrade', (req, sock) => {
              неуязвим всегда, даже с выключенным бессмертием */
           if (target.god) break;
           if (!p.state) break;
+          /* ✅ v0.5.0 ПВП-АРЕНА: СВОИХ НЕ УБИВАЕМ — на «Полигоне» все
+             игроки одна команда СТАЛЬ (синие), урон игрок-в-игрока
+             полностью блокируется (боты свои тоже не трогают) */
+          if (Bots) break;
           const kind = String(msg.kind || 'shot');
           const d2 = dist2(p.state.x, p.state.z, target.state.x, target.state.z);
           if (kind === 'shot' && d2 > 130 * 130) break;      // дальше 130 м
@@ -2859,6 +2988,9 @@ server.on('upgrade', (req, sock) => {
             target.dead = true;
             broadcast({ t: 'pdeath', tid: target.id, by: p.id, w, hs,
               dist: Math.round(Math.sqrt(d2)) }, null);
+            /* ✅ v0.5.3 АРЕНА: килл подтверждён — игрок может забрать
+               награду (полное хп через 'kreward', патроны — у клиента) */
+            if (Bots) p.lastRewardAt = Date.now();
             console.log('[mp] ' + p.name + ' убил ' + target.name +
               (kind === 'shot' ? ' (выстрел)' : ' (инструментом)'));
           }
@@ -2885,6 +3017,24 @@ server.on('upgrade', (req, sock) => {
             console.log('[mp] ' + p.name + ' укололся шприцем: ' +
               hpOld + ' → ' + Math.round(p.hp));
           }
+          break;
+        }
+        /* ============================================================
+           ✅ v0.5.3 АРЕНА «ПОЛИГОН»: НАГРАДА ЗА КИЛЛ — полное хп.
+           Клиент шлёт 'kreward' сразу после подтверждённого килла
+           (бота — killBot ставит p.lastRewardAt, игрока — case 'phit').
+           Сервер применяет ТОЛЬКО если килл был недавно (< 4 с) —
+           анти-спам; в BrixLand (без ботов) кейс игнорируется.
+           Патроны клиентские: обойма пополняется у клиента в
+           arenaKillReward (gameworld.js)
+           ============================================================ */
+        case 'kreward': {
+          if (!Bots || p.dead) break;
+          if (!p.lastRewardAt || Date.now() - p.lastRewardAt > 4000) break;
+          p.lastRewardAt = 0;
+          p.hp = 100;
+          broadcast({ t: 'phit', tid: p.id, hp: 100, kind: 'heal', by: '' }, p.id);
+          console.log('[bots] ' + p.name + ' — награда за килл: полное хп');
           break;
         }
         /* ============================================================
@@ -3292,6 +3442,14 @@ setInterval(() => {
   dead.forEach((p) => dropPlayer(p, 'таймаут'));
 }, 5000);
 
+/* ✅ v0.5.0 БОТЫ «ПОЛИГОНА»: шаг сима + рассылка 'bots' 10 Гц
+   (только реалм brixpvp — в BrixLand ботов нет) */
+if (Bots) setInterval(() => {
+  try { Bots.tick(0.1); } catch (eBots) {
+    console.log('[bots] ошибка шага сима (сервер работает дальше): ' + eBots.message);
+  }
+}, 100);
+
 /* ============================================================
    ✅ v0.4.34 ХОЛОД (зимний апдейт, этап 1) — АВТОРИТЕТ СЕРВЕРА.
    Зима = высокие горы со снегом. Высоту рельефа сервер считает
@@ -3589,6 +3747,22 @@ server.on('error', (e) => {
     process.exit(1);
   }
   console.log('[server] ошибка: ' + ((e && e.message) || e));
+});
+
+/* ✅ v0.5.14 СТАБИЛЬНОСТЬ ЗА ТУННЕЛЕМ/ПРОКСИ (devtunnels и т.п.):
+   у Node keep-alive соединения с прокси живут 5 с — прокси переиспользует
+   такое соединение на границе таймаута, сервер его уже закрыл, браузер
+   получает обрыв потока и показывает net::ERR_HTTP2_PROTOCOL_ERROR на
+   случайной пачке файлов (часть скриптов грузится, часть — нет).
+   Поднимаем keep-alive выше любого «раздумья» прокси и вежливо отвечаем
+   на битые запросы вместо рвём соединение */
+server.keepAliveTimeout = 65000;   // > 60 с — типичный пул прокси
+server.headersTimeout = 70000;     // всегда > keepAliveTimeout
+server.on('clientError', function (err, socket) {
+  if (socket && socket.writable) {
+    try { socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'); }
+    catch (eCe) { try { socket.destroy(); } catch (eCd) {} }
+  }
 });
 
 server.listen(PORT, () => {

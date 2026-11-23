@@ -13,8 +13,15 @@ window.BrixControls = (function () {
   'use strict';
 
   var EYE_HEIGHT = 1.7;
-  var WALK_SPEED = 6;
-  var SPRINT_SPEED = 10.5;
+  /* ✅ v0.5.13 НОВАЯ ФИЗИКА ДВИЖЕНИЯ (по просьбе игрока):
+     — игрок ЧУТЬ МЕДЛЕННЕЕ, бег — ЗАМЕТНО медленнее (10.5 → 7.8);
+     — бег ТОЛЬКО вперёд (W без A/D/S): назад/вбок — только шаг;
+     — В ПОЛЁТЕ (прыжок) WASD не рулит: летишь по инерции, набранной
+       в момент прыжка (прыгнул вперёд — летишь вперёд, от WASD
+       направление не меняется), управление возвращается при
+       приземлении */
+  var WALK_SPEED = 5.2;
+  var SPRINT_SPEED = 7.8;
   var GRAVITY = 24;
   var JUMP_SPEED = 8.6;
   var PLAYER_RADIUS = 0.35; // «толщина» игрока для коллайдеров (v0.2.9)
@@ -73,6 +80,9 @@ window.BrixControls = (function () {
     this._fallPeak = 0;
     this._landK = 0;
     this._ladder = null;
+    /* ✅ v0.5.13: инерция прыжка {dx, dz, sp} — фиксируется в момент
+       прыжка, в полёте WASD не рулит, сбрасывается при приземлении */
+    this._airDir = null;
     this.noclip = false;        // ✅ v0.4.52: полёт сквозь стены (админ-панель)
     this.onFallDamage = null;   // (info {dist, dmg}) — gameworld применяет урон
 
@@ -121,6 +131,7 @@ window.BrixControls = (function () {
     this.eyeH = EYE_HEIGHT;
     this._fallPeak = 0;        // ✅ v0.4.44: падение не переносится в нового героя
     this._landK = 0;
+    this._airDir = null;       // ✅ v0.5.13: инерция не переносится в респавн
   };
 
   /* ✅ v0.4.44: зона лестницы под ногами (null — вне лестницы).
@@ -322,14 +333,21 @@ window.BrixControls = (function () {
     }
   };
 
-  /** Состояние движения для анимации рук: { moving, sprint, onGround, crouch } */
+  /** Состояние движения для анимации рук: { moving, sprint, onGround, crouch }.
+      ✅ v0.5.13: sprint = Shift + ЧИСТО вперёд (W без A/D/S; на джойстике —
+      стик отклонён вперёд без вбок) — руки и разброс честно показывают бег */
   FpsController.prototype.getMoveState = function () {
     var tMoving = this.enabled && (this._touchVec.x !== 0 || this._touchVec.y !== 0);
+    var sh = this._keys.has('ShiftLeft') || this._keys.has('ShiftRight');
+    var fwdKeys = this._keys.has('KeyW') && !this._keys.has('KeyS') &&
+      !this._keys.has('KeyA') && !this._keys.has('KeyD');
+    var fwdTouch = tMoving && this._touchVec.y < -0.25 &&
+      Math.abs(this._touchVec.x) < 0.25;
     return {
       moving: (this.enabled && this._keys.size > 0 &&
         (this._keys.has('KeyW') || this._keys.has('KeyA') ||
          this._keys.has('KeyS') || this._keys.has('KeyD'))) || tMoving,
-      sprint: this._keys.has('ShiftLeft') || this._keys.has('ShiftRight'),
+      sprint: sh && (fwdKeys || fwdTouch),
       onGround: this._grounded,
       crouch: this._crouched
     };
@@ -365,7 +383,15 @@ window.BrixControls = (function () {
     var onLadderZone = !!(this._ladder && this.enabled &&
       feetPre >= this._ladder.y0 - 0.4 && feetPre <= this._ladder.y1 + 0.55);
     var climbingNow = onLadderZone && moving && fz < -0.25;
-    var sprint = this._keys.has('ShiftLeft') || this._keys.has('ShiftRight');
+    /* ✅ v0.5.13 БЕГ ТОЛЬКО ВПЕРЁД: Shift работает, если W зажат БЕЗ
+       A/D/S (на джойстике — стик отклонён вперёд без вбока).
+       Назад/влево/вправо — только шаг, каким бы быстрым ни был игрок */
+    var shHeld = this._keys.has('ShiftLeft') || this._keys.has('ShiftRight');
+    var fwdKeys = this._keys.has('KeyW') && !this._keys.has('KeyS') &&
+      !this._keys.has('KeyA') && !this._keys.has('KeyD');
+    var fwdTouch = (this._touchVec.x || this._touchVec.y) &&
+      this._touchVec.y < -0.25 && Math.abs(this._touchVec.x) < 0.25;
+    var sprint = shHeld && (fwdKeys || fwdTouch);
     // ✅ v0.4.5: slowFactor < 1 — перезарядка револьвера (медленно даже бегом)
     // ✅ v0.4.15: BrixAdmin.speedOn — СКОРОСТЬ ×2 из панели разработчика
     var adminMul = (window.BrixAdmin && BrixAdmin.speedOn) ? 2 : 1;
@@ -413,7 +439,11 @@ window.BrixControls = (function () {
     var floorH = this._getHeight(this.position.x, this.position.z, this.position.y - this.eyeH);
     if (floorH < 2.9) speed *= 0.55;
 
-    if (moving && !climbingNow) {
+    /* ✅ v0.5.13: горизонтальный шаг — ТОЛЬКО на земле. В полёте
+       (прыжок/падение) WASD НЕ рулит: летишь по инерции, набранной
+       в момент прыжка (см. ниже — _airDir), на лестнице — свой режим */
+    var airNow = !this._grounded && !onLadderZone;
+    if (this._grounded && moving && !climbingNow) {
       var len = Math.hypot(fx, fz);
       fx /= len; fz /= len;
       var sin = Math.sin(this.yaw);
@@ -440,6 +470,21 @@ window.BrixControls = (function () {
           this.position.z = oldZ;
         }
       }
+    } else if (airNow && this._airDir) {
+      /* ✅ v0.5.13 ПОЛЁТ ПО ИНЕРЦИИ: направление и скорость зафиксированы
+         в момент прыжка; нажатия WASD в воздухе игнорируются — как
+         просил игрок («прыгнул вперёд — игрок не двигается от WASD») */
+      var feetAir = this.position.y - this.eyeH;
+      var ox = this.position.x;
+      this.position.x += this._airDir.dx * this._airDir.sp * dt;
+      if (this._boxBlocked(this.position.x, this.position.z, feetAir)) {
+        this.position.x = ox;
+      }
+      var oz = this.position.z;
+      this.position.z += this._airDir.dz * this._airDir.sp * dt;
+      if (this._boxBlocked(this.position.x, this.position.z, feetAir)) {
+        this.position.z = oz;
+      }
     }
 
     // ✅ v0.2.9: стволы деревьев и камни — сквозь них не пройти
@@ -457,6 +502,21 @@ window.BrixControls = (function () {
     if (this.enabled && this._grounded && !this._crouched && this._keys.has('Space')) {
       this._vy = JUMP_SPEED;
       this._grounded = false;
+      /* ✅ v0.5.13 ИНЕРЦИЯ ПРЫЖКА: фиксируем направление и скорость
+         НА МОМЕНТ прыжка. В воздухе WASD не работает — летишь туда,
+         куда прыгнул (вперёд — вперёд, с места — строго вверх) */
+      if (moving && !climbingNow) {
+        var jl = Math.hypot(fx, fz) || 1;
+        var jfx = fx / jl, jfz = fz / jl;
+        var jsin = Math.sin(this.yaw), jcos = Math.cos(this.yaw);
+        this._airDir = {
+          dx: jfx * jcos + jfz * jsin,
+          dz: -jfx * jsin + jfz * jcos,
+          sp: speed
+        };
+      } else {
+        this._airDir = null;   // прыжок с места — полёт без смещения
+      }
     }
 
     /* ============================================================
@@ -469,6 +529,7 @@ window.BrixControls = (function () {
     var feetL = this.position.y - this.eyeH;
     var inLadder = !!(this._ladder && this.enabled &&
       feetL >= this._ladder.y0 - 0.4 && feetL <= this._ladder.y1 + 0.55);
+    if (inLadder) this._airDir = null;   // ✅ v0.5.13: на лестнице инерции нет
     if (inLadder && climbingNow) {
       // лезем вверх (и с клавиатуры W, и с джойстика)
       this.position.y += LADDER_SPEED * dt;
@@ -543,6 +604,7 @@ window.BrixControls = (function () {
         this._fallPeak = this.position.y;
         this._vy = 0;
         this._grounded = true;
+        this._airDir = null;   // ✅ v0.5.13: приземлился — WASD снова рулит
       }
     } else {
       /* ✅ v0.4.44 ФИКС «РЕЗКО ПАДАЕШЬ С ФУНДАМЕНТА»: раньше стоящего игрока

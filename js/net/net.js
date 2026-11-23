@@ -162,6 +162,8 @@ window.BrixNet = (function () {
         serverSv = String(msg.sv || '');   // ✅ v0.4.17: старый server.js версии НЕ пришлёт
         serverFolder = String(msg.folder || '');   // ✅ v0.4.29: папка запущенного сервера
         ID = msg.id;
+        /* ✅ v0.5.10: сервер жив — «Сервер недоступен» больше не нужен */
+        try { hideNetDownBanner(); } catch (e0n) {}
         /* ✅ v0.4.23: СРАЗУ предупреждаем, если сервер СТАРЫЙ (старее клиента).
            Симптомы старого server.js: «сундук не ставится», «сервер
            отклонил команду админа» (тумблер бессмертия), «игроков нельзя
@@ -402,9 +404,20 @@ window.BrixNet = (function () {
   /* ---------- отправка ---------- */
 
   function send(obj) {
-    var text;
-    try { text = JSON.stringify(obj); } catch (e) { return; }
-    if (mode === 'server' && ws && ws.readyState === 1) { ws.send(text); return; }
+    if (mode === 'server' && ws) {
+      /* ✅ v0.5.10: в CONNECTING шлать НЕЛЬЗЯ — туннель режет пакеты,
+         идущие до ответа рукопожатия (та самая «closed before
+         established»). CONNECTING → в очередь (flush после onopen),
+         CLOSING/CLOSED → молча, жил переподключение */
+      if (ws.readyState === 1) {
+        var text;
+        try { text = JSON.stringify(obj); } catch (e) { return; }
+        ws.send(text);
+        return;
+      }
+      if (ws.readyState === 0) { queueSend(obj); return; }
+      return;
+    }
     if (mode === 'tabs' && bc) {
       obj.id = obj.id || ID || 'local';
       bc.postMessage(JSON.stringify(obj));
@@ -417,15 +430,79 @@ window.BrixNet = (function () {
      BrixPvP 8788) — BrixNet.useServer(srv) перед connect */
   var targetPort = 8787;
 
+  /* ✅ v0.5.10 RECONNECT. Симптом в туннеле: «WebSocket is closed
+     before the connection is established» и «БЕЗ сервера». Причины:
+     1) таймаут хендшейка был 1.5 c — медленный туннель не успевал,
+        и close() посреди CONNECTING рвал ещё ЖИВОЕ рукопожатие
+        (та самая строка net.js:433 в консоли);
+     2) первая же неудача падала в режим вкладок БЕЗ единого повтора.
+     Теперь: хендшейк ждём 5 c; при неудаче — до 5 попыток через 2 c;
+     все мимо → понятный баннер «Сервер недоступен, проверьте туннель»
+     и резервный режим вкладок. Отправка до onopen невозможна: пакеты
+     копятся в очереди и уходят сразу после открытия сокета. */
+  var RECONNECT_TRIES = 5;
+  var RECONNECT_DELAY = 2000;
+  var HANDSHAKE_TIMEOUT = 5000;
+
+  var connectToken = 0;     // серия попыток; результаты старых игнорируем
+  var pendingMeta = null;   // meta из connect() — уедет в hello
+  var sendQueue = [];       // пакеты, написанные до onopen (макс 64)
+  var manualClose = false;  // disconnect() звали явно — реконнект не нужен
+  /* ✅ v0.5.11: потеря сервера СРЕДИ ИГРЫ — серия переподключений
+     крутится, но если за LOSS_TIMEOUT сервер так и не ответил,
+     клиент получает событие lostServer: gameworld.js показывает
+     «Соединение с сервером потеряно» и выкидывает в меню — вместо
+     бесконечного реконнекта на глазах у игрока */
+  var LOSS_TIMEOUT = 8000;
+  var lossTimer = null;
+
+  function armLossTimer() {
+    disarmLossTimer();
+    lossTimer = setTimeout(function () {
+      lossTimer = null;
+      if (manualClose || mode === 'server') return;
+      if (typeof handlers.lostServer === 'function') {
+        try { handlers.lostServer(); } catch (e) {
+          console.warn('[net] lostServer упал:', e && e.message);
+        }
+      }
+    }, LOSS_TIMEOUT);
+  }
+  function disarmLossTimer() {
+    if (lossTimer) { clearTimeout(lossTimer); lossTimer = null; }
+  }
+
+  function queueSend(obj) {
+    if (sendQueue.length < 64) sendQueue.push(obj);
+  }
+
+  function flushQueue() {
+    var q = sendQueue;
+    sendQueue = [];
+    for (var i = 0; i < q.length; i++) {
+      try {
+        if (mode === 'server' && ws && ws.readyState === 1) ws.send(JSON.stringify(q[i]));
+      } catch (e) {}
+    }
+  }
+
   function tryWebSocket(onDone) {
-    var host = location.hostname || 'localhost';
+    /* ✅ v0.5.8: адрес/протокол определяет BrixWsUrl (js/net/wsurl.js):
+       https-страница → wss:// (Mixed Content больше не рвёт
+       подключение), Dev Tunnels → порт в поддомене
+       (wss://<id>-8788.<регион>.devtunnels.ms для PvP).
+       Оверрайд: ?brixws=… или localStorage['brix-ws(-порт)'] */
+    var url = (window.BrixWsUrl ? BrixWsUrl.ws(targetPort)
+      : 'ws://' + (location.hostname || 'localhost') + ':' + targetPort);
     var sock;
-    try { sock = new WebSocket('ws://' + host + ':' + targetPort); }
+    try { sock = new WebSocket(url); }
     catch (e) { onDone(null); return; }
     var settled = false;
+    /* ✅ v0.5.10: 1.5 c → 5 c. На повторном заходе туннель
+       устанавливает рукопожатие дольше — раньше мы сами его рвали */
     var timer = setTimeout(function () {
       if (!settled) { settled = true; try { sock.close(); } catch (e) {} onDone(null); }
-    }, 1500);
+    }, HANDSHAKE_TIMEOUT);
     sock.onopen = function () {
       if (settled) return;
       settled = true;
@@ -437,13 +514,60 @@ window.BrixNet = (function () {
     };
     sock.onclose = function () {
       if (!settled) { settled = true; clearTimeout(timer); onDone(null); }
-      else if (mode === 'server') {
-        // сервер умер → пробуем вкладки
+      else if (mode === 'server' && !manualClose) {
+        /* ✅ v0.5.10: сервер пропал СРЕДИ ИГРЫ (перезапуск, обрыв
+           туннеля) — серия переподключений вместо мгновенного падения
+           в режим вкладок. ✅ v0.5.11: 8 c без успеха → lostServer */
         ws = null;
-        connectTabs();
+        console.warn('[net] соединение потеряно — переподключение…');
+        mode = 'connecting';
+        paint();
+        armLossTimer();
+        attemptConnect(1);
       }
     };
     sock.onmessage = function (ev) { onRaw(typeof ev.data === 'string' ? ev.data : ''); };
+  }
+
+  /* ✅ v0.5.10: одна попытка серии. n — номер с 1 */
+  function attemptConnect(n) {
+    var myToken = ++connectToken;
+    if (mode !== 'server') { mode = 'connecting'; paint(); }
+    tryWebSocket(function (sock) {
+      if (myToken !== connectToken) {   // серия отменена (новый connect/disconnect)
+        if (sock) { try { sock.close(); } catch (e) {} }
+        return;
+      }
+      if (sock) {
+        ws = sock;
+        mode = 'server';
+        NAME = profileNick() || NAME;
+        hideNetDownBanner();
+        disarmLossTimer();   // ✅ v0.5.11: связь вернулась — отмена kick
+        /* hello — ПЕРВЫМ пакетом; затем всё, что успело накопиться
+           в очереди до onopen (порядок сохранён) */
+        send({ t: 'hello', n: NAME, c: COLOR, lvl: ownLvl(), aid: ownAid(),
+          meta: pendingMeta });
+        flushQueue();
+        paint();
+        return;
+      }
+      if (n < RECONNECT_TRIES) {
+        console.warn('[net] сервер :' + targetPort + ' не отвечает (попытка ' +
+          n + '/' + RECONNECT_TRIES + ') — повтор через ' +
+          (RECONNECT_DELAY / 1000) + ' c');
+        paint();
+        setTimeout(function () {
+          if (myToken === connectToken && !manualClose) attemptConnect(n + 1);
+        }, RECONNECT_DELAY);
+      } else {
+        console.error('[net] сервер недоступен после ' + RECONNECT_TRIES +
+          ' попыток — резервный режим вкладок');
+        showNetDownBanner();
+        connectTabs();
+        if (mode !== 'off') announce(true);
+      }
+    });
   }
 
   function connectTabs() {
@@ -457,20 +581,66 @@ window.BrixNet = (function () {
   }
 
   function connect(meta) {
-    tryWebSocket(function (sock) {
-      if (sock) {
-        ws = sock;
-        mode = 'server';
-        NAME = profileNick() || NAME;
-        // ✅ v0.4.3: в hello едет уровень профиля и BRIX-ID —
-        // сервер кладёт их в ростер (список игроков в мини-меню)
-        send({ t: 'hello', n: NAME, c: COLOR, lvl: ownLvl(), aid: ownAid(),
-          meta: meta || null });
-        paint();
-      } else {
-        connectTabs();
-        if (mode !== 'off') announce(true);
-      }
+    manualClose = false;
+    pendingMeta = meta || null;
+    sendQueue = [];
+    attemptConnect(1);   // ++connectToken гасит предыдущую серию
+  }
+
+  /* ✅ v0.5.10: понятное сообщение вместо «БЕЗ сервера». Исчезает
+     при первом же успешном подключении (attemptConnect/welcome).
+     ✅ v0.5.11: showDownBanner(text, hint, autoHideMs) — общий красный
+     баннер и для гейта входа без сервера (gameworld.js), и для
+     блокировки клика по выключенному серверу в меню */
+  function showDownBanner(text, hint, autoHideMs) {
+    hideNetDownBanner();
+    var b = document.createElement('div');
+    b.id = 'brixNetDown';
+    b.innerHTML = '<b>' + escHtml(text || ('СЕРВЕР НЕДОСТУПЕН — ' + RECONNECT_TRIES + ' попыток не удалось.')) + '</b>' +
+      (hint ? '<div class="nd-s">' + escHtml(hint) + '</div>' : '') +
+      '<span class="nd-x" id="brixNetDownX">✕</span>';
+    b.style.cssText = 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:400;' +
+      'max-width:560px;padding:12px 42px 12px 18px;background:linear-gradient(135deg,#5c1208,#8a1e10);' +
+      'color:#ffe7dc;border:1px solid #ff8a63;border-radius:6px;box-shadow:0 12px 50px rgba(0,0,0,.7);' +
+      'font:13px/1.55 Consolas,monospace;letter-spacing:.02em;text-align:left;';
+    var s = b.querySelector('.nd-s');
+    if (s) s.style.cssText = 'opacity:.9;margin-top:4px;';
+    var x = b.querySelector('.nd-x');
+    if (x) {
+      x.style.cssText = 'position:absolute;top:8px;right:12px;font:16px Consolas,monospace;cursor:pointer;color:#ffb59a;';
+      x.onclick = hideNetDownBanner;
+    }
+    document.body.appendChild(b);
+    if (autoHideMs) setTimeout(hideNetDownBanner, autoHideMs);
+  }
+  function showNetDownBanner() {
+    showDownBanner(null,
+      'Проверьте туннель / сервер (START-MULTIPLAYER.bat). Игра продолжится ' +
+      'в одиночном режиме; после перезагрузки страницы (Ctrl+Shift+R) ' +
+      'подключение повторится.', 0);
+  }
+  function hideNetDownBanner() {
+    var b = document.getElementById('brixNetDown');
+    if (b && b.parentNode) b.parentNode.removeChild(b);
+  }
+
+  /* ✅ v0.5.11: быстрый HTTP-проб сервера GET /status (работает и на
+     localhost, и через туннель — адрес даёт BrixWsUrl/BrixNet.httpUrl).
+     resolve(true/false), никогда не reject. Однократный, таймаут мягкий */
+  function checkServer(port, timeoutMs) {
+    return new Promise(function (ok) {
+      var url = (window.BrixWsUrl ? BrixWsUrl.http(port)
+        : 'http://' + (location.hostname || 'localhost') + ':' + (Number(port) || 8787)) + '/status';
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var t = setTimeout(function () {
+        if (ctrl) { try { ctrl.abort(); } catch (e0) {} }
+        ok(false);
+      }, timeoutMs || 3000);
+      try {
+        fetch(url, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+          .then(function (r) { clearTimeout(t); ok(!!(r && r.ok)); })
+          .catch(function () { clearTimeout(t); ok(false); });
+      } catch (e) { clearTimeout(t); ok(false); }
     });
   }
 
@@ -480,6 +650,11 @@ window.BrixNet = (function () {
   }
 
   function disconnect() {
+    /* ✅ v0.5.10: явный disconnect гасит серию переподключений */
+    manualClose = true;
+    connectToken++;
+    sendQueue = [];
+    disarmLossTimer();   // ✅ v0.5.11
     send({ t: 'bye' });
     if (ws) { try { ws.close(); } catch (e) {} ws = null; }
     if (bc) { try { bc.close(); } catch (e) {} bc = null; }
@@ -495,6 +670,8 @@ window.BrixNet = (function () {
     // ✅ v0.4.1: «В ИГРЕ» вместо «игроков» — раньше рядом стояло
     // «НА СЕРВЕРЕ СЕЙЧАС: 2» и было непонятно, что означают числа
     if (mode === 'server') return 'СЕТЬ: сервер · В ИГРЕ: ' + (peersCount() + 1);
+    /* ✅ v0.5.10: честный статус во время серии переподключений */
+    if (mode === 'connecting') return 'СЕТЬ: подключение к серверу…';
     if (mode === 'tabs') return 'СЕТЬ: вкладки · В ИГРЕ: ' + (peersCount() + 1);
     return 'СЕТЬ: одиночная игра';
   }
@@ -699,7 +876,21 @@ window.BrixNet = (function () {
   return {
     get NAME() { return NAME; },   // ✅ v0.3.4: живой ник (не снимок на момент загрузки)
     COLOR: COLOR,
+    /* ✅ v0.5.8: универсальные адреса для других модулей (BrixWsUrl) */
+    wsUrl: function (port) {
+      return window.BrixWsUrl ? BrixWsUrl.ws(port)
+        : 'ws://' + (location.hostname || 'localhost') + ':' + (Number(port) || 8787);
+    },
+    httpUrl: function (port) {
+      return window.BrixWsUrl ? BrixWsUrl.http(port)
+        : 'http://' + (location.hostname || 'localhost') + ':' + (Number(port) || 8787);
+    },
     connect: connect,
+    /* ✅ v0.5.11: красный баннер (текст/подсказка/автоскрытие) для
+       гейта входа и меню; checkServer — быстрый GET /status */
+    showDownBanner: showDownBanner,
+    hideDownBanner: hideNetDownBanner,
+    checkServer: checkServer,
     /* ✅ v0.4.64: выбрать сервер — WS пойдёт на его порт */
     useServer: function (srv) {
       targetPort = (srv && Number(srv.port)) || 8787;
@@ -756,6 +947,9 @@ window.BrixNet = (function () {
       };
     },
     get mode() { return mode; },
+    /* ✅ v0.5.10: true, пока идёт серия переподключений (N/5) */
+    get connecting() { return mode === 'connecting'; },
+    get reconnectTries() { return RECONNECT_TRIES; },
     get serverVer() { return serverVer; },
     get serverSv() { return serverSv; },   // ✅ v0.4.17: для диагностики панели (9)
     get id() { return ID; },

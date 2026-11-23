@@ -65,12 +65,17 @@ window.menuAudio = (function () {
   /** Загрузка пользовательского звука нажатия (assets/sfx/click.mp3) */
   function loadClickSample() {
     if (!ctx) return;
-    fetch(window.BrixAsset ? window.BrixAsset('assets/sfx/click.mp3') : 'assets/sfx/click.mp3')
-      .then(function (r) {
-        if (!r.ok) throw new Error('no sample');
-        return r.arrayBuffer();
-      })
-      .then(function (ab) { return ctx.decodeAudioData(ab); })
+    /* ✅ v0.5.9: retry 3 попытки / 2 c / таймаут 10 c (BrixFetch) —
+       через туннель mp3 приходил 504 и звук нажатия пропадал навсегда;
+       при полном провале — синтез (clickBuf = null) */
+    var u = window.BrixAsset ? window.BrixAsset('assets/sfx/click.mp3') : 'assets/sfx/click.mp3';
+    var get = window.BrixFetch
+      ? BrixFetch.bytes(u)
+      : fetch(u).then(function (r) {
+          if (!r.ok) throw new Error('no sample');
+          return r.arrayBuffer();
+        });
+    get.then(function (ab) { return ctx.decodeAudioData(ab); })
       .then(function (buf) { clickBuf = buf; })
       .catch(function () { clickBuf = null; });
   }

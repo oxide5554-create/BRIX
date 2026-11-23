@@ -7,9 +7,23 @@
 window.BrixLoading = (function () {
   'use strict';
 
-  var TIPS = ['load.tip1', 'load.tip2', 'load.tip3', 'load.tip4', 'load.tip5'];
+  /* ✅ v0.5.11: подсказки — только то, что есть в игре (i18n:
+     load.tip1…tip10 — управление/строительство/стрельба/инвентарь);
+     смена каждые 2-5 c (случайный интервал, как просили) */
+  var TIPS = ['load.tip1', 'load.tip2', 'load.tip3', 'load.tip4', 'load.tip5',
+    'load.tip6', 'load.tip7', 'load.tip8', 'load.tip9', 'load.tip10'];
   var tipIdx = Math.floor(Math.random() * TIPS.length);
   var tipTimer = null;
+
+  function scheduleTip() {
+    if (tipTimer) clearTimeout(tipTimer);
+    /* 2000-5000 мс, равномерно */
+    tipTimer = setTimeout(function () {
+      tipIdx = (tipIdx + 1) % TIPS.length;
+      drawTip();
+      scheduleTip();
+    }, 2000 + Math.floor(Math.random() * 3001));
+  }
 
   function show() {
     var el = document.getElementById('loadingScreen');
@@ -19,17 +33,16 @@ window.BrixLoading = (function () {
     el.querySelector('[data-server]').textContent = BrixData.ADMIN_SERVER.name;
     drawStage(BrixGame.state);
 
-    // советы вращаются каждые 2.6 c
-    if (tipTimer) clearInterval(tipTimer);
-    drawTip();
-    tipTimer = setInterval(function () {
-      tipIdx = (tipIdx + 1) % TIPS.length;
-      drawTip();
-    }, 2600);
+    /* ✅ v0.5.11: советы вращаются каждые 2-5 c (случайный интервал).
+       show() вызывается на КАЖДЫЙ emit прогресса (по 10-20 раз в
+       секунду во время сборки) — таймер смены перезапускать нельзя,
+       иначе совет никогда не сменится: стартуем ротацию только если
+       она ещё не идёт */
+    if (!tipTimer) { drawTip(); scheduleTip(); }
   }
 
   function hide() {
-    if (tipTimer) { clearInterval(tipTimer); tipTimer = null; }
+    if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; }
     document.getElementById('loadingScreen').classList.add('hidden');
   }
 
@@ -42,6 +55,9 @@ window.BrixLoading = (function () {
   }
 
   function drawStage(g) {
+    /* ✅ v0.5.11: пока идёт предзагрузка иконок, этап и прогресс
+       рисует preload.js — не перетираем («Загрузка ресурсов… X%») */
+    if (window.BrixPreload && BrixPreload.uiActive) return;
     document.getElementById('loadingStage').textContent = g.stage ? BrixState.t(g.stage) : '';
     var pct = Math.floor(g.progress);
     document.getElementById('loadingFill').style.width = pct + '%';

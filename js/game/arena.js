@@ -8,32 +8,68 @@
 //    «7.62×39 БОЕПРИПАСЫ», барьеры, баки, паллеты, ящики-боеприпасы
 //    со светящейся кромкой, кондиционеры, трубы, прожекторные вышки
 //    с объёмными конусами, декали зон «БАЗА · СТАЛЬ/ПЛАМЯ», ПЫЛЬ;
-//  · БОТЫ: 1 красный бот (ВИПЕР-1) — ИИ из референса (патруль/
-//    поиск/бой, стрейф, очереди), ТРАССЕРЫ НАШИ (как у игроков),
-//    вспышка из текстур СЕКТОР-9; ✅ фикс видимости (боты были на
-//    3.45 м под полом — теперь стоят на полу арены);
-//  · КАРТА (M): drawMap рисует локацию сверху + точки ботов.
+//  ✅ v0.5.0 КОМАНДНЫЙ БОЙ: СТАЛЬ (синие) против ПЛАМЯ (красные).
+//    БОТЫ — УЧЁНЫЕ (ScientistRigged, риг/анимации — arena-bot.js,
+//    порт bot-studio v3: стойка/шаг/бег/прицел/огонь/смерть, хват
+//    АК двухкостным IK, игровой ak47.glb):
+//    · синие — scientist_body_albedo_blue.png (встроен в GLB);
+//    · красные — тот же костюм в КРАСНОМ раскрасе
+//      (scientist_body_albedo_red.png);
+//    · на арене 10 ботов (5+5); ВХОД ИГРОКА — один СИНИЙ бот уходит
+//      (игрок играет за СТАЛЬ, состав сторон остаётся 5 на 5);
+//    · в серверном режиме боты СИНХРОННЫ: их считает server.js
+//      (brixpvp-bots.js) и рассылает 'bots' 10 Гц — все игроки видят
+//      ОДНИХ ботов, которые стреляют в БЛИЖАЙШЕГО врага;
+//    · СВОИХ НЕ УБИТЬ: попадания по синим игнорируются (и у клиента,
+//      и на сервере), синие боты не целятся в игрока;
+//    · СЧЁТ КИЛОВ КОМАНД сверху (pvphud.js), ПОБЕДА ДО 30.
+//    · вне сервера (вкладки/соло) — ЛОКАЛЬНЫЙ сим тех же ботов.
+//  · КАРТА (M): drawMap рисует локацию сверху + точки ботов по командам.
 // ============================================================
 window.BrixArena = (function () {
   'use strict';
 
-  /* ---------- константы локации (как в референсе, метры) ---------- */
+  /* ---------- константы локации (метры) ----------
+     ✅ v0.5.5: размер/спавны — от РЕЕСТРА КАРТ (window.BrixMapData):
+     «СЕКТОР-9» 62×46 ⇄ «ПОРТ · ПРИЧАЛ-7» 76×56, ротация после
+     каждого раунда. Значения ниже — для карты по умолчанию,
+     applyMap() переприсваивает при сборке */
   var FLOOR_W = 62, FLOOR_D = 46;
   var HALF_W = FLOOR_W / 2, HALF_D = FLOOR_D / 2;
   var AY = 3.45;                          // верх бетонного пола в мире (terrain pvp = 3.2)
   var STEP = 0.55, GRAV = 14;
-  var BOTS_TOTAL = 1;                     // ✅ v0.4.66: ОДИН бот на арене
+  var BOTS_TOTAL = 10;                    // ✅ v0.5.0: 10 ботов (5 СТАЛЬ + 5 ПЛАМЯ)
 
   var built = false;
+  var curMapId = null;                    // ✅ v0.5.5: текущая карта
+  var pendingMap = null;                  // карта из welcome (арена ещё не собрана)
   var solids = [];
   var worldBoxes = [];
-  var bots = [];
-  var opts = null;
-  var killCount = 0;
+  var worldGroup = null;                  // ✅ v0.5.5: ВСЯ геометрия карты в одной группе — смена карты сносит её целиком
 
-  var botNames = ['ВИПЕР', 'ПРИЗРАК', 'КОБРА', 'ШАКАЛ', 'ГРОМ', 'ЗУБР'];
+  var botNames = ['СТАЛЬ', 'ПЛАМЯ'];
   var SPAWNS = [[10, 18.5], [-10, 18.5], [4, 19], [-4, 19]];
-  var BOT_SPAWNS = [[10, -18.5], [-10, -18.5], [4, -19], [-4, -19]];
+  /* ✅ v0.5.0: команды по ЗОНАМ — СТАЛЬ (синие) юг, ПЛАМЯ (красные) север */
+  var BOT_SPAWNS_BLUE = [[10, 18.5], [-10, 18.5], [4, 19], [-4, 19], [0, 19.5]];
+  var BOT_SPAWNS_RED = [[10, -18.5], [-10, -18.5], [4, -19], [-4, -19], [0, -19.5]];
+  var opts = null;
+
+  /** определение карты по id (реестр BrixMapData, фолбэк — СЕКТОР-9) */
+  function mapDef(id) {
+    var MD = window.BrixMapData;
+    if (MD && MD.MAPS[id]) return MD.MAPS[id];
+    return MD ? MD.get(null) : null;
+  }
+  /** применить размер/спавны карты */
+  function applyMap(id) {
+    var m = mapDef(id) || mapDef('sektor9');
+    curMapId = m.id;
+    FLOOR_W = m.w; FLOOR_D = m.d;
+    HALF_W = m.w / 2; HALF_D = m.d / 2;
+    SPAWNS = m.spawns;
+    BOT_SPAWNS_BLUE = m.botSpawns.blue;
+    BOT_SPAWNS_RED = m.botSpawns.red;
+  }
 
   function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
   function rand(a, b) { return a + Math.random() * (b - a); }
@@ -42,11 +78,33 @@ window.BrixArena = (function () {
   /* ---------- солиды и мешы ---------- */
   var MAT = null, TEX = null;
 
-  function addSolid(x, y, z, w, h, d, ry) {
+  /**
+   * ✅ v0.5.5: addSolid с МЕТКОЙ ПОВЕРХНОСТИ (m: 'wood'|'metal'…) —
+   * по ней BrixFx красит пыль попаданий. Метка берётся из opt.tag,
+   * а если не задана — из material→tag таблицы TAG_OF.
+   */
+  var TAG_OF = null;                       // Map: material → 'wood'|'metal'…
+  function matTag(mat, explicit) {
+    if (explicit) return explicit;
+    if (TAG_OF && mat && TAG_OF.get(mat)) return TAG_OF.get(mat);
+    return null;
+  }
+  function addSolid(x, y, z, w, h, d, ry, tag) {
     ry = ry || 0;
     var c = Math.abs(Math.cos(ry)), s = Math.abs(Math.sin(ry));
     var hx = (w * c + d * s) / 2, hz = (w * s + d * c) / 2;
-    solids.push({ x0: x - hx, x1: x + hx, y0: y, y1: y + h, z0: z - hz, z1: z + hz });
+    var so = { x0: x - hx, x1: x + hx, y0: y, y1: y + h, z0: z - hz, z1: z + hz };
+    if (tag) so.m = tag;
+    solids.push(so);
+  }
+  /** ✅ v0.5.5: тип поверхности в точке (для цвета пыли) */
+  function solidAt(x, y, z) {
+    for (var i = 0; i < solids.length; i++) {
+      var s = solids[i];
+      if (x >= s.x0 && x <= s.x1 && y >= s.y0 - 0.1 && y <= s.y1 + 0.1 &&
+          z >= s.z0 && z <= s.z1 && s.m) return s.m;
+    }
+    return null;
   }
 
   function mesh(geo, mat, x, y, z, opt) {
@@ -56,14 +114,15 @@ window.BrixArena = (function () {
     m.rotation.set(opt.rx || 0, opt.ry || 0, opt.rz || 0);
     if (opt.cast) m.castShadow = true;
     if (opt.recv !== false) m.receiveShadow = true;
-    (opt.parent || opts.scene).add(m);
+    /* ✅ v0.5.5: вся карта в worldGroup — смена карты сносит группу целиком */
+    (opt.parent || worldGroup || opts.scene).add(m);
     return m;
   }
 
   function solidBox(w, h, d, mat, x, y, z, opt) {
     opt = opt || {};
     var m = mesh(MAT.gBox(w, h, d), mat, x, y + h / 2, z, opt);
-    addSolid(x, y, z, w, h, d, opt.ry || 0);
+    addSolid(x, y, z, w, h, d, opt.ry || 0, matTag(mat, opt.tag));
     return m;
   }
 
@@ -80,7 +139,10 @@ window.BrixArena = (function () {
   }
 
   /* ============================================================
-     ЛОКАЦИЯ — ПОЛНЫЙ ПОРТ buildWorld (всё, без урезаний)
+     ЛОКАЦИЯ — «ПОЛИГОН» (СЕКТОР-9): ПОЛНЫЙ ПОРТ buildWorld
+     ✅ v0.5.6: вторая карта «ПОРТ» УДАЛЕНА (по решению) — одна
+     карта, ротации нет; реестр карт (arena-mapdata) оставлен
+     как источник спавнов/нав-зон для этой карты.
      ============================================================ */
   var world = { banners: [], cones: [], dust: null };
 
@@ -252,7 +314,7 @@ window.BrixArena = (function () {
       m.position.set(0, AY + 4.1, bd[0]);
       if (bd[0] > 0) m.rotation.y = Math.PI;
       m.castShadow = true;
-      opts.scene.add(m);
+      worldGroup.add(m);
       world.banners.push({ mesh: m, base: g.attributes.position.array.slice(), geo: g });
       mesh(MAT.gBox(3.4, 0.12, 0.12), MAT.darkSteel, 0, 6.35, bd[0]);
       mesh(MAT.gBox(3.2, 0.06, 0.06), bd[1] === 'red' ? E_RED : E_BLUE, 0, 6.24, bd[0] + (bd[0] < 0 ? 0.08 : -0.08));
@@ -270,7 +332,7 @@ window.BrixArena = (function () {
       mesh(MAT.gCyl(0.09, 5), MAT.darkSteel, tx, 5.9, tz, { cast: true });
       var head = new THREE.Group();
       head.position.set(tx, AY + 8.35, tz);
-      opts.scene.add(head);
+      worldGroup.add(head);
       var dir = new THREE.Vector3(-tx * 0.7, 0, -tz * 0.7).normalize();
       head.lookAt(tx + dir.x * 10, AY, tz + dir.z * 10);
       var hb = new THREE.Mesh(MAT.gBox(1.3, 0.55, 0.85), MAT.metal);
@@ -285,13 +347,13 @@ window.BrixArena = (function () {
           blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
       cone.position.copy(from).add(to).multiplyScalar(0.5);
       cone.lookAt(to); cone.rotateX(-Math.PI / 2);
-      opts.scene.add(cone);
+      worldGroup.add(cone);
       world.cones.push(cone);
       if (real && THREE.SpotLight) {
         var sp = new THREE.SpotLight(0xffd9a0, 260, 70, 0.62, 0.55, 1.6);
         sp.position.set(tx, AY + 8.3, tz);
         sp.target.position.set(tx * 0.28, AY, tz * 0.28);
-        opts.scene.add(sp); opts.scene.add(sp.target);
+        worldGroup.add(sp); worldGroup.add(sp.target);
       }
     };
     tower(24, -16, true); tower(-24, 16, true); tower(-24, -16, false); tower(24, 16, false);
@@ -309,7 +371,7 @@ window.BrixArena = (function () {
       blending: THREE.AdditiveBlending, depthWrite: false
     }));
     dust.position.y = AY;
-    opts.scene.add(dust);
+    worldGroup.add(dust);
     world.dust = { pts: dust, base: dp.slice(), seeds: ds, n: dn };
   }
 
@@ -374,17 +436,22 @@ window.BrixArena = (function () {
   function link(a, b) { if (edges[a].indexOf(b) === -1) { edges[a].push(b); edges[b].push(a); } }
 
   function buildGraph() {
+    /* ✅ v0.5.5: сетка по размеру КАРТЫ + нав-зоны из arena-mapdata
+       (платформы-plates + лестницы-stairs) — у каждой карты свои */
+    var m = mapDef(curMapId) || {};
+    var nav = m.nav || [];
     var grid = [], gx, gz;
-    for (gx = -27; gx <= 27; gx += 4.5) for (gz = -19; gz <= 19; gz += 4.75) {
-      var g = groundAtLocal(gx, gz, 0);
-      var blocked = false;
-      for (var i = 0; i < solids.length; i++) {
-        var s = solids[i];
-        if (g < s.y1 - STEP && g + 1.7 > s.y0 + 0.02 &&
-            gx + 0.45 > s.x0 && gx - 0.45 < s.x1 && gz + 0.45 > s.z0 && gz - 0.45 < s.z1) { blocked = true; break; }
+    for (gx = -(HALF_W - 4); gx <= HALF_W - 4; gx += 4.5)
+      for (gz = -(HALF_D - 4); gz <= HALF_D - 4; gz += 4.75) {
+        var g = groundAtLocal(gx, gz, 0);
+        var blocked = false;
+        for (var i = 0; i < solids.length; i++) {
+          var s = solids[i];
+          if (g < s.y1 - STEP && g + 1.7 > s.y0 + 0.02 &&
+              gx + 0.45 > s.x0 && gx - 0.45 < s.x1 && gz + 0.45 > s.z0 && gz - 0.45 < s.z1) { blocked = true; break; }
+        }
+        if (!blocked) grid.push(addNode(gx, g, gz));
       }
-      if (!blocked) grid.push(addNode(gx, g, gz));
-    }
     var i2, j2, a, b, d;
     for (i2 = 0; i2 < grid.length; i2++) for (j2 = i2 + 1; j2 < grid.length; j2++) {
       a = nodes[grid[i2]]; b = nodes[grid[j2]];
@@ -392,27 +459,45 @@ window.BrixArena = (function () {
       if (d < 6.5 && Math.abs(a.y - b.y) < 0.6 &&
           segClearLocal(a.x, Math.max(a.y, b.y) + 1.05, a.z, b.x, Math.max(a.y, b.y) + 1.05, b.z)) link(grid[i2], grid[j2]);
     }
-    var plat = [];
-    var pp = [[-5.5, 0], [5.5, 0], [-2, -3.2], [2, -3.2], [-2, 3.2], [2, 3.2]];
-    for (i2 = 0; i2 < pp.length; i2++) plat.push(addNode(pp[i2][0], 1.5, pp[i2][1]));
-    for (i2 = 0; i2 < plat.length; i2++) for (j2 = i2 + 1; j2 < plat.length; j2++) {
-      a = nodes[plat[i2]]; b = nodes[plat[j2]];
-      if (segClearLocal(a.x, 2.6, a.z, b.x, 2.6, b.z)) link(plat[i2], plat[j2]);
+    /* платформы (plates): узлы по pts, все связаны при видимости */
+    var plates = [];
+    for (i2 = 0; i2 < nav.length; i2++) {
+      if (!nav[i2].plate) continue;
+      var pn = nav[i2].plate;
+      var plat = [];
+      for (var pp2 = 0; pp2 < pn.pts.length; pp2++)
+        plat.push(addNode(pn.pts[pp2][0], pn.y, pn.pts[pp2][1]));
+      for (i2 = 0; i2 < plat.length; i2++) for (j2 = i2 + 1; j2 < plat.length; j2++) {
+        a = nodes[plat[i2]]; b = nodes[plat[j2]];
+        if (segClearLocal(a.x, pn.y + 1.1, a.z, b.x, pn.y + 1.1, b.z)) link(plat[i2], plat[j2]);
+      }
+      plates.push(plat);
     }
-    for (var side = -1; side <= 1; side += 2) {
-      var best = 1e9, foot = -1, gi;
-      for (gi = 0; gi < grid.length; gi++) {
-        var n3 = nodes[grid[gi]];
-        var d3 = Math.hypot(n3.x - side * 13.5, n3.z);
-        if (d3 < best) { best = d3; foot = grid[gi]; }
+    /* лестницы (stairs): цепочка ступеней, foot → сетка, конец → plate */
+    for (i2 = 0; i2 < nav.length; i2++) {
+      if (!nav[i2].stairs) continue;
+      var st = nav[i2].stairs;
+      var best2 = 1e9, foot = -1, gi2;
+      for (gi2 = 0; gi2 < grid.length; gi2++) {
+        var n4 = nodes[grid[gi2]];
+        var d4 = Math.hypot(n4.x - st.foot[0], n4.z - st.foot[1]);
+        if (d4 < best2) { best2 = d4; foot = grid[gi2]; }
       }
       var prev = foot;
-      for (var si = 0; si < 6; si++) {
-        var sx = side === -1 ? (-12 + 0.834 * (si + 0.5)) : (12 - 0.834 * (si + 0.5));
-        var ni = addNode(sx, (si + 1) * 0.25, 0);
-        link(prev, ni); prev = ni;
+      for (var si2 = 0; si2 < st.n; si2++) {
+        var sx2 = st.x + st.dx * (si2 + 0.5), sz2 = st.z + st.dz * (si2 + 0.5);
+        var ni2 = addNode(sx2, st.y0 * (si2 + 1), sz2);
+        link(prev, ni2); prev = ni2;
       }
-      link(prev, side === -1 ? plat[0] : plat[1]);
+      /* конец лестницы → ближайший узел своей платформы */
+      var plate = plates[st.plate] || [];
+      var best3 = 1e9, bi3 = plate.length ? plate[0] : -1;
+      for (var pi3 = 0; pi3 < plate.length; pi3++) {
+        var n5 = nodes[plate[pi3]];
+        var d5 = Math.hypot(n5.x - nodes[prev].x, n5.z - nodes[prev].z);
+        if (d5 < best3) { best3 = d5; bi3 = plate[pi3]; }
+      }
+      if (bi3 >= 0) link(prev, bi3);
     }
   }
 
@@ -451,324 +536,408 @@ window.BrixArena = (function () {
   }
 
   /* ============================================================
-     БОТ (порт класса Bot; ✅ v0.4.66: стоит НА полу арены —
-     group.y = AY + pos.y; 1 бот; трассеры наши — opts.addTracer)
+     ✅ v0.5.0 БОТЫ «ПОЛИГОНА» — КОМАНДЫ СТАЛЬ/ПЛАМЯ.
+     Серверный режим: server.js считает ботов (brixpvp-bots.js) и
+     шлёт 'bots' 10 Гц — арена только РИСУЕТ вью (arena-bot.js,
+     учёный ScientistRigged с процедурными анимациями bot-studio)
+     и шлёт 'bhit' при попаданиях. Вне сервера — ЛОКАЛЬНЫЙ сим
+     тех же команд (вкладки/соло): та же ИИ-логика на этом нав-графе.
      ============================================================ */
-  var DIFF = { spread: 0.05, dmg: 11, burst: [3, 5], cool: [0.7, 1.4], react: 0.45, speed: 3.5 };
+  var KILL_LIMIT = 30;                    // победа до 30 килов
+  var MY_TEAM = 'blue';                   // все игроки — СТАЛЬ (синие)
+  var views = {};                         // i -> BotView (arena-bot.js)
+  var viewInfo = {};                      // i -> {team, name}
+  var feedMode = false;                   // пришёл ли фид сервера
+  var feedT = 0;
+  var pendingFeed = null;                 // фид до постройки арены (welcome раньше build)
+  var scores = { blue: 0, red: 0 };
+  var killCount = 0;                      // мои килы (для статистики)
+  var localSim = [];                      // локальный сим (вне сервера)
+  var LDIFF = { spread: 0.075, dmg: 7, burst: [2, 4], cool: [1.5, 2.8], react: 0.75, speed: 3.2 };
+  var LOCAL_TEAMS = [['СТАЛЬ', 'blue'], ['ПЛАМЯ', 'red']];
+  var lbotSeq = 0;
 
-  function nameSprite(name) {
-    var c = document.createElement('canvas'); c.width = 256; c.height = 64;
-    var ctx = c.getContext('2d');
-    ctx.fillStyle = 'rgba(7,9,14,.55)'; ctx.fillRect(28, 10, 200, 44);
-    ctx.fillStyle = '#ff5a3c'; ctx.fillRect(28, 10, 6, 44);
-    ctx.font = '700 26px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#e9e5da'; ctx.fillText(name, 134, 33);
-    var t = new THREE.CanvasTexture(c);
-    if (THREE.SRGBColorSpace) t.colorSpace = THREE.SRGBColorSpace;
-    var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false }));
-    sp.scale.set(1.5, 0.375, 1);
-    return sp;
+  function ensureView(i, team, name) {
+    if (!window.BrixBotRig) return null;
+    if (views[i]) return views[i];
+    var v = BrixBotRig.create(opts.scene, team, name || 'БОТ-' + (i + 1), i);
+    v.pos.set(0, AY, 0);
+    views[i] = v;
+    viewInfo[i] = { team: team, name: name || 'БОТ-' + (i + 1) };
+    return v;
   }
 
-  function Bot(idx) {
-    this.name = botNames[idx % botNames.length] + '-' + (idx + 1);
-    this.spread = DIFF.spread * rand(0.85, 1.2);
-    this.dmg = DIFF.dmg;
-    this.burstR = DIFF.burst;
-    this.coolR = DIFF.cool;
-    this.react = DIFF.react;
-    this.speed = DIFF.speed * rand(0.92, 1.08);
-    this.pos = new THREE.Vector3();
-    this.vy = 0; this.yaw = 0; this.hp = 100; this.state = 'patrol';
-    this.target = null; this.lastSeen = new THREE.Vector3(); this.seenT = -99;
-    this.path = []; this.thinkT = rand(0, 0.25); this.repathT = 0; this.reactT = 0;
-    this.strafeSign = 1; this.strafeT = 0; this.burstLeft = 0; this.shotT = 0;
-    this.coolT = rand(0.5, 1.5);
-    this.deadT = 0; this.respawnT = 0;
-    this.fallAxis = Math.random() < 0.5 ? 'x' : 'z'; this.fallDir = 1;
-    this.walkT = rand(0, 9); this.flashK = 0; this.stuckT = 0;
-    this.lastPos = new THREE.Vector3();
-    this.build();
-    this.respawn(true);
+  /* ---------- ФИД СЕРВЕРА: 'bots' 10 Гц ---------- */
+  function feedBots(list) {
+    feedMode = true;
+    feedT = performance.now() / 1000;
+    /* ✅ локальный сим работал (обрыв был временный) — фид вернулся:
+       сим глушим, его вью убираем */
+    if (opts && opts.localSim && localSim.length) {
+      opts.localSim = false;
+      localSim.length = 0;
+      for (var lk in views) if (String(lk).charAt(0) === 'L') removeView(lk);
+      console.log('[BrixArena] фид ботов вернулся — локальный сим остановлен');
+    }
+    if (!built || !opts) { pendingFeed = list; return; }
+    var seen = {};
+    for (var i = 0; i < list.length; i++) {
+      var b = list[i];                     // [i, x, y, z, yaw, st, hp, team, name]
+      if (!Array.isArray(b) || b.length < 8) continue;
+      var id = b[0], team = b[7] === 'r' ? 'red' : 'blue';
+      var nm = b.length > 8 && b[8] ? String(b[8]) : (team === 'red' ? 'ПЛАМЯ' : 'СТАЛЬ') + '-' + id;
+      seen[id] = true;
+      if (!viewInfo[id]) viewInfo[id] = { team: team, name: nm };
+      else viewInfo[id].name = nm;
+      var v = ensureView(id, team, nm);
+      if (v) {
+        v.tPos.set(b[1], b[2], b[3]);
+        v.tYaw = b[4];
+        v.st = b[5];
+        v.setHp(b[6]);
+        if (v.pos.lengthSq() < 0.01 && !v.built0) { v.pos.copy(v.tPos); v.built0 = true; }
+      }
+    }
+    // ушедшие из фида боты (игрок занял слот) — вид убираем
+    for (var key in views) if (!seen[key]) removeView(key);
   }
 
-  Bot.prototype.build = function () {
-    var scene = opts.scene;
-    var g = new THREE.Group(); this.group = g; scene.add(g);
-    var acc = 0xff5a3c;
-    var visor = new THREE.MeshStandardMaterial({ color: 0x0a0a0a, emissive: acc, emissiveIntensity: 2.2, roughness: 0.35 });
-    var pad = new THREE.MeshStandardMaterial({ color: 0x14161a, emissive: acc, emissiveIntensity: 0.9, roughness: 0.5 });
-    this.vestMat = MAT.vest.clone();
-    var add = function (geo, mat, x, y, z, parent) {
-      var m = new THREE.Mesh(geo, mat);
-      m.position.set(x, y, z);
-      (parent || g).add(m);
-      return m;
-    };
-    // ноги с бедренными шарнирами
-    this.legL = new THREE.Group(); this.legL.position.set(-0.11, 0.82, 0); g.add(this.legL);
-    this.legR = new THREE.Group(); this.legR.position.set(0.11, 0.82, 0); g.add(this.legR);
-    add(MAT.gBox(0.15, 0.74, 0.19), MAT.fabric, 0, -0.4, 0, this.legL);
-    add(MAT.gBox(0.15, 0.74, 0.19), MAT.fabric, 0, -0.4, 0, this.legR);
-    add(MAT.gBox(0.16, 0.1, 0.26), MAT.darkSteel, 0, -0.76, -0.03, this.legL);
-    add(MAT.gBox(0.16, 0.1, 0.26), MAT.darkSteel, 0, -0.76, -0.03, this.legR);
-    // корпус + разгрузка
-    add(MAT.gBox(0.46, 0.62, 0.28), this.vestMat, 0, 1.15, 0);
-    add(MAT.gBox(0.48, 0.1, 0.3), MAT.fabric, 0, 0.86, 0);
-    add(MAT.gBox(0.11, 0.14, 0.07), MAT.fabric, -0.13, 1.04, -0.17);
-    add(MAT.gBox(0.11, 0.14, 0.07), MAT.fabric, 0, 1.04, -0.17);
-    add(MAT.gBox(0.11, 0.14, 0.07), MAT.fabric, 0.13, 1.04, -0.17);
-    add(MAT.gBox(0.34, 0.4, 0.14), MAT.fabric, 0, 1.2, 0.2);
-    add(MAT.gBox(0.14, 0.09, 0.2), pad, -0.28, 1.43, 0);
-    add(MAT.gBox(0.14, 0.09, 0.2), pad, 0.28, 1.43, 0);
-    // голова + визор
-    var head = new THREE.Group(); head.position.set(0, 1.64, 0); g.add(head);
-    add(MAT.gBox(0.24, 0.24, 0.26), MAT.fabric, 0, 0, 0, head);
-    add(MAT.gBox(0.28, 0.14, 0.3), MAT.metal, 0, 0.1, 0, head);
-    add(MAT.gBox(0.2, 0.07, 0.02), visor, 0, 0.01, -0.14, head);
-    // руки
-    add(MAT.gBox(0.11, 0.4, 0.13), MAT.fabric, -0.3, 1.22, -0.08).rotation.x = -0.5;
-    add(MAT.gBox(0.11, 0.42, 0.13), MAT.fabric, 0.3, 1.24, -0.05).rotation.x = -0.9;
-    add(MAT.gBox(0.1, 0.3, 0.1), MAT.fabric, -0.22, 1.12, -0.3).rotation.set(-1.2, 0, 0.5);
-    // винтовка
-    var rifle = new THREE.Group(); rifle.position.set(0.1, 1.3, -0.28); g.add(rifle);
-    add(MAT.gBox(0.05, 0.06, 0.3), MAT.gunmetal, 0, 0, 0, rifle);
-    add(MAT.gBox(0.05, 0.05, 0.14), MAT.gunwood, 0, -0.005, -0.2, rifle);
-    add(MAT.gCyl(0.012, 0.24, 8), MAT.gunmetal, 0, 0, -0.38, rifle).rotation.x = Math.PI / 2;
-    add(MAT.gBox(0.04, 0.09, 0.06), MAT.gunmetal, 0, -0.07, 0.02, rifle).rotation.x = 0.35;
-    add(MAT.gBox(0.04, 0.06, 0.16), MAT.gunwood, 0, -0.01, 0.22, rifle);
-    this.muzzle = new THREE.Object3D(); this.muzzle.position.set(0, 0, -0.52); rifle.add(this.muzzle);
-    // ник + полоска хп
-    this.nameSp = nameSprite(this.name); this.nameSp.position.y = 2.06; g.add(this.nameSp);
-    this.barG = new THREE.Group(); this.barG.position.y = 1.9; g.add(this.barG);
-    var bg = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.06),
-      new THREE.MeshBasicMaterial({ color: 0x0d1219, transparent: true, opacity: 0.8, depthWrite: false }));
-    this.barG.add(bg);
-    this.barFg = new THREE.Mesh(new THREE.PlaneGeometry(0.68, 0.035),
-      new THREE.MeshBasicMaterial({ color: acc, depthWrite: false }));
-    this.barFg.position.z = 0.001; this.barG.add(this.barFg);
-    // блоб-тень под ботом
-    this.blob = new THREE.Mesh(MAT.gPlane(1.4, 1.4),
-      new THREE.MeshBasicMaterial({ map: TEX.blob, transparent: true, depthWrite: false, opacity: 0.5 }));
-    this.blob.rotation.x = -Math.PI / 2;
-    this.blob.position.y = 0.03;
-    g.add(this.blob);
-  };
+  function removeView(i) {
+    if (views[i]) { views[i].dispose(); delete views[i]; }
+    delete viewInfo[i];
+  }
 
-  Bot.prototype.chestOfPlayer = function () {
-    var f = opts.getFeet();
-    return { x: f.x, y: f.y + 1.25, z: f.z };
-  };
-
-  Bot.prototype.think = function () {
-    var fx = this.pos.x, fz = this.pos.z, fy = this.pos.y;
-    var eyeY = fy + 1.6;
-    var alive = opts && !opts.isDead();
-    if (alive) {
-      var c = this.chestOfPlayer();
-      var d = Math.hypot(c.x - fx, c.z - fz);
-      if (d < 34) {
-        var los = segClearLocal(fx, eyeY, fz, c.x, c.y - AY, c.z);
-        if (los) {
-          if (this.target !== 'player') this.reactT = this.react * rand(0.8, 1.3);
-          this.target = 'player'; this.los = true; this.state = 'engage';
-          this.lastSeen.set(c.x, c.y - AY, c.z); this.seenT = performance.now() / 1000;
-          return;
-        }
-      }
-    }
-    this.los = false;
-    if (this.target && performance.now() / 1000 - this.seenT < 4) this.state = 'seek';
-    else { this.target = null; this.state = 'patrol'; }
-    if (this.state === 'seek') {
-      this.repathT -= 0.22;
-      if (this.repathT <= 0 || !this.path.length) {
-        this.repathT = 1.2;
-        this.path = bfsPath(nearestNode(fx, fz, fy), nearestNode(this.lastSeen.x, this.lastSeen.z, 0)) || [];
-      }
-    } else if (this.state === 'patrol') {
-      if (!this.path.length && Math.random() < 0.5)
-        this.path = bfsPath(nearestNode(fx, fz, fy), randi(0, nodes.length - 1)) || [];
-    } else if (this.state === 'engage' && this.target) {
-      var c2 = this.chestOfPlayer();
-      var d2 = Math.hypot(c2.x - fx, c2.z - fz);
-      if (d2 > 19) {
-        this.repathT -= 0.22;
-        if (this.repathT <= 0 || !this.path.length) {
-          this.repathT = 1.2;
-          this.path = bfsPath(nearestNode(fx, fz, fy), nearestNode(c2.x, c2.z, 0)) || [];
-        }
-      } else this.path = [];
-    }
-  };
-
-  Bot.prototype.respawn = function (first) {
-    var best = BOT_SPAWNS[0], bd = -1;
-    var f = opts && opts.getFeet ? opts.getFeet() : { x: 0, z: 0 };
-    for (var i = 0; i < BOT_SPAWNS.length; i++) {
-      var md = Math.hypot(BOT_SPAWNS[i][0] - f.x, BOT_SPAWNS[i][1] - f.z) + rand(0, 3);
-      if (md > bd) { bd = md; best = BOT_SPAWNS[i]; }
-    }
-    this.pos.set(best[0], 0, best[1]);
-    this.vy = 0; this.hp = 100; this.state = 'patrol'; this.target = null;
-    this.path = []; this.deadT = 0; this.flashK = 0;
-    this.group.position.set(this.pos.x, AY + this.pos.y, this.pos.z);
-    this.group.rotation.set(0, 0, 0);
-    this.group.visible = true;
-    this.nameSp.material.opacity = 1;
-    if (!first) this.thinkT = 0;
-  };
-
-  Bot.prototype.update = function (dt) {
-    if (this.state === 'dead') {
-      this.deadT += dt;
-      var k = Math.min(1, this.deadT / 0.38);
-      var ang = k * k * Math.PI / 2 * this.fallDir;
-      this.group.rotation.set(this.fallAxis === 'x' ? ang : 0, this.yaw, this.fallAxis === 'z' ? ang : 0);
-      this.group.position.set(this.pos.x, AY + this.pos.y, this.pos.z);
-      if (this.deadT > 2.2) {
-        var s = Math.max(0, 1 - (this.deadT - 2.2) / 0.8);
-        this.group.position.y = AY + this.pos.y - (1 - s) * 1.4;
-        this.nameSp.material.opacity = s;
-        this.barG.visible = false;
-      }
-      this.respawnT -= dt;
-      if (this.respawnT <= 0) this.respawn();
-      return;
-    }
-    this.thinkT -= dt;
-    if (this.thinkT <= 0) { this.thinkT = 0.22; this.think(); }
-
-    var wx = 0, wz = 0, spd = this.speed;
-    if (this.state === 'engage' && this.target && this.los && this.path.length === 0) {
-      var c = this.chestOfPlayer();
-      var dx = c.x - this.pos.x, dz = c.z - this.pos.z, d = Math.hypot(dx, dz) || 1;
-      this.strafeT -= dt;
-      if (this.strafeT <= 0) { this.strafeT = rand(0.7, 1.6); this.strafeSign *= -1; }
-      var pxv = -dz / d * this.strafeSign, pzv = dx / d * this.strafeSign;
-      var rangeErr = clamp((d - 11) * 0.14, -1, 1);
-      wx = pxv * 0.8 + dx / d * rangeErr; wz = pzv * 0.8 + dz / d * rangeErr;
-      spd = this.speed * 0.8;
-    } else if (this.path.length) {
-      var n = nodes[this.path[0]];
-      var ddx = n.x - this.pos.x, ddz = n.z - this.pos.z, dd = Math.hypot(ddx, ddz);
-      if (dd < 0.85) this.path.shift();
-      else { wx = ddx / dd; wz = ddz / dd; }
-      if (this.state === 'patrol') spd = this.speed * 0.62;
-    }
-
-    var wl = Math.hypot(wx, wz);
-    if (wl > 0.01) { wx /= wl; wz /= wl; }
-    this.pos.x += wx * spd * dt; this.pos.z += wz * spd * dt;
-    resolveXZLocal(this.pos, 0.35, 1.7);
-    this.vy -= GRAV * dt; this.pos.y += this.vy * dt;
-    var gr = groundAtLocal(this.pos.x, this.pos.z, this.pos.y + Math.max(0, -this.vy * dt));
-    if (this.pos.y <= gr) { this.pos.y = gr; this.vy = 0; }
-    this.stuckT += dt;
-    if (this.stuckT > 0.7) {
-      var moved = this.pos.distanceTo(this.lastPos);
-      if (moved < 0.12 && wl > 0.01) {
-        this.path = bfsPath(nearestNode(this.pos.x, this.pos.z, this.pos.y), randi(0, nodes.length - 1)) || [];
-        this.strafeSign *= -1;
-      }
-      this.lastPos.copy(this.pos); this.stuckT = 0;
-    }
-    var targetYaw = this.yaw;
-    if (this.state === 'engage' && this.target) {
-      var c3 = this.chestOfPlayer();
-      targetYaw = Math.atan2(-(c3.x - this.pos.x), -(c3.z - this.pos.z));
-    } else if (wl > 0.01) targetYaw = Math.atan2(-wx, -wz);
-    var dy = targetYaw - this.yaw;
-    while (dy > Math.PI) dy -= Math.PI * 2;
-    while (dy < -Math.PI) dy += Math.PI * 2;
-    this.yaw += dy * Math.min(1, 10 * dt);
-    this.group.position.set(this.pos.x, AY + this.pos.y, this.pos.z);
-    this.group.rotation.set(0, this.yaw, 0);
-    var moveAmt = wl * spd;
-    this.walkT += dt * moveAmt * 2.4;
-    var sw = Math.sin(this.walkT) * Math.min(0.55, moveAmt * 0.16);
-    this.legL.rotation.x = sw; this.legR.rotation.x = -sw;
-    this.group.position.y = AY + this.pos.y + Math.abs(Math.sin(this.walkT)) * 0.03 * Math.min(1, moveAmt * 0.3);
-    this.barG.lookAt(opts.camera.position);
-    var hpF = clamp(this.hp / 100, 0, 1);
-    this.barFg.scale.x = Math.max(0.001, hpF);
-    this.barFg.position.x = -(1 - hpF) * 0.34;
-    this.barG.visible = true;
-    this.nameSp.material.opacity = 1;
-    if (this.flashK > 0) {
-      this.flashK = Math.max(0, this.flashK - dt * 5);
-      this.vestMat.emissive.setHex(0xff3b30);
-      this.vestMat.emissiveIntensity = this.flashK * 1.4;
-    }
-    this.reactT -= dt; this.shotT -= dt; this.coolT -= dt;
-    if (this.state === 'engage' && this.target && this.los && this.reactT <= 0 && !opts.isDead()) {
-      if (this.burstLeft > 0) {
-        if (this.shotT <= 0) { this.shotT = 0.115; this.burstLeft--; this.shoot(); }
-      } else if (this.coolT <= 0) {
-        this.burstLeft = randi(this.burstR[0], this.burstR[1]);
-        this.coolT = rand(this.coolR[0], this.coolR[1]);
-      }
-    }
-  };
-
-  var _v1 = null, _v2 = null, _v3 = null;
-
-  Bot.prototype.shoot = function () {
-    if (!_v1) { _v1 = new THREE.Vector3(); _v2 = new THREE.Vector3(); _v3 = new THREE.Vector3(); }
-    this.muzzle.getWorldPosition(_v1);
-    var c = this.chestOfPlayer();
-    var f = opts.getFeet();
-    var py = f.y - AY;
-    var tSpeed = opts.getPlayerSpeed ? opts.getPlayerSpeed() : 0;
-    var dx = c.x - _v1.x, dy2 = c.y - _v1.y, dz = c.z - _v1.z;
-    var dist = Math.sqrt(dx * dx + dy2 * dy2 + dz * dz);
-    var spread = this.spread + dist * 0.0007 + tSpeed * 0.003;
-    _v2.set(dx, dy2, dz).normalize();
-    _v3.set(0, 1, 0).cross(_v2).normalize();
-    var up = _v3.clone().cross(_v2);
-    var a = rand(0, Math.PI * 2), rr = spread * Math.sqrt(Math.random());
-    _v2.addScaledVector(_v3, Math.cos(a) * rr).addScaledVector(up, Math.sin(a) * rr).normalize();
-    flashAt(_v1.x, _v1.y, _v1.z);
+  /** 'bshot' — выстрел бота: трассер + звук.
+      ✅ v0.5.6: НИКАКИХ вспышек и дыр от ботов — дыры видны только
+      от СВОИХ выстрелов (BrixFx.impact звать в gameworld.js) */
+  function feedShot(i, f, e) {
+    if (!built) return;
+    var v = views[i];
+    if (v) { v.triggerShot(); v.lastShotFx = 0; }
+    var from = new THREE.Vector3(f[0], f[1], f[2]);
+    var to = new THREE.Vector3(e[0], e[1], e[2]);
+    if (opts.addTracer) { try { opts.addTracer(from, to, 'ak'); } catch (eT) { addSimpleTracer(from, to); } }
+    else addSimpleTracer(from, to);
     try {
-      var cam = opts.camera.position;
-      var dc = _v1.distanceTo(cam);
-      var vol = Math.max(0.04, 1 - dc / 55);
+      var cam = opts.camera ? opts.camera.position : from;
+      var vol = Math.max(0.04, 1 - from.distanceTo(cam) / 55);
       if (window.BrixSfx) BrixSfx.play('akShot', { volume: vol * 0.8, jitter: 0.03 });
     } catch (eS) {}
-    var wallT = bulletBlockLocal(_v1.x, _v1.y, _v1.z, _v2.x, _v2.y, _v2.z, 80);
-    var pt = rayBox(_v1.x, _v1.y, _v1.z, _v2.x, _v2.y, _v2.z,
-      f.x - 0.32, py, f.z - 0.32, f.x + 0.32, py + 1.78, f.z + 0.32);
-    var hitDist = (pt >= 0 && (wallT < 0 || pt < wallT)) ? pt : -1;
-    var wallDist = wallT >= 0 ? wallT : 80;
-    var flyDist = hitDist >= 0 ? hitDist : wallDist;
-    var end = _v1.clone().addScaledVector(_v2, flyDist);
-    /* ✅ v0.4.66: ТРАССЕР КАК У ИГРОКОВ (наша система addTracer,
-       вид 'ak'); свой простой — если хук не передан */
-    if (opts.addTracer) {
-      try { opts.addTracer(_v1.clone(), end, 'ak'); } catch (eT) { addSimpleTracer(_v1.clone(), end); }
-    } else addSimpleTracer(_v1.clone(), end);
-    if (hitDist >= 0) opts.onPlayerHit(this.dmg, this.name);
-  };
+  }
 
-  /* ---------- эффекты ботов (вспышка из TEX.flash + запасной трассер) ---------- */
-  var fxTracers = [], fxFlash = [];
+  /** 'bdead' — бот убит (визуал); счёт приходит отдельно в 'bscore' */
+  function feedDeath(i) {
+    if (!built) return;
+    if (views[i]) views[i].die();
+  }
+
+  /** 'bspawn' — бот вернулся */
+  function feedSpawn(i) {
+    if (!built) return;
+    if (views[i]) views[i].revive();
+  }
+
+  /** 'bscore' — счёт килов команд */
+  function feedScore(blue, red, limit) {
+    scores.blue = blue; scores.red = red;
+    if (limit) KILL_LIMIT = limit;
+    if (opts && opts.onScore) { try { opts.onScore(scores.blue, scores.red, KILL_LIMIT); } catch (eS) {} }
+  }
+
+  /** 'bwin' — команда добила до лимита */
+  function feedWin(team, blue, red) {
+    if (opts && opts.onWin) { try { opts.onWin(team, blue, red); } catch (eW) {} }
+  }
+
+  /* ============================================================
+     ЛОКАЛЬНЫЙ СИМ (вне сервера: соло/вкладки) — те же команды,
+     та же ИИ-логика (порт старого бота v0.4.66 + команды).
+     ============================================================ */
+  function makeLocalBot(team, name, idx) {
+    return {
+      i: 'L' + (lbotSeq++), team: team, name: name,
+      spread: LDIFF.spread * rand(0.85, 1.2),
+      dmg: LDIFF.dmg,
+      burstR: LDIFF.burst, coolR: LDIFF.cool,
+      react: LDIFF.react, speed: LDIFF.speed * rand(0.92, 1.08),
+      pos: new THREE.Vector3(), vy: 0, yaw: 0, hp: 100, state: 'patrol', st: 0,
+      target: null, lastSeen: new THREE.Vector3(), seenT: -99,
+      path: [], thinkT: rand(0, 0.25), repathT: 0, reactT: 0,
+      strafeSign: 1, strafeT: 0, burstLeft: 0, shotT: 0,
+      ammo: 30, reloadT: 0,   /* ✅ v0.5.3: магазин/перезарядка */
+      coolT: rand(0.5, 1.5), deadT: 0, respawnT: 0,
+      lastShotT: 9, stuckT: 0, lastPos: new THREE.Vector3()
+    };
+  }
+
+  function spawnLocalBot(b, first) {
+    var sps = b.team === 'red' ? BOT_SPAWNS_RED : BOT_SPAWNS_BLUE;
+    var best = sps[0], bd = -1;
+    var f = opts && opts.getFeet ? opts.getFeet() : { x: 0, z: 0 };
+    for (var i = 0; i < sps.length; i++) {
+      var md = Math.hypot(sps[i][0] - f.x, sps[i][1] - f.z) + rand(0, 3);
+      if (md > bd) { bd = md; best = sps[i]; }
+    }
+    b.pos.set(best[0], 0, best[1]);
+    b.vy = 0; b.hp = 100; b.state = 'patrol'; b.target = null;
+    b.path = []; b.deadT = 0; b.reactT = 0; b.st = 0;
+    b.ammo = 30; b.reloadT = 0; b.burstLeft = 0;  /* ✅ v0.5.3 */
+    b.yaw = b.team === 'red' ? 0 : Math.PI;
+    var v = ensureView(b.i, b.team, b.name);
+    if (v) { v.tPos.set(best[0], AY, best[1]); v.pos.copy(v.tPos); v.tYaw = b.yaw; v.revive(); }
+    if (!first) b.thinkT = 0;
+  }
+
+  /** живые враги локального бота: игрок (только для ПЛАМЯ) + чужие боты */
+  function localTargetsOf(b) {
+    var out = [];
+    var alive = opts && !opts.isDead();
+    if (alive && b.team !== MY_TEAM) {
+      var f = opts.getFeet();
+      out.push({ kind: 'player', x: f.x, y: f.y - AY, z: f.z, name: 'ИГРОК' });
+    }
+    for (var i = 0; i < localSim.length; i++) {
+      var ob = localSim[i];
+      if (ob === b || ob.team === b.team || ob.state === 'dead') continue;
+      out.push({ kind: 'bot', x: ob.pos.x, y: ob.pos.y, z: ob.pos.z, name: ob.name, bot: ob });
+    }
+    return out;
+  }
+
+  function localThink(b, dt) {
+    var fy = b.pos.y + 1.6;
+    var bestT = null, bestD = 1e9;
+    var list = localTargetsOf(b);
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      var d = Math.hypot(t.x - b.pos.x, t.z - b.pos.z);
+      if (d > 40 || d >= bestD) continue;
+      if (segClearLocal(b.pos.x, fy, b.pos.z, t.x, t.y + 1.25, t.z)) { bestT = t; bestD = d; }
+    }
+    if (bestT) {
+      if (!b.target || b.target.name !== bestT.name) b.reactT = b.react * rand(0.8, 1.3);
+      b.target = bestT; b.los = true; b.state = 'engage';
+      b.lastSeen.set(bestT.x, bestT.y, bestT.z); b.seenT = performance.now() / 1000;
+      return;
+    }
+    b.los = false;
+    if (b.target && performance.now() / 1000 - b.seenT < 4) b.state = 'seek';
+    else { b.target = null; b.state = 'patrol'; }
+    if (b.state === 'seek') {
+      b.repathT -= dt;
+      if (b.repathT <= 0 || !b.path.length) {
+        b.repathT = 1.2;
+        b.path = bfsPath(nearestNode(b.pos.x, b.pos.z, b.pos.y), nearestNode(b.lastSeen.x, b.lastSeen.z, 0)) || [];
+      }
+    } else if (b.state === 'patrol') {
+      if (!b.path.length && Math.random() < 0.5)
+        b.path = bfsPath(nearestNode(b.pos.x, b.pos.z, b.pos.y), randi(0, nodes.length - 1)) || [];
+    } else if (b.state === 'engage' && b.target) {
+      var d2 = Math.hypot(b.target.x - b.pos.x, b.target.z - b.pos.z);
+      if (d2 > 19) {
+        b.repathT -= dt;
+        if (b.repathT <= 0 || !b.path.length) {
+          b.repathT = 1.2;
+          b.path = bfsPath(nearestNode(b.pos.x, b.pos.z, b.pos.y), nearestNode(b.target.x, b.target.z, 0)) || [];
+        }
+      } else b.path = [];
+    }
+  }
+
+  function localShoot(b) {
+    var t = b.target;
+    if (!t) return;
+    var mx = b.pos.x, my = b.pos.y + 1.45, mz = b.pos.z;
+    var dx = t.x - mx, dy = (t.y + 1.25) - my, dz = t.z - mz;
+    var dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    var spread = b.spread + dist * 0.0007;
+    dx /= dist; dy /= dist; dz /= dist;
+    var rx = -dz, rz = dx;
+    var a = rand(0, Math.PI * 2), rr = spread * Math.sqrt(Math.random());
+    dx += Math.cos(a) * rr * rx; dz += Math.sin(a) * rr * rx; dy += Math.sin(a) * rr * rz * 0.4;
+    var len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+    dx /= len; dy /= len; dz /= len;
+    var wallT = bulletBlockLocal(mx, my, mz, dx, dy, dz, 80);
+    var wallDist = wallT >= 0 ? wallT : 80;
+    var hit = null;
+    for (var i = 0; i < localSim.length; i++) {
+      var ob = localSim[i];
+      if (ob === b || ob.team === b.team || ob.state === 'dead') continue;
+      var tt = rayBox(mx, my, mz, dx, dy, dz,
+        ob.pos.x - 0.3, ob.pos.y, ob.pos.z - 0.24,
+        ob.pos.x + 0.3, ob.pos.y + 1.85, ob.pos.z + 0.24);
+      if (tt >= 0 && tt < wallDist && (!hit || tt < hit.d)) hit = { d: tt, kind: 'bot', bot: ob };
+    }
+    var alive = opts && !opts.isDead();
+    if (alive && b.team !== MY_TEAM) {
+      var f = opts.getFeet();
+      var py = f.y - AY;
+      var pt = rayBox(mx, my, mz, dx, dy, dz,
+        f.x - 0.32, py, f.z - 0.32, f.x + 0.32, py + 1.78, f.z + 0.32);
+      if (pt >= 0 && pt < wallDist && (!hit || pt < hit.d)) hit = { d: pt, kind: 'player' };
+    }
+    var fly = hit ? hit.d : wallDist;
+    var from = new THREE.Vector3(mx, my + AY, mz);
+    var to = new THREE.Vector3(mx + dx * fly, my + dy * fly + AY, mz + dz * fly);
+    if (TEX && TEX.flash) BrixBotRig.flashAt(opts.scene, TEX.flash, from.x, from.y, from.z);
+    if (opts.addTracer) { try { opts.addTracer(from, to, 'ak'); } catch (eT) { addSimpleTracer(from, to); } }
+    else addSimpleTracer(from, to);
+    try {
+      var cam = opts.camera.position;
+      var vol = Math.max(0.04, 1 - from.distanceTo(cam) / 55);
+      if (window.BrixSfx) BrixSfx.play('akShot', { volume: vol * 0.8, jitter: 0.03 });
+    } catch (eS) {}
+    b.lastShotT = 0;
+    if (!hit) return;
+    if (hit.kind === 'player') {
+      if (opts.onPlayerHit) opts.onPlayerHit(b.dmg, b.name);
+    } else {
+      hit.bot.hp -= b.dmg;
+      hit.bot.lastSeen.set(b.pos.x, b.pos.y, b.pos.z);
+      if (hit.bot.hp <= 0) localKillBot(hit.bot, { k: 'bot', n: b.name, team: b.team });
+    }
+  }
+
+  function localKillBot(b, by) {
+    b.state = 'dead';
+    b.deadT = 0; b.respawnT = 5; b.st = 5;
+    if (views[b.i]) views[b.i].die();
+    var team = by.team || (by.k === 'player' ? MY_TEAM : null);
+    if (team) {
+      scores[team]++;
+      if (opts.onScore) { try { opts.onScore(scores.blue, scores.red, KILL_LIMIT); } catch (eS) {} }
+      if (opts.onWin && (scores.blue >= KILL_LIMIT || scores.red >= KILL_LIMIT)) {
+        opts.onWin(scores.blue >= KILL_LIMIT ? 'blue' : 'red', scores.blue, scores.red);
+        scores = { blue: 0, red: 0 };
+      }
+    }
+    if (by.k === 'player') {
+      killCount++;
+      if (window.BrixHud && BrixHud.toast) {
+        BrixHud.toast(b.name + ' убит · счёт СТАЛЬ ' + scores.blue + ' : ' + scores.red + ' ПЛАМЯ');
+      }
+      /* ✅ v0.5.3: награда за килл — полные патроны + полное хп */
+      if (opts && opts.onPlayerKill) { try { opts.onPlayerKill('bot'); } catch (eK) {} }
+    }
+  }
+
+  function startLocalSim() {
+    feedMode = false;
+    // соло: игрок — СТАЛЬ, поэтому синих ботов 4, красных 5 (5 на 5)
+    var plan = [[0, 'СТАЛЬ-1', 'blue'], [1, 'СТАЛЬ-2', 'blue'], [2, 'СТАЛЬ-3', 'blue'], [3, 'СТАЛЬ-4', 'blue'],
+      [4, 'ПЛАМЯ-1', 'red'], [5, 'ПЛАМЯ-2', 'red'], [6, 'ПЛАМЯ-3', 'red'], [7, 'ПЛАМЯ-4', 'red'], [8, 'ПЛАМЯ-5', 'red']];
+    for (var i = 0; i < plan.length; i++) {
+      var b = makeLocalBot(plan[i][2], plan[i][1], i);
+      localSim.push(b);
+      spawnLocalBot(b, true);
+    }
+    console.log('[BrixArena] ЛОКАЛЬНЫЙ сим: ботов ' + localSim.length + ' (СТАЛЬ 4 + ПЛАМЯ 5)');
+  }
+
+  function localTick(dt) {
+    for (var i = 0; i < localSim.length; i++) {
+      var b = localSim[i];
+      if (b.state === 'dead') {
+        b.deadT += dt; b.respawnT -= dt;
+        if (b.respawnT <= 0) spawnLocalBot(b, false);
+        continue;
+      }
+      b.thinkT -= dt;
+      if (b.thinkT <= 0) { b.thinkT = 0.22; localThink(b, dt); }
+      var wx = 0, wz = 0, spd = b.speed;
+      if (b.state === 'engage' && b.target && b.los && !b.path.length) {
+        /* ✅ v0.5.7: СТРЕЛЯЕТ СТОЯ — в очереди замирает, стрейф/дистанция
+           только в паузах между очередями (как на сервере) */
+        if (b.burstLeft <= 0) {
+          var t = b.target;
+          var dx = t.x - b.pos.x, dz = t.z - b.pos.z, d = Math.hypot(dx, dz) || 1;
+          b.strafeT -= dt;
+          if (b.strafeT <= 0) { b.strafeT = rand(0.7, 1.6); b.strafeSign *= -1; }
+          var pxv = -dz / d * b.strafeSign, pzv = dx / d * b.strafeSign;
+          var rangeErr = clamp((d - 11) * 0.14, -1, 1);
+          wx = pxv * 0.8 + dx / d * rangeErr; wz = pzv * 0.8 + dz / d * rangeErr;
+          spd = b.speed * 0.8;
+        }
+      } else if (b.path.length) {
+        var n = nodes[b.path[0]];
+        var ddx = n.x - b.pos.x, ddz = n.z - b.pos.z, dd = Math.hypot(ddx, ddz);
+        if (dd < 0.85) b.path.shift();
+        else { wx = ddx / dd; wz = ddz / dd; }
+        if (b.state === 'patrol') spd = b.speed * 0.62;
+      }
+      var wl = Math.hypot(wx, wz);
+      if (wl > 0.01) { wx /= wl; wz /= wl; }
+      b.pos.x += wx * spd * dt; b.pos.z += wz * spd * dt;
+      resolveXZLocal(b.pos, 0.35, 1.7);
+      b.vy -= GRAV * dt; b.pos.y += b.vy * dt;
+      var gr = groundAtLocal(b.pos.x, b.pos.z, b.pos.y + Math.max(0, -b.vy * dt));
+      if (b.pos.y <= gr) { b.pos.y = gr; b.vy = 0; }
+      b.stuckT += dt;
+      if (b.stuckT > 0.7) {
+        var moved = b.pos.distanceTo(b.lastPos);
+        if (moved < 0.12 && wl > 0.01) {
+          b.path = bfsPath(nearestNode(b.pos.x, b.pos.z, b.pos.y), randi(0, nodes.length - 1)) || [];
+          b.strafeSign *= -1;
+        }
+        b.lastPos.copy(b.pos); b.stuckT = 0;
+      }
+      /* ✅ v0.5.2: БЕЗ отрицаний — лицом (+Z) по движению/цели
+         (как в brixpvp-bots.js; раньше боты шли спиной вперёд) */
+      var targetYaw = b.yaw;
+      if (b.state === 'engage' && b.target)
+        targetYaw = Math.atan2(b.target.x - b.pos.x, b.target.z - b.pos.z);
+      else if (wl > 0.01) targetYaw = Math.atan2(wx, wz);
+      var dy2 = targetYaw - b.yaw;
+      while (dy2 > Math.PI) dy2 -= Math.PI * 2;
+      while (dy2 < -Math.PI) dy2 += Math.PI * 2;
+      b.yaw += dy2 * Math.min(1, 10 * dt);
+      // ст для анимаций
+      b.lastShotT += dt;
+      if (b.reloadT > 0) b.st = 6;   /* ✅ v0.5.3: перезарядка */
+      else if (b.lastShotT < 0.18) b.st = 4;
+      else if (b.state === 'engage') b.st = 3;
+      else if (spd > 3.05 && wl > 0.01) b.st = 2;
+      else if (wl > 0.01) b.st = 1;
+      else b.st = 0;
+      /* ✅ v0.5.3: огонь как на сервере — магазин 30, ПЕРЕЗАРЯДКА 2.6 с
+         (st=6), пауза 1.5–2.8 с + 30% «наблюдение» ×2.2 (не стреляют
+         ВСЕГДА) */
+      b.reactT -= dt; b.shotT -= dt; b.coolT -= dt;
+      if (b.reloadT > 0) {
+        b.reloadT -= dt;
+        if (b.reloadT <= 0) { b.reloadT = 0; b.ammo = 30; }
+      } else if (b.state === 'engage' && b.target && b.los && b.reactT <= 0) {
+        if (b.burstLeft > 0) {
+          if (b.shotT <= 0) {
+            b.shotT = 0.14; b.burstLeft--;
+            if (b.ammo > 0) { b.ammo--; localShoot(b); }
+            if (b.ammo <= 0) { b.reloadT = 2.6; b.burstLeft = 0; }
+          }
+        } else if (b.coolT <= 0) {
+          b.burstLeft = randi(LDIFF.burst[0], LDIFF.burst[1]);
+          b.coolT = rand(LDIFF.cool[0], LDIFF.cool[1]);
+          if (Math.random() < 0.3) b.coolT *= 2.2;  /* наблюдает */
+        }
+      }
+      var v = views[b.i];
+      if (v) {
+        v.tPos.set(b.pos.x, AY + b.pos.y, b.pos.z);
+        v.tYaw = b.yaw;
+        v.st = b.st;
+        v.setHp(b.hp);
+      }
+    }
+  }
+
+  /* ---------- эффекты ботов (вспышка — в BrixBotRig.flashAt) ---------- */
+  var fxTracers = [];
   function addSimpleTracer(from, to) {
     var g = new THREE.BufferGeometry().setFromPoints([from, to]);
     var m = new THREE.Line(g, new THREE.LineBasicMaterial({
       color: 0xffd9a0, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false
     }));
-    opts.scene.add(m);
+    worldGroup.add(m);
     fxTracers.push({ line: m, t: 0.14 });
-  }
-  function flashAt(x, y, z) {
-    var s = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: TEX.flash, transparent: true, opacity: 0.95,
-      blending: THREE.AdditiveBlending, depthWrite: false
-    }));
-    s.scale.set(0.55, 0.55, 1);
-    s.position.set(x, y, z);
-    opts.scene.add(s);
-    fxFlash.push({ s: s, t: 0.07 });
   }
   function tickFx(dt) {
     var i;
@@ -780,16 +949,6 @@ window.BrixArena = (function () {
         opts.scene.remove(tr.line);
         tr.line.geometry.dispose(); tr.line.material.dispose();
         fxTracers.splice(i, 1);
-      }
-    }
-    for (i = fxFlash.length - 1; i >= 0; i--) {
-      var fl = fxFlash[i];
-      fl.t -= dt;
-      fl.s.material.opacity = Math.max(0, fl.t / 0.07) * 0.95;
-      if (fl.t <= 0) {
-        opts.scene.remove(fl.s);
-        fl.s.material.dispose();
-        fxFlash.splice(i, 1);
       }
     }
     /* знамёна колышутся */
@@ -819,24 +978,50 @@ window.BrixArena = (function () {
     }
   }
 
-  /* ---------- попадания ИГРОКА по ботам ---------- */
+  /* ---------- попадания ИГРОКА по ботам ----------
+     ✅ v0.5.0: СВОИХ НЕ УБИВАЕМ — синие боты (команда игрока СТАЛЬ)
+     отфильтрованы из проверки попадания: по ним нет ни хит-маркера,
+     ни урона. Красные боты принимают урон через сервер ('bhit') или
+     локальный сим */
   function botHit(originW, dirW, maxD) {
     var ox = originW.x, oy = originW.y - AY, oz = originW.z;
     var best = null;
-    for (var i = 0; i < bots.length; i++) {
-      var b = bots[i];
-      if (b.state === 'dead') continue;
+    for (var key in views) {
+      var v = views[key];
+      var info = viewInfo[key];
+      if (!info || info.team === MY_TEAM) continue;      // свои — мимо
+      if (v.dead || v.st === 5) continue;
+      var b = { x: v.pos.x, y: v.pos.y - AY, z: v.pos.z };
       var t = rayBox(ox, oy, oz, dirW.x, dirW.y, dirW.z,
-        b.pos.x - 0.3, b.pos.y, b.pos.z - 0.24,
-        b.pos.x + 0.3, b.pos.y + 1.85, b.pos.z + 0.24);
+        b.x - 0.3, b.y, b.z - 0.24,
+        b.x + 0.3, b.y + 1.85, b.z + 0.24);
       if (t >= 0 && (!maxD || t <= maxD)) {
         var headT = rayBox(ox, oy, oz, dirW.x, dirW.y, dirW.z,
-          b.pos.x - 0.2, b.pos.y + 1.5, b.pos.z - 0.2,
-          b.pos.x + 0.2, b.pos.y + 1.85, b.pos.z + 0.2);
+          b.x - 0.2, b.y + 1.5, b.z - 0.2,
+          b.x + 0.2, b.y + 1.85, b.z + 0.2);
         if (!best || t < best.d) {
           best = {
-            d: t, bot: b, hs: headT >= 0,
+            d: t, bot: { id: key }, hs: headT >= 0,
             point: originW.clone().addScaledVector(dirW, t)
+          };
+        }
+      }
+    }
+    /* локальный сим: та же проверка по объектам сима */
+    for (var i = 0; i < localSim.length; i++) {
+      var lb = localSim[i];
+      if (lb.team === MY_TEAM || lb.state === 'dead') continue;
+      var t2 = rayBox(ox, oy, oz, dirW.x, dirW.y, dirW.z,
+        lb.pos.x - 0.3, lb.pos.y, lb.pos.z - 0.24,
+        lb.pos.x + 0.3, lb.pos.y + 1.85, lb.pos.z + 0.24);
+      if (t2 >= 0 && (!maxD || t2 <= maxD)) {
+        var headT2 = rayBox(ox, oy, oz, dirW.x, dirW.y, dirW.z,
+          lb.pos.x - 0.2, lb.pos.y + 1.5, lb.pos.z - 0.2,
+          lb.pos.x + 0.2, lb.pos.y + 1.85, lb.pos.z + 0.2);
+        if (!best || t2 < best.d) {
+          best = {
+            d: t2, bot: { lbot: lb }, hs: headT2 >= 0,
+            point: originW.clone().addScaledVector(dirW, t2)
           };
         }
       }
@@ -844,23 +1029,25 @@ window.BrixArena = (function () {
     return best;
   }
 
+  /**
+   * ✅ v0.5.0: урон боту. Серверный режим — шлём 'bhit' (сервер
+   * авторитетен: пересчитает, пришлёт 'bdead'/'bscore'), локальный
+   * сим — урон сразу. Возвращает true (для хит-маркера).
+   */
   function damageBot(bot, dmg, hs) {
-    if (!bot || bot.state === 'dead') return false;
-    bot.hp -= hs ? dmg * 1.6 : dmg;
-    bot.flashK = 1;
-    bot.lastSeen.set(opts.getFeet().x, opts.getFeet().y - AY, opts.getFeet().z);
-    bot.seenT = performance.now() / 1000;
-    if (bot.target !== 'player') { bot.target = 'player'; bot.state = 'seek'; bot.repathT = 0; }
-    if (bot.hp <= 0) {
-      bot.state = 'dead';
-      bot.deadT = 0;
-      bot.respawnT = 5;
-      bot.barG.visible = false;
-      killCount++;
-      if (window.BrixHud && BrixHud.toast) {
-        BrixHud.toast(hs ? ('ГОЛОВА! ' + bot.name + ' убит · всего: ' + killCount)
-                         : (bot.name + ' убит · всего: ' + killCount));
-      }
+    if (!bot) return false;
+    /* локальный сим */
+    if (bot.lbot) {
+      if (bot.lbot.state === 'dead') return false;
+      bot.lbot.hp -= hs ? dmg * 1.6 : dmg;
+      if (views[bot.lbot.i]) views[bot.lbot.i].setHp(bot.lbot.hp);
+      if (bot.lbot.hp <= 0) localKillBot(bot.lbot, { k: 'player', team: MY_TEAM });
+      return true;
+    }
+    /* фид сервера: свои вообще не доходят сюда (botHit фильтрует),
+       на сервере дублируется защита; отправляем биту */
+    if (BrixNet && BrixNet.mode === 'server') {
+      BrixNet.send({ t: 'bhit', i: bot.id, dmg: dmg, hs: hs ? 1 : 0 });
       return true;
     }
     return false;
@@ -911,17 +1098,21 @@ window.BrixArena = (function () {
       ctx.fillRect(Math.min(toX(s.x0), toX(s.x1)), Math.min(toZ(s.z0), toZ(s.z1)),
         Math.abs(toX(s.x1) - toX(s.x0)), Math.abs(toZ(s.z1) - toZ(s.z0)));
     }
+    /* ✅ v0.5.5: зоны спавна — из определения карты */
+    var zn = (mapDef(curMapId) || {}).zone || { x0: -5.5, x1: 5.5, zB0: 15, zB1: 21, zR0: -21, zR1: -15 };
     ctx.fillStyle = 'rgba(77,163,255,.25)';
-    ctx.fillRect(Math.min(toX(-5.5), toX(5.5)), Math.min(toZ(15), toZ(21)),
-      Math.abs(toX(5.5) - toX(-5.5)), Math.abs(toZ(21) - toZ(15)));
+    ctx.fillRect(Math.min(toX(zn.x0), toX(zn.x1)), Math.min(toZ(zn.zB0), toZ(zn.zB1)),
+      Math.abs(toX(zn.x1) - toX(zn.x0)), Math.abs(toZ(zn.zB1) - toZ(zn.zB0)));
     ctx.fillStyle = 'rgba(255,90,60,.25)';
-    ctx.fillRect(Math.min(toX(-5.5), toX(5.5)), Math.min(toZ(-21), toZ(-15)),
-      Math.abs(toX(5.5) - toX(-5.5)), Math.abs(toZ(-15) - toZ(-21)));
-    for (var b = 0; b < bots.length; b++) {
-      if (bots[b].state === 'dead') continue;
-      ctx.fillStyle = '#ff5a3c';
+    ctx.fillRect(Math.min(toX(zn.x0), toX(zn.x1)), Math.min(toZ(zn.zR0), toZ(zn.zR1)),
+      Math.abs(toX(zn.x1) - toX(zn.x0)), Math.abs(toZ(zn.zR1) - toZ(zn.zR0)));
+    /* ✅ v0.5.0: боты на карте цветом команды */
+    for (var key in views) {
+      var v = views[key];
+      if (v.dead || v.st === 5) continue;
+      ctx.fillStyle = viewInfo[key] && viewInfo[key].team === 'red' ? '#ff5a3c' : '#4da3ff';
       ctx.beginPath();
-      ctx.arc(toX(bots[b].pos.x), toZ(bots[b].pos.z), 3.2, 0, Math.PI * 2);
+      ctx.arc(toX(v.pos.x), toZ(v.pos.z), 3.2, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -931,46 +1122,112 @@ window.BrixArena = (function () {
      ============================================================ */
   var lastScene = null;
 
+  /* ✅ v0.5.5: снос ВСЕЙ геометрии карты (группа + геометрии;
+     материалы общие — не диспоузим, текстуры в arena-tex тоже) */
+  function disposeWorldGroup() {
+    if (!worldGroup) return;
+    try {
+      worldGroup.traverse(function (o) {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material && o.material.userData && o.material.userData.own) o.material.dispose();
+      });
+      if (lastScene) lastScene.remove(worldGroup);
+    } catch (eD) {}
+    worldGroup = null;
+  }
+
+  /** ✅ v0.5.5: полный снос (без сброса сетевых опций) — для смены карты */
+  function hardReset() {
+    for (var key in views) views[key].dispose();
+    views = {};
+    viewInfo = {};
+    localSim.length = 0;
+    disposeWorldGroup();
+    solids.length = 0;
+    worldBoxes.length = 0;
+    nodes.length = 0;
+    edges.length = 0;
+    fxTracers.length = 0;
+    world.banners = []; world.cones = []; world.dust = null;
+    built = false;
+  }
+
+  /** ✅ v0.5.5: 'bmap' — сменить карту: снос + пересборка на месте */
+  function feedMap(id) {
+    if (!window.BrixMapData || !window.BrixMapData.MAPS[id]) return;
+    if (!built) { pendingMap = id; return; }
+    if (id === curMapId) return;
+    console.log('[BrixArena] ротация карт: ' + curMapId + ' → ' + id);
+    var sc = lastScene;
+    hardReset();
+    build(sc, id);
+    if (opts) console.log('[BrixArena] новая карта готова: ' + (mapDef(id) || {}).name);
+  }
+
   /** ✅ v0.4.66: СБРОС при выходе из мира — иначе при повторном входе
       арена/боты остаются в ВЫБРОШЕННОЙ старой сцене и становятся
       невидимыми (главная причина «невидимых ботов») */
   function reset() {
     if (!built) return;
     try {
-      for (var i = 0; i < bots.length; i++) {
-        if (lastScene && bots[i].group) lastScene.remove(bots[i].group);
-      }
-      if (lastScene && world.dust && world.dust.pts) lastScene.remove(world.dust.pts);
-      for (i = 0; i < world.banners.length; i++) {
-        if (lastScene && world.banners[i].mesh) lastScene.remove(world.banners[i].mesh);
-      }
+      for (var key in views) views[key].dispose();
     } catch (eR) {}
-    bots.length = 0;
+    views = {};
+    viewInfo = {};
+    localSim.length = 0;
+    disposeWorldGroup();                    // ✅ v0.5.5: вся геометрия карты в группе
     solids.length = 0;
     worldBoxes.length = 0;
     nodes.length = 0;
     edges.length = 0;
     world.banners = []; world.cones = []; world.dust = null;
     built = false;
+    feedMode = false;
     killCount = 0;
+    scores = { blue: 0, red: 0 };
     opts = null;
     lastScene = null;
     console.log('[BrixArena] локация сброшена (мир выгружен)');
   }
 
-  function build(scene) {
+  function build(scene, mapId) {
     if (built) return;
+    /* ✅ v0.5.5: карта из welcome (feedMap до постройки) или явная */
+    if (pendingMap && (!mapId || mapId === pendingMap)) { mapId = pendingMap; pendingMap = null; }
+    applyMap(mapId || curMapId || 'sektor9');
     lastScene = scene;
     opts = { scene: scene, camera: null, getFeet: null, isDead: null,
-      onPlayerHit: null, getPlayerSpeed: null, addTracer: null };
+      onPlayerHit: null, getPlayerSpeed: null, addTracer: null,
+      onScore: null, onWin: null, myTeam: MY_TEAM };
     window.BrixArenaTex.generate();
     TEX = window.BrixArenaTex.TEX;
     MAT = window.BrixArenaTex.MAT;
+    /* ✅ v0.5.5: таблица материал → тип поверхности (цвет пыли BrixFx) */
+    TAG_OF = new Map();
+    if (MAT.crate) TAG_OF.set(MAT.crate, 'wood');
+    if (MAT.metal) TAG_OF.set(MAT.metal, 'metal');
+    if (MAT.darkSteel) TAG_OF.set(MAT.darkSteel, 'metal');
+    if (MAT.treadRoof) TAG_OF.set(MAT.treadRoof, 'metal');
+    if (MAT.wall) TAG_OF.set(MAT.wall, 'concrete');
+    if (MAT.wallSide) TAG_OF.set(MAT.wallSide, 'concrete');
+    if (MAT.concreteSmall) TAG_OF.set(MAT.concreteSmall, 'concrete');
+    if (MAT.brick) TAG_OF.set(MAT.brick, 'concrete');
+    if (MAT.platSide) TAG_OF.set(MAT.platSide, 'concrete');
+    if (MAT.tread) TAG_OF.set(MAT.tread, 'metal');
+    if (MAT.treadStep) TAG_OF.set(MAT.treadStep, 'metal');
+    if (MAT.hazard) TAG_OF.set(MAT.hazard, 'concrete');
+    worldGroup = new THREE.Group();
+    scene.add(worldGroup);
     buildWorld(scene);
     rebuildWorldBoxes();
     buildGraph();
+    /* ✅ v0.5.0: ресурсы ботов (GLB учёного, красная текстура, АК) */
+    if (window.BrixBotRig) BrixBotRig.preload();
     built = true;
-    console.log('[BrixArena] «ПОЛИГОН» (СЕКТОР-9, полный порт): солидов ' +
+    /* ✅ v0.5.0: боты из welcome приехали ДО постройки арены —
+       применяем сейчас */
+    if (pendingFeed) { var pf = pendingFeed; pendingFeed = null; feedBots(pf); }
+    console.log('[BrixArena] «' + (mapDef(curMapId) || {}).name + '»: солидов ' +
       solids.length + ', узлов ' + nodes.length + ', ботов ' + BOTS_TOTAL);
   }
 
@@ -981,15 +1238,39 @@ window.BrixArena = (function () {
     opts.onPlayerHit = o.onPlayerHit;
     opts.getPlayerSpeed = o.getPlayerSpeed;
     opts.addTracer = o.addTracer || null;
-    if (bots.length) return;
-    for (var i = 0; i < BOTS_TOTAL; i++) bots.push(new Bot(i));
-    console.log('[BrixArena] ботов в бою: ' + bots.length);
+    opts.onScore = o.onScore || null;
+    opts.onWin = o.onWin || null;
+    opts.localSim = !!o.localSim;
+    if (window.BrixBotRig) {
+      BrixBotRig.preload().then(function () {
+        if (opts && opts.localSim && !localSim.length && !feedMode) startLocalSim();
+      });
+    } else if (o.localSim) startLocalSim();
+    console.log('[BrixArena] боты: режим ' + (opts.localSim ? 'ЛОКАЛЬНЫЙ сим' : 'фид сервера'));
   }
 
   function tick(dt, camera) {
     if (!built) return;
     opts.camera = camera;
-    for (var i = 0; i < bots.length; i++) bots[i].update(dt);
+    if (opts.localSim && !feedMode && localSim.length) localTick(dt);
+    /* ✅ v0.5.0: фид сервера отвалился (старый сервер/обрыв) — поднимаем
+       локальный сим, чтобы арена не осталась пустой. Фид-вью убираем,
+       чтобы не дублировались с симом. Порог 15 с: слабые машины рендерят
+       кадры по несколько секунд (SwiftShader) — не путаем с обрывом */
+    if (!opts.localSim && feedMode && performance.now() / 1000 - feedT > 15 &&
+        window.BrixBotRig && BrixBotRig.RES.ready) {
+      console.log('[BrixArena] фид ботов пропал — включаю локальный сим');
+      for (var fk in views) removeView(fk);
+      viewInfo = {};
+      opts.localSim = true;
+      startLocalSim();
+    }
+    for (var key in views) {
+      var v = views[key];
+      v.setCamera(camera);
+      v.tick(dt);
+    }
+    if (window.BrixBotRig) BrixBotRig.tickFlash(dt);
     tickFx(dt);
   }
 
@@ -1009,7 +1290,23 @@ window.BrixArena = (function () {
     damageBot: damageBot,
     drawMap: drawMap,
     spawnPoint: spawnPoint,
-    getBots: function () { return bots; },
+    /* ✅ v0.5.0: фид ботов от сервера + счёт команд */
+    feedBots: feedBots,
+    /* ✅ v0.5.7: доступ к вью бота (тесты/камера смерти) */
+    getView: function (i) { return views[i]; },
+    feedShot: feedShot,
+    feedDeath: feedDeath,
+    feedSpawn: feedSpawn,
+    feedScore: feedScore,
+    feedWin: feedWin,
+    /* ✅ v0.5.5: ротация карт + текущая карта + тип поверхности */
+    feedMap: feedMap,
+    getMapId: function () { return curMapId; },
+    getMapName: function () { return (mapDef(curMapId) || {}).name || ''; },
+    solidAt: solidAt,
+    getScores: function () { return { blue: scores.blue, red: scores.red, limit: KILL_LIMIT }; },
+    isFeedMode: function () { return feedMode; },
+    getBots: function () { return views; },
     isBuilt: function () { return built; },
     getKillCount: function () { return killCount; },
     boxes: function () { return worldBoxes; },

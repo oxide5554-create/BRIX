@@ -222,14 +222,36 @@ window.BrixGLB = (function () {
     if (window.location.protocol === 'file:') {
       if (embedded) return Promise.resolve(window.BrixEmbed.b64ab(embedded));
     }
-    return fetch(url).then(function (r) {
-      if (!r.ok) throw new Error('GLB ' + r.status);
-      return r.arrayBuffer();
-    }).catch(function (err) {
-      // сеть/сервер недоступны — пробуем встроенную копию
+    /* ✅ v0.5.9: retry 3 попытки / 2 c пауза / таймаут 10 c — туннель
+       отдаёт 504 и рвёт HTTP2 (ERR_HTTP2_PROTOCOL_ERROR), теперь
+       игра переспрашивает, а не виснет; после 3-й попытки —
+       встроенная копия или заглушка в load() */
+    var get = window.BrixFetch
+      ? BrixFetch.bytes(url)
+      : fetch(url).then(function (r) {
+          if (!r.ok) throw new Error('GLB ' + r.status);
+          return r.arrayBuffer();
+        });
+    return get.catch(function (err) {
+      // сеть/сервер недоступны после всех попыток — встроенная копия
       if (embedded) return window.BrixEmbed.b64ab(embedded);
       throw err;
     });
+  }
+
+  /* ✅ v0.5.9 ЗАГЛУШКА: модель не загрузилась после всех попыток —
+     серый куб 1×1×1 вместо вечного ожидания. Экран загрузки идёт
+     дальше, в мире виден «чужой» куб — сразу ясно, ЧТО не доехало */
+  function placeholderGroup() {
+    if (!window.THREE) return null;
+    var g = new THREE.Group();
+    g.name = 'brixGlbPlaceholder';
+    var m = new THREE.Mesh(
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.9, metalness: 0.1 }));
+    m.name = 'brixPlaceholderBox';
+    g.add(m);
+    return g;
   }
 
   /**
@@ -383,8 +405,20 @@ window.BrixGLB = (function () {
         });
       })
       .catch(function (err) {
-        if (onError) onError(err);
-        else console.error('[BrixGLB]', err);
+        /* ✅ v0.5.9: не подвисаем — onReady с заглушкой (onError НЕ зовём:
+           потребители реджектят промис на onError, и сборка мира
+           останавливалась навсегда) */
+        console.warn('[BrixGLB] «' + url + '» не загрузился (' +
+          ((err && err.message) || err) + ') — ставлю заглушку');
+        var ph = placeholderGroup();
+        if (ph && onReady) {
+          var box = new THREE.Box3().setFromObject(ph);
+          onReady(ph, box.getSize(new THREE.Vector3()), box);
+        } else if (onError) {
+          onError(err);
+        } else {
+          console.error('[BrixGLB]', err);
+        }
       });
   }
 
@@ -535,8 +569,18 @@ window.BrixGLB = (function () {
         });
       })
       .catch(function (err) {
-        if (onError) onError(err);
-        else console.error('[BrixGLB]', err);
+        /* ✅ v0.5.9: заглушка вместо зависания (как в load) */
+        console.warn('[BrixGLB] «' + url + '» не загрузился (' +
+          ((err && err.message) || err) + ') — ставлю заглушку');
+        var ph = placeholderGroup();
+        if (ph && onReady) {
+          var box = new THREE.Box3().setFromObject(ph);
+          onReady({ group: ph, size: box.getSize(new THREE.Vector3()), anim: null });
+        } else if (onError) {
+          onError(err);
+        } else {
+          console.error('[BrixGLB]', err);
+        }
       });
   }
 

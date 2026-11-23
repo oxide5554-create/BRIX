@@ -593,8 +593,9 @@ window.BrixMiniMenu = (function () {
 
   /** грузит marker.webp и снимает белый фон (canvas → прозрачность) */
   function loadMarker() {
-    var im = new Image();
-    im.onload = function () {
+    /* ✅ v0.5.9: загрузка с retry (BrixFetch: 3 попытки / 2 c / 10 c) —
+       через туннель webp мог прийти 504, и маркер игрока не появлялся */
+    var apply = function (im) {
       try {
         var c = document.createElement('canvas');
         c.width = im.naturalWidth; c.height = im.naturalHeight;
@@ -610,7 +611,13 @@ window.BrixMiniMenu = (function () {
       } catch (e) { markerImg = im; }   // не вышло — рисуем как есть
       if (mapOpen) drawMap();
     };
-    im.src = ax('assets/marker.webp');
+    if (window.BrixFetch) {
+      BrixFetch.image(ax('assets/marker.webp')).then(function (im) { if (im) apply(im); });
+    } else {
+      var im = new Image();
+      im.onload = function () { apply(im); };
+      im.src = ax('assets/marker.webp');
+    }
   }
 
   /* ============================================================

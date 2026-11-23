@@ -103,7 +103,11 @@ window.BrixFriends = (function () {
      Сервер либо доставит сразу, либо сохранит на 15 минут:
      игрок получит её, как только зайдёт на сервер */
   function httpInvite(to) {
-    var base = (location.port === '8787') ? location.origin : 'http://localhost:8787';
+    /* ✅ v0.5.8: адрес через BrixWsUrl — на https-туннеле заявка
+       уходит на https://<id>-8787.<регион>.devtunnels.ms/invite,
+       а не на заблокированный Mixed Content http://localhost:8787 */
+    var base = (window.BrixNet && BrixNet.httpUrl) ? BrixNet.httpUrl(8787)
+      : ((location.port === '8787') ? location.origin : 'http://localhost:8787');
     fetch(base + '/invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -304,18 +308,34 @@ window.BrixFriends = (function () {
 
   /* ================= ВСЕ ИГРОКИ (✅ v0.4.62) ================= */
 
-  /** «в сети сейчас» / «был(а) N мин/ч/дн назад» — для вкладки ВСЕ ИГРОКИ */
+  /** «в сети сейчас» / «был(а) N ч/дн назад» — для вкладки ВСЕ ИГРОКИ.
+      ✅ v0.5.12: часы С САМОГО НАЧАЛА — у новых игроков «был(а) 0 ч
+      назад» (минутный уровень убран по просьбе игрока) */
   function lastSeenText(p) {
     if (p.on) return BrixState.t('fr.onlineNow');
     var d = Math.max(0, Date.now() - (Number(p.ls) || 0));
-    var mins = Math.floor(d / 60000);
-    if (mins < 60) return BrixState.t('fr.lastSeenMin', { n: Math.max(1, mins) });
-    var hrs = Math.floor(mins / 60);
+    var hrs = Math.floor(d / 3600000);
     if (hrs < 48) return BrixState.t('fr.lastSeenH', { n: hrs });
     return BrixState.t('fr.lastSeenD', { n: Math.floor(hrs / 24) });
   }
 
   var allPlayers = [];       // реестр сервера: [{id, name, on, ls}] — ls = был в сети
+  /* ✅ v0.5.12: реестр приезжает И В МЕНЮ — /status теперь отдаёт reg
+     (server.js), pollStatus кладёт его сюда каждые 3 c: вкладка «ВСЕ
+     ИГРОКИ» заполнена сразу, а не только после входа в игру */
+  function mergeRegistry(list) {
+    if (!Array.isArray(list) || !list.length) return;
+    var byId = {};
+    allPlayers.forEach(function (p) { if (p && p.id) byId[p.id] = p; });
+    list.forEach(function (p) {
+      if (!p || !p.id) return;
+      var ex = byId[p.id];
+      if (ex) { ex.name = p.name || ex.name; ex.on = ex.on || (p.on ? 1 : 0);
+        ex.ls = Math.max(ex.ls || 0, Number(p.ls) || 0); }
+      else allPlayers.push({ id: p.id, name: p.name || 'Игрок',
+        on: p.on ? 1 : 0, ls: Number(p.ls) || 0 });
+    });
+  }
   function requestAll() {
     if (window.BrixNet && BrixNet.mode === 'server') {
       try { BrixNet.send({ t: 'plist' }); } catch (e) {}
@@ -385,6 +405,10 @@ window.BrixFriends = (function () {
      из BrixData.SERVERS одним таймером; serverInfo(port) отдаёт кэш. */
   function statusUrl(port) {
     var p = Number(port) || 8787;
+    /* ✅ v0.5.8: через BrixWsUrl — https-туннели дают каждому порту
+       свой поддомен (https://<id>-8788.<регион>.devtunnels.ms/status);
+       на http://localhost поведение прежнее */
+    if (window.BrixNet && BrixNet.httpUrl) return BrixNet.httpUrl(p) + '/status';
     try {
       if (location.port === String(p)) return location.origin + '/status';
     } catch (e) {}
@@ -393,42 +417,138 @@ window.BrixFriends = (function () {
 
   var statusCache = {};    // port -> {ok, players, max, inGame, names, ts, adminIds}
 
+  /* ✅ v0.5.9: опрос ДОПОЛНИТЕЛЬНЫХ серверов (PvP 8788) — только по
+     явному действию игрока. Раньше оба порта долбились из главного
+     меню каждые 3 c: через туннель ссылка 8788 без куки Dev Tunnels
+     падала с CORS-ошибкой, и консоль засорялась сотнями сообщений.
+     Правила:
+     · в меню опрашивается ТОЛЬКО главный (8787);
+     · watchPort(port) включают клик «ПОДКЛЮЧИТЬСЯ» по PvP и экран
+       «СЕРВЕРА» (там живые счётчики нужны);
+     · 2 подряд неудачи → порт на паузу 5 минут: пара ошибок в
+       консоли вместо сотен, кэш (ok:false) не перетирается;
+     · повторный watchPort снимает паузу (игрок сам попросил). */
+  var statusWanted = { 8787: true };  // port -> опрашивать
+  var statusFails = {};               // port -> подряд неудач
+  var statusPaused = {};              // port -> ts, до которого пауза
+
+  function watchPort(port) {
+    port = Number(port) || 8787;
+    statusWanted[port] = true;
+    statusPaused[port] = 0;           // явное действие снимает паузу
+    statusFails[port] = 0;
+    pollStatus();                     // немедленный опрос, без ожидания тика
+  }
+
+  function markStatusFail(port) {
+    statusFails[port] = (statusFails[port] || 0) + 1;
+    var prev = statusCache[port];
+    if (prev && prev.ok) {
+      statusCache[port] = { ok: false, players: 0, names: [], ts: Date.now() };
+      if (port === 8787) { serverInfo = statusCache[port]; emitChange(); }
+    }
+    if (statusFails[port] >= 2) {
+      statusPaused[port] = Date.now() + 5 * 60 * 1000;
+      console.warn('[Friends] /status порта ' + port + ' недоступен — пауза опроса 5 минут');
+    }
+  }
+
   function pollStatus() {
     var ports = [8787];
-    if (window.BrixData && BrixData.SERVERS) {
-      BrixData.SERVERS.forEach(function (s) {
-        var p = Number(s.port) || 8787;
-        if (ports.indexOf(p) === -1) ports.push(p);
-      });
-    }
-    ports.forEach(function (port) {
-      fetch(statusUrl(port), { cache: 'no-store' })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (j) {
-          if (j && j.ok) {
-            var prev = statusCache[port] || serverInfo;
-            var changed = prev.players !== j.players || prev.ok !== true;
-            statusCache[port] = {
-              ok: true, players: j.players, max: j.max, inGame: j.inGame,
-              names: j.names || [], ts: Date.now(),
-              /* adminIds — для «магазин скинами только у админов» */
-              adminIds: j.adminIds || null,
-              mode: j.mode || null
-            };
-            if (port === 8787) {
-              serverInfo = statusCache[port];   // старые потребители (дом, друзья)
-              if (changed) emitChange();
-            }
-          } else throw new Error('bad');
-        })
-        .catch(function () {
-          var prev = statusCache[port];
-          if (prev && prev.ok) {
-            statusCache[port] = { ok: false, players: 0, names: [], ts: Date.now() };
-            if (port === 8787) { serverInfo = statusCache[port]; emitChange(); }
-          }
-        });
+    Object.keys(statusWanted).forEach(function (p) {
+      p = Number(p);
+      if (ports.indexOf(p) === -1) ports.push(p);
     });
+    ports.forEach(function (port) {
+      if (statusPaused[port] && Date.now() < statusPaused[port]) return;  // пауза — fetch НЕ зовём
+      var url = statusUrl(port);
+      /* ✅ v0.5.11: РЕАЛЬНЫЙ пинг карточки — RTT последнего /status */
+      var t0 = performance.now();
+      try {
+        fetch(url, { cache: 'no-store' })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) {
+            if (j && j.ok) {
+              statusFails[port] = 0;
+              statusPaused[port] = 0;
+              var prev = statusCache[port] || serverInfo;
+              var changed = prev.players !== j.players || prev.ok !== true;
+              statusCache[port] = {
+                ok: true, players: j.players, max: j.max, inGame: j.inGame,
+                names: j.names || [], ts: Date.now(),
+                /* adminIds — для «магазин скинами только у админов» */
+                adminIds: j.adminIds || null,
+                mode: j.mode || null,
+                ms: Math.max(0, Math.round(performance.now() - t0))
+              };
+              /* ✅ v0.5.12: реестр ВСЕХ игроков из /status.reg — вкладка
+                 «ВСЕ ИГРОКИ» полная уже в меню */
+              if (j.reg) mergeRegistry(j.reg);
+              if (port === 8787) {
+                serverInfo = statusCache[port];   // старые потребители (дом, друзья)
+                if (changed) emitChange();
+              }
+            } else throw new Error('bad');
+          })
+          .catch(function () { markStatusFail(port); });
+      } catch (e) { markStatusFail(port); }
+    });
+  }
+
+  /* ================= ✅ v0.5.11 УМНАЯ ПРОВЕРКА СЕРВЕРОВ =================
+     Однократный проб порта (НЕ цикл) — для серого статуса «НА
+     ОБСЛУЖИВАНИИ» в меню. Троттл 10 c на порт: выключенный сервер
+     не долбится запросами (урок v0.5.9 про CORS-спам туннеля).
+     Работает и на localhost, и через туннель (адрес даёт BrixWsUrl). */
+  var lastProbe = {};    // port -> ts последнего проба
+
+  function probePort(port, force) {
+    port = Number(port) || 8787;
+    var now = Date.now();
+    if (!force && lastProbe[port] && now - lastProbe[port] < 10000) {
+      return Promise.resolve(statusCache[port] || { ok: false, ms: null });
+    }
+    lastProbe[port] = now;
+    var url = statusUrl(port);
+    var t0 = performance.now();
+    return new Promise(function (done) {
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var t = setTimeout(function () {
+        if (ctrl) { try { ctrl.abort(); } catch (e0) {} }
+        done({ ok: false, ms: null });
+      }, 3000);
+      try {
+        fetch(url, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+          .then(function (r) {
+            clearTimeout(t);
+            var ok = !!(r && r.ok);
+            done({ ok: ok, ms: ok ? Math.max(0, Math.round(performance.now() - t0)) : null });
+          })
+          .catch(function () { clearTimeout(t); done({ ok: false, ms: null }); });
+      } catch (e) { clearTimeout(t); done({ ok: false, ms: null }); }
+    }).then(function (res) {
+      /* итог — в общий кэш: drawAll карточек читает statusCache */
+      var prev = statusCache[port] || {};
+      if (res.ok) {
+        statusFails[port] = 0;
+        statusCache[port] = {
+          ok: true, players: prev.players || 0, max: prev.max, inGame: prev.inGame,
+          names: prev.names || [], ts: Date.now(), ms: res.ms
+        };
+      } else {
+        statusCache[port] = { ok: false, players: 0, names: [], ts: Date.now(), ms: null };
+      }
+      if (port === 8787) { serverInfo = statusCache[port]; emitChange(); }
+      return res;
+    });
+  }
+
+  /** ✅ v0.5.11: при ЗАГРУЗКЕ МЕНЮ — один быстрый запрос к ОБОИМ портам
+      (BrixData.SERVERS): живой сервер сразу зелёный с пингом, не
+      запущенный — серый «НА ОБСЛУЖИВАНИИ» без кнопки входа */
+  function probeAll() {
+    var srvs = (window.BrixData && BrixData.SERVERS) ? BrixData.SERVERS : [];
+    srvs.forEach(function (s) { probePort(Number(s.port) || 8787, true); });
   }
 
   /* ================= ИНИЦИАЛИЗАЦИЯ ================= */
@@ -472,6 +592,12 @@ window.BrixFriends = (function () {
 
   return {
     init: init,
+    /* ✅ v0.5.9: включить статус-опрос порта по явному действию
+       игрока (клик «ПОДКЛЮЧИТЬСЯ» по PvP, экран «СЕРВЕРА») */
+    watchPort: watchPort,
+    /* ✅ v0.5.11: умная проверка серверов — однократные пробы */
+    probePort: probePort,
+    probeAll: probeAll,
     invite: invite,
     accept: accept,
     decline: decline,

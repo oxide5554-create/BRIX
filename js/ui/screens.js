@@ -84,7 +84,9 @@ window.BrixScreens = (function () {
                   '<span><span class="ic">' + BrixIcon('globe', 13) + '</span>' + srv.map + '</span>' +
                   '<span><span class="ic">' + BrixIcon('map', 13) + '</span>' + srv.size + '</span>' +
                   '<span><span class="ic">' + BrixIcon('users', 13) + '</span><span data-srv-online="' + srv.id + '">…</span></span>' +
-                  '<span class="good"><span>' + BrixIcon('signal', 13) + '</span>' + srv.ping + ' ms</span>' +
+                  /* ✅ v0.5.11: пинг карточки — РЕАЛЬНЫЙ (RTT /status),
+                     фейковые 12 ms из servers.js больше не показываются */
+                  '<span class="good"><span>' + BrixIcon('signal', 13) + '</span><span data-srv-ping="' + srv.id + '">—</span></span>' +
                 '</div>' +
               '</div>' +
             '</div>' +
@@ -94,12 +96,9 @@ window.BrixScreens = (function () {
               '<button class="btn-rust-primary" data-connect="' + srv.id + '">' + BrixState.t('srv.connect') + '</button>' +
             '</div>' +
           '</div>' +
-          '<div class="srv-features">' +
-            '<div>' + BrixIcon('check', 13) + BrixState.t(isPvp ? 'srv.pvp.f1' : 'srv.land.f1') + '</div>' +
-            '<div>' + BrixIcon('check', 13) + BrixState.t(isPvp ? 'srv.pvp.f2' : 'srv.land.f2') + '</div>' +
-            '<div>' + BrixIcon('check', 13) + BrixState.t(isPvp ? 'srv.pvp.f3' : 'srv.land.f3') + '</div>' +
-          '</div>' +
-          '<p class="srv-desc">' + BrixState.t(isPvp ? 'srv.pvp.desc' : 'srv.land.desc') + '</p>' +
+          /* ✅ v0.5.12: подсказки в вкладке СЕРВЕРА УБРАНЫ вовсе —
+             «фичи»-галочки, описание и строка «выберите сервер…»
+             (подсказки остались только на экране загрузки игры) */
           '<div class="srv-roster" data-roster="' + srv.id + '"></div>' +
         '</div>');
     }).join('');
@@ -117,11 +116,20 @@ window.BrixScreens = (function () {
         '</div>' +
         '<div class="panel-body rust-scroll">' +
           '<div class="srv-wrap">' + cards + '</div>' +
-          '<p class="srv-pick">' + BrixState.t('srv.pick') + '</p>' +
         '</div>' +
       '</div>';
 
     bindClose(layer);
+
+    /* ✅ v0.5.9: опрос НЕ-основных серверов (PvP 8788) стартует ТОЛЬКО
+       когда игрок сам открыл экран «СЕРВЕРА» — из главного меню 8788
+       не долбится каждые 3 с (Dev Tunnels без куки давал сотни
+       CORS-ошибок в консоли) */
+    if (window.BrixFriends && BrixFriends.watchPort) {
+      servers.forEach(function (srv) {
+        if (Number(srv.port) !== 8787) BrixFriends.watchPort(srv.port);
+      });
+    }
 
     /* ПОДКЛЮЧИТЬСЯ: lastServer + connect (сервер сам выберет порт) */
     servers.forEach(function (srv) {
@@ -143,29 +151,46 @@ window.BrixScreens = (function () {
         var info = window.BrixFriends ? BrixFriends.serverInfo(srv.port) : { ok: false };
         var onlineEl = layer.querySelector('[data-srv-online="' + srv.id + '"]');
         var stateEl = layer.querySelector('[data-srv-state="' + srv.id + '"]');
+        var pingEl = layer.querySelector('[data-srv-ping="' + srv.id + '"]');
+        var cardEl = layer.querySelector('[data-server-card="' + srv.id + '"]');
+        var connectBtn = layer.querySelector('[data-connect="' + srv.id + '"]');
         var rosterEl = layer.querySelector('[data-roster="' + srv.id + '"]');
         if (!onlineEl || !rosterEl) return;
-        if (info.ok) {
-          onlineEl.textContent = info.players + '/' + (info.max || srv.max || 64) + ' — ' +
-            info.players + ' ' + pp(info.players) + ' ' + BrixState.t('srv.onlineWord');
-          if (stateEl) stateEl.textContent = BrixState.t('srv.online');
-          var names = info.names || [];
-          var html = '<div class="srv-roster-cap font-h">' + BrixIcon('users', 13) +
-            ' ' + BrixState.t('srv.roster') + ' — ' + names.length + ' ' + pp(names.length) + '</div>';
-          if (names.length) {
-            html += '<div class="srv-roster-list">' + names.map(function (n) {
-              return '<span class="srv-player"><span class="sp-dot"></span>' + n + '</span>';
-            }).join('') + '</div>';
-          } else {
-            html += '<div class="srv-nobody">' + BrixState.t('srv.nobody') + '</div>';
-          }
-          rosterEl.innerHTML = html;
-        } else {
+        /* ✅ v0.5.11: УМНАЯ ПРОВЕРКА СЕРВЕРОВ. Порт не запущен →
+           карточка серая, статус «НА ОБСЛУЖИВАНИИ», кнопка входа
+           ЗАБЛОКИРОВАНА (проб запустили при загрузке меню — probeAll) */
+        var down = !info.ok;
+        if (cardEl) cardEl.classList.toggle('srv-down', down);
+        if (connectBtn) connectBtn.disabled = down;
+        if (down) {
           onlineEl.textContent = BrixState.t('srv.offline');
-          if (stateEl) stateEl.textContent = BrixState.t('srv.offline');
+          if (stateEl) stateEl.textContent = BrixState.t('srv.maintenance');
+          if (pingEl) pingEl.textContent = '—';
           rosterEl.innerHTML = '<div class="srv-roster-cap font-h">' + BrixIcon('users', 13) +
-            ' ' + BrixState.t('srv.roster') + '</div><div class="srv-nobody">' + BrixState.t('srv.offline') + '</div>';
+            ' ' + BrixState.t('srv.roster') + '</div><div class="srv-nobody">' +
+            BrixState.t('srv.maintenance') + '</div>';
+          return;
         }
+        /* ✅ v0.5.11: живой сервер — РЕАЛЬНЫЙ пинг (RTT последнего
+           /status), вместо фиксированных 12 ms */
+        if (pingEl) {
+          pingEl.textContent = (info.ms !== undefined && info.ms !== null)
+            ? info.ms + ' ms' : '—';
+        }
+        if (stateEl) stateEl.textContent = BrixState.t('srv.online');
+        onlineEl.textContent = info.players + '/' + (info.max || srv.max || 64) + ' — ' +
+          info.players + ' ' + pp(info.players) + ' ' + BrixState.t('srv.onlineWord');
+        var names = info.names || [];
+        var html = '<div class="srv-roster-cap font-h">' + BrixIcon('users', 13) +
+          ' ' + BrixState.t('srv.roster') + ' — ' + names.length + ' ' + pp(names.length) + '</div>';
+        if (names.length) {
+          html += '<div class="srv-roster-list">' + names.map(function (n) {
+            return '<span class="srv-player"><span class="sp-dot"></span>' + n + '</span>';
+          }).join('') + '</div>';
+        } else {
+          html += '<div class="srv-nobody">' + BrixState.t('srv.nobody') + '</div>';
+        }
+        rosterEl.innerHTML = html;
       });
     }
     drawAll();

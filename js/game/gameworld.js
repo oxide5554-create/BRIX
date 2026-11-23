@@ -429,7 +429,12 @@ window.BrixGameWorld = (function () {
       // показываем. Раньше F по замку выходил из pointer lock и игра
       // накрывала клавиатуру СТАРЫМ МЕНЮ ПАУЗЫ («Кликните по экрану…»)
       var bUi = !!(window.BrixBuilding && BrixBuilding.isUiBlocked && BrixBuilding.isUiBlocked());
-      pause.classList.toggle('hidden', v || isInvOpen() || isLootOpen() || isMiniOpen() || bUi);
+      /* ✅ v0.5.2: Я МЁРТВ — окно паузы НЕ показывать. die() снимает
+         захват мыши, pointerlockchange открывал сюда меню как по Esc —
+         на арене поверх счётчика «ВОЗРОЖДЕНИЕ» висела пауза. Пока
+         игрок мёртв (любой режим) — пауза скрыта */
+      pause.classList.toggle('hidden',
+        v || dead || isInvOpen() || isLootOpen() || isMiniOpen() || bUi);
     }
 
     /* ---------- инвентарь, рука с топором, звуки ---------- */
@@ -1307,6 +1312,60 @@ window.BrixGameWorld = (function () {
           addTracer(ov, ev, msg.k || 'rev');
         }
       });
+      /* ============================================================
+         ✅ v0.5.0 БОТЫ «ПОЛИГОНА»: фид сервера. Боты считаются НА
+         СЕРВЕРЕ (brixpvp-bots.js) — все игроки видят ОДНИХ ботов:
+         'bots' 10 Гц (состояния), 'bshot' (трассер+вспышка+звук),
+         'bdead'/'bspawn' (смерть/респавн), 'bscore' (счёт команд),
+         'bwin' (победа до 30). Мой выстрел по боту уходит как 'bhit'
+         (см. BrixArena.damageBot)
+         ============================================================ */
+      BrixNet.on('bots', function (msg) {
+        if (!msg || !msg.b || !window.BrixArena) return;
+        if (BrixArena.isBuilt()) BrixArena.feedBots(msg.b);
+      });
+      BrixNet.on('bshot', function (msg) {
+        if (!msg || !window.BrixArena || !BrixArena.isBuilt()) return;
+        BrixArena.feedShot(msg.i, msg.f, msg.e);
+      });
+      BrixNet.on('bdead', function (msg) {
+        if (!msg || !window.BrixArena || !BrixArena.isBuilt()) return;
+        BrixArena.feedDeath(msg.i);
+        if (msg.by && msg.by.k === 'player' && msg.by.id === BrixNet.id) {
+          killCountLocal++;
+          if (window.BrixHud && BrixHud.toast) {
+            BrixHud.toast((msg.hs ? 'ГОЛОВА! ' : 'УБИЙСТВО! ') + (msg.by.n || 'бот') +
+              ' · счёт смотри сверху');
+          }
+          /* ✅ v0.5.3: награда за килл — полные патроны + полное хп */
+          arenaKillReward();
+        }
+      });
+      BrixNet.on('bspawn', function (msg) {
+        if (!msg || !window.BrixArena || !BrixArena.isBuilt()) return;
+        BrixArena.feedSpawn(msg.i);
+      });
+      BrixNet.on('bscore', function (msg) {
+        if (!msg || !window.BrixArena) return;
+        BrixArena.feedScore(msg.blue || 0, msg.red || 0, msg.limit);
+        if (window.BriXPvPHud) BriXPvPHud.setScores(msg.blue || 0, msg.red || 0, msg.limit);
+      });
+      BrixNet.on('bwin', function (msg) {
+        if (!msg || !window.BrixArena) return;
+        BrixArena.feedWin(msg.team, msg.blue, msg.red);
+        if (window.BriXPvPHud) BriXPvPHud.showWin(msg.team, msg.blue, msg.red);
+      });
+      /* ✅ v0.5.5: 'blead' — ЛИДЕРБОРД после матча (киллы/смерти/КД),
+         'bmap' — РОТАЦИЯ КАРТ: показываем доску, потом пересборка */
+      BrixNet.on('blead', function (msg) {
+        if (!msg || !window.BriXPvPHud) return;
+        BriXPvPHud.showLeaderboard(msg);
+      });
+      BrixNet.on('bmap', function (msg) {
+        if (!msg || !window.BrixArena) return;
+        if (window.BriXPvPHud) BriXPvPHud.hideLeaderboard();
+        BrixArena.feedMap(msg.id);
+      });
       BrixNet.on('phit', onPlayerHit);
       /* ✅ v0.4.28: остаток хп детали дома (после удара) — звук/плашка «133 / 200» */
       BrixNet.on('bhp', onBuildHp);
@@ -1629,7 +1688,8 @@ window.BrixGameWorld = (function () {
         //    Револьвер сюда не доходит — у него своя ветка tryShoot()
         var pidGroups = [];
         for (var pk in remotes) {
-          if (!remotes[pk].dead) pidGroups.push(remotes[pk].group);
+          /* ✅ v0.5.2: на арене инструменты не бьют своих (одна команда) */
+          if (!remotes[pk].dead && !pvpMode) pidGroups.push(remotes[pk].group);
         }
         if (pidGroups.length) {
           raycaster.camera = camera;   // ✅ v0.4.5: спрайты (ник/хп) требуют camera
@@ -2038,6 +2098,8 @@ window.BrixGameWorld = (function () {
     var deathPos = null;        // {x, z} — где я умер (для черепа)
     var dthMapCache = null;     // canvas с рельефом
     var MAP_EXT = 450;          // ✅ v0.4.44: половина стороны мира = WORLD_HALF (карта как в мини-меню)
+    var killCountLocal = 0;     // ✅ v0.5.0: мои килы ботов (серверный фид)
+    var pvpRespawnTimer = null; // ✅ v0.5.0: автореспавн арены через 2 с
 
     function hColor(h) {
       if (h < 2.0) return '#2c5f9e';                       // глубина
@@ -2253,16 +2315,48 @@ window.BrixGameWorld = (function () {
              (стрелял попал в голову) */
           var hsSuffix = info && info.hs ? BrixState.t('death.hs') : '';
           if (combatHud.wepEl) combatHud.wepEl.textContent =
-            BrixState.t('death.weapon', { w: BrixState.t('wep.' + w) + hsSuffix });
+          BrixState.t('death.weapon', { w: BrixState.t('wep.' + w) + hsSuffix });
           if (combatHud.distEl) combatHud.distEl.textContent =
             BrixState.t('death.dist', { d: (info && info.dist) || 0 });
         } else {
           if (combatHud.wepEl) combatHud.wepEl.textContent = '';
           if (combatHud.distEl) combatHud.distEl.textContent = '';
         }
-        combatHud.death.classList.remove('hidden');
-        /* ✅ v0.4.29: рисуем карту (рельеф уже кэширован после 1-го раза) */
-        try { drawDeathMap(); } catch (eDm) {}
+        /* ✅ v0.5.0 ПВП-АРЕНА: МЕНЮ КАРТЫ НЕТ — только счётчик
+           «ВОЗРОЖДЕНИЕ», через 2 с спавн в синей зоне (ниже).
+           В выживании — прежнее окно смерти с картой мира */
+        if (pvpMode) {
+          if (window.BriXPvPHud) BriXPvPHud.showRespawn(2);
+          if (pvpRespawnTimer) clearTimeout(pvpRespawnTimer);
+          pvpRespawnTimer = setTimeout(function () {
+            pvpRespawnTimer = null;
+            if (BrixGame.state.phase !== 'playing') return;
+            if (window.BriXPvPHud) BriXPvPHud.hideRespawn();
+            var asp2 = (window.BrixArena && BrixArena.isBuilt()) ? BrixArena.spawnPoint() : null;
+            var yaw2 = asp2 ? Math.atan2(-(0 - asp2.x), -(0 - asp2.z)) : 0;
+            if (BrixNet.mode === 'server') BrixNet.sendRespawn();   // сервер оживит для остальных
+            doRespawn(asp2 ? { x: asp2.x, z: asp2.z, yaw: yaw2 } : undefined);
+            /* ✅ v0.5.2: АВТО-ВОЗВРАТ МЫШИ после респавна — exitPointerLock
+               в die() был программный (не по Esc), браузер разрешает
+               повторный захват; cooldown 1.25 с уже прошёл (смерть 2 с).
+               Раньше требовался клик — теперь мышка возвращается сама */
+            var canvas2 = document.querySelector('#gameMount canvas');
+            if (canvas2 && BrixGame.state.phase === 'playing') lockPointerSoon(canvas2);
+            /* подсказка ТОЛЬКО если захват так и не удался */
+            setTimeout(function () {
+              if (BrixGame.state.phase !== 'playing') return;
+              if (document.pointerLockElement) return;
+              if (BrixTouch && BrixTouch.isTouchDevice()) return;
+              if (window.BrixHud && BrixHud.toast) {
+                BrixHud.toast('Клик — вернуть управление', 3);
+              }
+            }, 1600);
+          }, 2000);
+        } else {
+          combatHud.death.classList.remove('hidden');
+          /* ✅ v0.4.29: рисуем карту (рельеф уже кэширован после 1-го раза) */
+          try { drawDeathMap(); } catch (eDm) {}
+        }
       }
       // другие видят мою смерть (вкладки/серо-режим: сообщаем сами)
       BrixNet.send({ t: 'pdeath', tid: BrixNet.id, by: deathKiller });
@@ -2280,6 +2374,9 @@ window.BrixGameWorld = (function () {
     function doRespawn(custom) {
       dead = false;
       setMyHp(PLAYER_MAX_HP);
+      /* ✅ v0.5.0: счётчик респавна арены скрыт, отложенный спавн отменён */
+      if (pvpRespawnTimer) { clearTimeout(pvpRespawnTimer); pvpRespawnTimer = null; }
+      if (window.BriXPvPHud) BriXPvPHud.hideRespawn();
       /* ✅ v0.4.34: возрождение — мороз сброшен, экран разморожен */
       coldVal = 0; coldDisp = 0; coldSrv = null;
       if (combatHud) {
@@ -2725,10 +2822,13 @@ window.BrixGameWorld = (function () {
         controls.position);
 
       // луч с разбросом: чужие игроки → земля/прочее
+      // ✅ v0.5.2 ПВП-АРЕНА: своих НЕ ВЫДЕЛЯЕМ под луч вообще — пули
+      // пролетают сквозь сокомандников (все игроки — СТАЛЬ, урон
+      // игрок-в-игрок на арене отключён полностью)
       raycaster.camera = camera;
       var pids = [];
       for (var rk in remotes) {
-        if (!remotes[rk].dead) pids.push(remotes[rk].group);
+        if (!remotes[rk].dead && !pvpMode) pids.push(remotes[rk].group);
       }
       var fwd = camera.getWorldDirection(_dirV);
 
@@ -2793,6 +2893,12 @@ window.BrixGameWorld = (function () {
         } catch (e) { console.log('[TRC] ERROR: ' + e.message); }
         var extMz = muzzleWorldPos(new THREE.Vector3());
         BrixNet.sendTracer(extMz, end, trKind);
+        /* ✅ v0.5.6: ДЫРА и ПЫЛЬ ТОЛЬКО от СВОИХ выстрелов (вспышки
+           убраны) — в стены/ящики/постройки, не на жертвах */
+        try {
+          if (window.BrixFx && !victimId && !botVictim)
+            BrixFx.impact(end, raycaster.ray.direction);
+        } catch (eFx) {}
         if (victimId) {
           // ✅ v0.4.21: у калаша свой урон AK_DMG (у револьвера REV_DMG)
           // ✅ v0.4.35: у томпсона свой TP_DMG
@@ -2893,8 +2999,10 @@ window.BrixGameWorld = (function () {
           if (pvpMode && window.BrixArena && BrixArena.isBuilt()) {
             var pbh = BrixArena.botHit(camera.position, pdir, capD);
             if (pbh) {
-              var bi2 = BrixArena.getBots().indexOf(pbh.bot);
-              if (bi2 >= 0) {
+              /* ✅ v0.5.0: ключ бота — id из фида сервера или локальный */
+              var bi2 = (pbh.bot && pbh.bot.id !== undefined) ? 'F' + pbh.bot.id
+                : (pbh.bot && pbh.bot.lbot) ? 'L' + pbh.bot.lbot.i : null;
+              if (bi2 !== null) {
                 if (!botHits[bi2]) botHits[bi2] = { bot: pbh.bot, d: pbh.d, hd: 0, bd: 0, hs: 0 };
                 var pdmgB = sgPelletDmg(camera.position.distanceTo(pbh.point), pbh.hs ? 'head' : 'body');
                 if (pdmgB > 0) {
@@ -2993,9 +3101,48 @@ window.BrixGameWorld = (function () {
         controls.position);                     // звук слышат другие
     }
 
+    /* ✅ v0.5.3 ПВП-АРЕНА: НАГРАДА ЗА КИЛЛ — убил бота или игрока →
+       обойма МГНОВЕННО полная + ПОЛНОЕ ХП (просилка игрока).
+       Вызывается из 'bdead' (убил бота на сервере), из onPlayerDeath
+       (убил игрока) и из локального сима (opts.onPlayerKill) */
+    function arenaKillReward() {
+      if (!pvpMode) return;
+      var s = gunSlot();
+      if (s) {
+        if (typeof s.mag !== 'number' || isNaN(s.mag)) s.mag = 0;
+        s.mag = gunMagSize();               // полная обойма
+        inventory.renderAll();
+      }
+      reloading = false; reloadT = 0;       // перезарядка мгновенно завершена
+      setMyHp(PLAYER_MAX_HP);               // полное хп
+      /* ✅ v0.5.3: на сервере ХП — авторитет сервера: просим подтвердить
+         полное хп ('kreward'; сервер проверит, что килл был недавно).
+         Ответ придёт 'phit' kind 'heal' hp=100 — значение совпадает */
+      if (BrixNet.mode === 'server') BrixNet.send({ t: 'kreward' });
+      if (window.BrixHud && BrixHud.toast) {
+        BrixHud.toast('КИЛЛ: патроны пополнены · ХП восстановлено', 2.5);
+      }
+      try { BrixSfx.play('chop2', { volume: 0.5, rate: 1.7 }); } catch (eK) {}
+    }
+
     /* ---------- ПвП: ХП, попадания, смерть, возрождение ---------- */
     function onPlayerHit(msg) {
       if (msg.tid === BrixNet.id) {
+        /* ✅ v0.5.2 СВОИХ НЕ УБИВАЕМ (второй рубеж, стрелявший уже молчит):
+           на «Полигоне» все игроки ОДНА команда СТАЛЬ — урон
+           игрок-в-игрок блокируется у жертвы. От урона БОТА отличаем по
+           bk:'bot' (сервер) либо по тому, что by — не id из ростера.
+           во вкладках net.js кладёт id стрелка в msg.id */
+        if (pvpMode && (msg.kind === 'shot' || msg.kind === 'melee' || !msg.kind) &&
+            msg.bk !== 'bot') {
+          var atkId = String(msg.by || msg.id || '');
+          var rosPvP = BrixNet.getRoster();
+          var atkIsPlayer = !atkId;
+          for (var fi = 0; fi < rosPvP.length; fi++) {
+            if (rosPvP[fi].id === atkId) { atkIsPlayer = true; break; }
+          }
+          if (atkIsPlayer) return;      // свои не наносят урон — игнор
+        }
         /* ✅ v0.4.23: локальный god учитываем ТОЛЬКО во «вкладках» (без
            сервера). В серверном режиме ХП — АВТОРИТЕТ СЕРВЕРА: сервер сам
            не уронит игрока с включённым тумблером бессмертия (op:'god').
@@ -3031,6 +3178,9 @@ window.BrixGameWorld = (function () {
         if (ros[i].id === msg.tid) vn = ros[i].n || '';
       }
       if (kn && vn) BrixHud.toast(kn + ' → ' + vn, 5);
+      /* ✅ v0.5.3: Я убил игрока (кILL-ID совпал) — награда: полные
+         патроны + полное хп (серверная и вкладочная relay) */
+      if (pvpMode && msg.by === BrixNet.id) arenaKillReward();
     }
 
     /* ---------- крестик: обновление КАЖДЫЙ кадр ---------- */
@@ -3299,8 +3449,10 @@ window.BrixGameWorld = (function () {
       BrixSfx.play('chop2', { volume: 0.3, rate: 1.4 }); // лёгкий звук броска
     }
 
-    /** локальный урон взрыва (соло/вкладки): постройки −400, игроки −250 */
+    /** локальный урон взрыва (соло/вкладки): постройки −400, игроки −250.
+        ✅ v0.5.2: на арене СВОИХ НЕ УБИВАЕМ — игроки взрывом не задеваются */
     function c4LocalDamage(P) {
+      if (pvpMode) return;
       if (window.BrixBuilding && BrixBuilding.piecesInRadius) {
         var pieces = BrixBuilding.piecesInRadius(P.x, P.y, P.z, C4_BUILD_R);
         pieces.forEach(function (pp) {
@@ -3648,6 +3800,8 @@ window.BrixGameWorld = (function () {
       }
       if (syrCd > 0) syrCd -= dt;   // ✅ v0.4.46: кулдаун шприца
       tickTracers(dt);
+      /* ✅ v0.5.5: дыры/пыль/вспышки тикают в любом мире */
+      if (window.BrixFx) BrixFx.tick(dt);
       /* ✅ v0.4.65 ПВП-АРЕНА: боты ходят/стреляют, эффекты живут */
       if (pvpMode && window.BrixArena && BrixArena.isBuilt()) {
         BrixArena.tick(dt, camera);
@@ -3736,7 +3890,43 @@ window.BrixGameWorld = (function () {
       /* ✅ v0.4.66: арена из ПРОШЛОГО мира не должна «переезжать» —
          сброс (иначе локация/боты невидимы после повторного входа) */
       if (window.BrixArena) BrixArena.reset();
+      if (window.BrixFx) BrixFx.reset();   // ✅ v0.5.5: пул эффектов с миром
+      /* ✅ v0.5.0: HUD команд пересобирается под выбранный сервер —
+         в выживании его нет */
+      if (window.BriXPvPHud) BriXPvPHud.destroy();
       if (window.BrixNet && pvpSrv) BrixNet.useServer(pvpSrv);
+
+      /* ✅ v0.5.11 ГЕЙТ ВХОДА: сервер должен ОТВЕЧАТЬ, иначе мир даже
+         не строим. Быстрый GET /status (2 попытки × 2.5 c; адрес даёт
+         BrixWsUrl — одинаково на localhost и через туннель). Нет
+         ответа → красный баннер «Сервер недоступен, проверьте
+         туннель» и возврат в меню (этап на экране загрузки —
+         «Подключение к серверу…») */
+      setStage('load.step.connect', 0);
+      var gatePort = pvpSrv ? pvpSrv.port : 8787;
+      var gateOk = await BrixNet.checkServer(gatePort, 2500);
+      if (!gateOk && !cancelled) {
+        await sleep(400);
+        gateOk = await BrixNet.checkServer(gatePort, 2500);
+      }
+      if (!gateOk) {
+        if (!cancelled) {
+          try {
+            BrixNet.showDownBanner(BrixState.t('net.unreachable'),
+              BrixState.t('net.unreachableHint'), 8000);
+          } catch (eB) {}
+          BrixNet.disconnect();
+          BrixGame.disconnect();   // phase idle → loadingScreen скрыт, мы в меню
+        }
+        return;
+      }
+
+      /* ✅ v0.5.9: клик по PvP — явное действие игрока: включаем и
+         статус-опрос 8788 (в меню он мог стоять на паузе после
+         CORS-сбоёв туннеля) */
+      if (window.BrixFriends && BrixFriends.watchPort && pvpSrv) {
+        BrixFriends.watchPort(pvpSrv.port);
+      }
       document.body.classList.toggle('brix-pvp', pvpMode);
       /* ✅ v0.4.66 ПВП-АРЕНА: ПУСТЫЕ РУКИ — инвентарь (и стартовый
          набор из конструктора, и вещи BrixLand) на арене не выдаётся */
@@ -3812,8 +4002,10 @@ window.BrixGameWorld = (function () {
             colliders: [], treeMeshes: [], trunkMeshes: [], oreTargets: [],
             lighthouseBoxes: [], tick: function () {} };   // пустой стаб: арена вместо леса
           if (window.BrixArena) BrixArena.build(scene);
+          if (window.BrixFx) BrixFx.setScene(scene);       // ✅ v0.5.5: дыры/пыль/вспышки
         } else {
           decor = await BrixWorld.buildDecor(scene, yieldStage('load.step.flora', 53, 30));
+          if (window.BrixFx) BrixFx.setScene(scene);       // ✅ v0.5.5: и в BrixLand тоже
         }
 
         /* ✅ v0.4.38 ЕДИНСТВЕННАЯ ГРУНТОВАЯ ДОРОГА — лента по рельефу
@@ -3984,6 +4176,10 @@ window.BrixGameWorld = (function () {
            ============================================================ */
         var savedP = null;        // psave из welcome (ждёт спавна)
         var saveRestored = false; // восстановили один раз
+        /* ✅ v0.5.13: время/погода из welcome ждут постройки мира —
+           применяются СРАЗУ после create() (до появления игрока),
+           а не плавной догонкой после спавна */
+        var welcomeDnc = null;
         function stashPlayerSave(sv) {
           if (!sv || saveRestored) return;
           savedP = sv;
@@ -4094,6 +4290,8 @@ window.BrixGameWorld = (function () {
         window.addEventListener('beforeunload', function () { try { sendPlayerSave(); } catch (e) {} });
 
         BrixNet.on('welcome', function (msg) {
+          /* ✅ v0.5.13: серверное время/погода из welcome.dnc — ждут мира */
+          if (msg.dnc) welcomeDnc = msg.dnc;
           /* ✅ v0.4.46: СОХРАНЕНИЕ ИГРОКА из welcome — применить сразу
              (если мир уже построен) или после спавна */
           if (msg.psave) stashPlayerSave(msg.psave);
@@ -4114,6 +4312,19 @@ window.BrixGameWorld = (function () {
           }
           // ✅ v0.3.6: бочки/чекблоки/дропы (позиции и состояние сервера)
           if (msg.objs) buildObjects(msg.objs);
+          /* ✅ v0.5.0 ПВП-АРЕНА: боты «Полигона» + счёт команд из welcome.
+             Боты могут приехать ДО постройки арены — BrixArena сохранит
+             список и применит после build (pendingFeed) */
+          if (pvpMode && msg.pvp) {
+            /* ✅ v0.5.5: карта из welcome — арена строится по ней
+               (feedMap до постройки = pendingMap) */
+            if (msg.pvp.map && window.BrixArena) BrixArena.feedMap(msg.pvp.map);
+            if (window.BrixArena && msg.pvp.b) BrixArena.feedBots(msg.pvp.b);
+            if (window.BriXPvPHud) {
+              BriXPvPHud.setScores(msg.pvp.blue || 0, msg.pvp.red || 0, msg.pvp.limit || 30);
+              BrixArena.feedScore(msg.pvp.blue || 0, msg.pvp.red || 0, msg.pvp.limit || 30);
+            }
+          }
           /* ✅ v0.4.65 ПВП-АРЕНА: ПОСТРОЙКИ BrixLand на арену НЕ ПРИЕЗЖАЮТ
              (ни с сервера — у реалма свой пустой bd, ни из локального
              бэкапа браузера — скип ниже), кодовые замки тоже */
@@ -4214,6 +4425,10 @@ window.BrixGameWorld = (function () {
           'pointer-events:none;white-space:pre';
         (hudEl || mount).appendChild(diagEl);
         var serverAlive = null;   // null = ещё не проверяли, true/false = pong
+        /* ✅ v0.5.11: реальный пинг — RTT последнего ping/pong и
+           время отправки текущего (объявлены ДО renderDiag) */
+        var netPingMs = null;
+        var netPingSentAt = null;
         function renderDiag() {
           /* ✅ v0.4.17: версия из index.html (BRIX_VER) — раньше была
              зашита «v0.4.12» и врала. Плюс версия СЕРВЕРА: новый server.js
@@ -4225,9 +4440,15 @@ window.BrixGameWorld = (function () {
                 : ' (СТАРЫЙ server.js — без панели!)'))
             : 'СЕТЬ: вкладки (БЕЗ сервера!)';
           var hp;
+          /* ✅ v0.5.11: РЕАЛЬНЫЙ пинг вместо «сервер отвечает ✓» —
+             RTT замеряется ping/pong-циклом ниже (обновление каждые
+             2.5 c), в HUD видно живую задержку туннеля */
           if (BrixNet.mode !== 'server') hp = '· сервер не нужен';
           else if (serverAlive === null) hp = '· сервер: проверяю…';
-          else if (serverAlive) hp = '· сервер отвечает ✓';
+          else if (serverAlive) {
+            hp = '· пинг: ' + (netPingMs !== null ? netPingMs + ' мс' : '—');
+            if (netPingMs !== null && netPingMs >= 300) hp += ' (медленно)';
+          }
           else hp = '· СЕРВЕР НЕ ОТВЕЧАЕТ ✗ (старая версия? перезапусти из новой папки)';
           // ✅ v0.4.1: два ПОНЯТНЫХ счётчика вместо трёх разных:
           // НА СЕРВЕРЕ — все подключения (включая тех, кто в меню) —
@@ -4252,11 +4473,20 @@ window.BrixGameWorld = (function () {
         BrixNet.on('pong', function () {
           awaitingPong = false;
           serverAlive = true;
+          /* ✅ v0.5.11: РЕАЛЬНЫЙ замер — RTT от отправки ping до pong.
+             Один пинг «в полёте», поэтому разница честная. Работает и
+             локально (<1 мс → показываем 0), и через туннель */
+          if (netPingSentAt !== null) {
+            netPingMs = Math.max(0, Math.round(performance.now() - netPingSentAt));
+            netPingSentAt = null;
+          }
           renderDiag();
         });
         var pingCycle = function () {
           if (cancelled || BrixNet.mode !== 'server') return;
+          if (awaitingPong) return;   // прошлый ещё не вернулся — не наслаиваем
           awaitingPong = true;
+          netPingSentAt = performance.now();
           BrixNet.send({ t: 'ping' });
           setTimeout(function () {
             if (!awaitingPong || cancelled) return;
@@ -4265,9 +4495,28 @@ window.BrixGameWorld = (function () {
             renderDiag();
           }, 4000);
         };
-        // первый пинг почти сразу, дальше — каждые 12 с
-        setTimeout(function () { pingCycle(); }, 1500);
-        var pingTimer = setInterval(pingCycle, 12000);
+        // ✅ v0.5.11: первый пинг почти сразу, дальше — каждые 2.5 c
+        // (было 12 c: игроку нужно ЖИВОЕ значение задержки туннеля)
+        setTimeout(function () { pingCycle(); }, 1200);
+        var pingTimer = setInterval(pingCycle, 2500);
+
+        /* ✅ v0.5.11: СЕРВЕР ПРОПАЛ СРЕДИ ИГРЫ — не висим в вечном
+           реконнекте: net.js через 8 c без успеха шлёт lostServer,
+           здесь показываем сообщение и возвращаем игрока в меню
+           (прогресс остаётся на сервере; путь тот же, что у мини-
+           меню «Выйти»: BrixGame.disconnect → стоп мира и сети) */
+        BrixNet.on('lostServer', function () {
+          try {
+            if (window.BrixHud) {
+              /* textContent — без HTML, просто текст в две фразы */
+              BrixHud.toast(BrixState.t('net.lost') + '. ' +
+                BrixState.t('net.lostHint'), 6);
+            }
+          } catch (eT) {}
+          console.warn('[net] сервер потерян — выход в меню');
+          BrixNet.disconnect();     // гасит серию реконнекта
+          BrixGame.disconnect();    // phase idle → меню
+        });
 
         /* ✅ v0.4.1: ЕДИНЫЙ счётчик — теперь верхняя строка-диагностика
            показывает ВСЁ сразу: «BRIX v0.4.1 · сервер отвечает ✓ ·
@@ -4319,6 +4568,11 @@ window.BrixGameWorld = (function () {
           }
         }, 250);
 
+        /* ✅ v0.5.10: ИКОНКИ — ДО WebSocket. Ждём конца предзагрузки
+           (оверлей «Загрузка ресурсов... X%» появляется, если менюшное
+           фоновое предзагружение не успело) — туннель получает сначала
+           картинки, потом WS, без одновременного вала и гонки */
+        if (window.BrixPreload) await BrixPreload.whenReady();
         BrixNet.connect(buildWorldMeta());
         /* ================= /МУЛЬТИПЛЕЕР ================= */
         if (cancelled) return;
@@ -4390,6 +4644,10 @@ window.BrixGameWorld = (function () {
            тихий звук дождя. В соло часы идут локально */
         if (window.BrixEnvironment) {
           env = BrixEnvironment.create(scene, sky, lights, water, renderer);
+          /* ✅ v0.5.13: время/погода ставятся МГНОВЕННО из welcome.dnc
+             (create() сбросил сессию) — небо при появлении игрока уже
+             в серверном времени: никакого «сначала вечер, потом утро» */
+          if (welcomeDnc) { env.setServerState(welcomeDnc); welcomeDnc = null; }
         }
         if (window.BrixPrecip) {
           precip = BrixPrecip.create(scene, quality);
@@ -4469,6 +4727,9 @@ window.BrixGameWorld = (function () {
              ЛОКАЛЬНЫЙ (смерть и респавн — как от падения) */
           BrixArena.startBots({
             camera: camera,
+            /* ✅ v0.5.0: вне реального сервера (соло/вкладки) боты
+               считаются ЛОКАЛЬНО тем же симом команд */
+            localSim: BrixNet.mode !== 'server',
             addTracer: function (from, to, kind) { addTracer(from, to, kind || 'ak'); },
             getFeet: function () {
               return { x: controls.position.x,
@@ -4476,12 +4737,22 @@ window.BrixGameWorld = (function () {
                        z: controls.position.z };
             },
             isDead: function () { return dead; },
+            /* ✅ v0.5.0: счёт килов команд сверху (pvphud.js) */
+            onScore: function (blue, red, limit) {
+              if (window.BriXPvPHud) BriXPvPHud.setScores(blue, red, limit);
+            },
+            onWin: function (team, blue, red) {
+              if (window.BriXPvPHud) BriXPvPHud.showWin(team, blue, red);
+            },
             onPlayerHit: function (dmg, botName) {
               if (dead || (window.BrixAdmin && BrixAdmin.god)) return;
               flashDamage();
               setMyHp(myHp - dmg);
               if (myHp <= 0) die('', { botName: botName });
             },
+            /* ✅ v0.5.3: награда за килл бота в ЛОКАЛЬНОМ симе — полные
+               патроны + полное хп */
+            onPlayerKill: function () { arenaKillReward(); },
             getPlayerSpeed: function () {
               if (!controls.enabled || !controls._keys || !controls._keys.size) return 0;
               return (controls._keys.has('ShiftLeft') || controls._keys.has('ShiftRight')) ? 5.6 : 2.6;

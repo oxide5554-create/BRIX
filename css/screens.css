@@ -69,6 +69,16 @@
 .srv-status .st { font-family: 'Oswald', sans-serif; font-size: 12px; letter-spacing: .25em; color: var(--good); }
 .srv-status .btn-rust-primary { padding: 12px 24px; font-size: 14px; }
 
+/* ✅ v0.5.11: сервер не запущен → карточка СЕРАЯ «НА ОБСЛУЖИВАНИИ»,
+   кнопка входа заблокирована */
+.server-card.srv-down { filter: grayscale(.85); opacity: .55; }
+.server-card.srv-down .srv-status .st { color: #b9a06a; }
+.server-card.srv-down .srv-status .ping-dot { background: #8a7a55 !important; animation: none !important; }
+.server-card.srv-down .srv-status .btn-rust-primary,
+.btn-rust-primary:disabled {
+  filter: grayscale(1); opacity: .5; cursor: not-allowed; pointer-events: none;
+}
+
 .srv-features {
   margin-top: 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);

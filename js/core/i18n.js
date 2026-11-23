@@ -256,6 +256,12 @@ window.BrixI18N = (function () {
     'top.onlineTotal': 'ОНЛАЙН',
     'srv.onlineN': 'в сети',
     'srv.offline': 'Сервер не запущен',
+    /* ✅ v0.5.11: серый статус карточки + сообщения сети */
+    'srv.maintenance': 'НА ОБСЛУЖИВАНИИ',
+    'net.unreachable': 'Сервер недоступен, проверьте туннель',
+    'net.unreachableHint': 'Возврат в меню. Запустите START-MULTIPLAYER.bat и попробуйте снова.',
+    'net.lost': 'Соединение с сервером потеряно',
+    'net.lostHint': 'Вы вернулись в главное меню. Прогресс сохранён на сервере.',
     'srv.roster': 'Игроки на сервере',
     'srv.nobody': 'Пока никого — станьте первым',
 
@@ -326,11 +332,19 @@ window.BrixI18N = (function () {
 
     // Экран загрузки
     'load.title': 'ЗАГРУЗКА',
-    'load.tip1': 'Совет: деревянные стены быстрее ломаются топором, чем киркой.',
-    'load.tip2': 'Совет: не бегите ночью без фонаря — в лесу не одни звери.',
-    'load.tip3': 'Совет: закрывайте дверь, иначе сосед заложит вас первым.',
-    'load.tip4': 'Совет: вода спасает, но не в море. Море — это чужая территория.',
-    'load.tip5': 'Совет: коллекционные скины не дают преимуществ в бою.',
+    /* ✅ v0.5.11: подсказки = ТОЛЬКО то, что есть в игре (управление,
+       строительство, стрельба, инвентарь). Убраны «фонарь/звери» и
+       прочее выдуманное; смена каждые 2-5 с (loading.js) */
+    'load.tip1': 'Совет: WASD — движение, SHIFT — бег, ЛКМ — удар инструментом.',
+    'load.tip2': 'Совет: клавиша Z открывает меню строительства: фундамент → стены → потолок.',
+    'load.tip3': 'Совет: E — инвентарь и крафт, 1-6 или колесо мыши — быстрый выбор слота.',
+    'load.tip4': 'Совет: стреляйте правой кнопкой прицельно, R — перезарядка.',
+    'load.tip5': 'Совет: F — подобрать добычу, открыть ящик или дверь рядом.',
+    'load.tip6': 'Совет: факел в руке освещает путь — ночью без него тяжело.',
+    'load.tip7': 'Совет: каменные стены прочнее деревянных, а железные — прочнее каменных.',
+    'load.tip8': 'Совет: держите еду и воду в хотбаре — сытость и жажда тратятся быстро.',
+    'load.tip9': 'Совет: скины оружия меняют только вид — характеристики остаются прежними.',
+    'load.tip10': 'Совет: карта сервера живёт на сервере — после перезапуска деревья и руды восстановятся.',
     'load.step.connect': 'Подключение к серверу…',
     'load.step.auth': 'Авторизация…',
     'load.step.terrain': 'Генерация ландшафта…',
@@ -338,6 +352,8 @@ window.BrixI18N = (function () {
     'load.step.sky': 'Вода, небо и освещение…',
     'load.step.shaders': 'Компиляция шейдеров…',
     'load.step.spawn': 'Поиск точки возрождения…',
+    /* ✅ v0.5.11: этап предзагрузки иконок — в ЕДИНОМ экране загрузки */
+    'load.step.assets': 'Загрузка ресурсов…',
 
     // Внутриигровой интерфейс
     'hud.hint': 'WASD — движение · SHIFT — бег · ЛКМ — рубить · 1-6 / колесо — слоты · E — инвентарь',
@@ -627,6 +643,12 @@ window.BrixI18N = (function () {
     'srv.offline': 'Server not running',
     'srv.roster': 'Players on server',
     'srv.nobody': 'Nobody yet — be the first',
+    /* ✅ v0.5.11: grey card status + network messages */
+    'srv.maintenance': 'MAINTENANCE',
+    'net.unreachable': 'Server unavailable — check the tunnel',
+    'net.unreachableHint': 'Back to menu. Start START-MULTIPLAYER.bat and try again.',
+    'net.lost': 'Connection to the server lost',
+    'net.lostHint': 'You are back in the main menu. Your progress is saved on the server.',
 
     'news.title': 'NEWS',
     'news.subtitle': 'Patches, events and devblogs',
@@ -690,11 +712,17 @@ window.BrixI18N = (function () {
     'quit.return': 'Back to menu',
 
     'load.title': 'LOADING',
-    'load.tip1': 'Tip: wooden walls break faster with a hatchet than a pickaxe.',
-    'load.tip2': 'Tip: do not run in the forest at night without a torch.',
-    'load.tip3': 'Tip: lock your door, or your neighbour will sell you out first.',
-    'load.tip4': 'Tip: water saves you, but not at sea. The sea belongs to someone else.',
-    'load.tip5': 'Tip: collection skins give no combat advantage.',
+    /* ✅ v0.5.11: tips = only what is actually in the game */
+    'load.tip1': 'Tip: WASD to move, SHIFT to sprint, LMB to swing your tool.',
+    'load.tip2': 'Tip: press Z for the building menu: foundation → walls → ceiling.',
+    'load.tip3': 'Tip: E opens inventory and crafting, 1-6 or mouse wheel picks a slot.',
+    'load.tip4': 'Tip: aim with the right mouse button, R reloads.',
+    'load.tip5': 'Tip: F picks up loot, opens a crate or a nearby door.',
+    'load.tip6': 'Tip: a torch lights your way — nights are dark without one.',
+    'load.tip7': 'Tip: stone walls are stronger than wood, and metal beats stone.',
+    'load.tip8': 'Tip: keep food and water on the hotbar — hunger and thirst drain fast.',
+    'load.tip9': 'Tip: weapon skins change looks only — stats stay the same.',
+    'load.tip10': 'Tip: the world lives on the server — trees and ores respawn after restarts.',
     'load.step.connect': 'Connecting to server…',
     'load.step.auth': 'Authorizing…',
     'load.step.terrain': 'Generating terrain…',
@@ -702,6 +730,7 @@ window.BrixI18N = (function () {
     'load.step.sky': 'Water, sky and lighting…',
     'load.step.shaders': 'Compiling shaders…',
     'load.step.spawn': 'Looking for a spawn point…',
+    'load.step.assets': 'Loading assets…',
 
     'hud.hint': 'WASD — move · SHIFT — sprint · LMB — chop · 1-6 / wheel — slots · E — inventory',
     'hud.fps': 'FPS',
