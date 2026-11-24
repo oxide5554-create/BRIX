@@ -69,7 +69,18 @@ if (REALM === 'brixland') {
    версии не присылает — и панель на 9 молчит). В консоли при старте
    печатается ПОЛНЫЙ ПУТЬ папки сервера — чтобы admins.json правился
    именно там, где сервер РЕАЛЬНО запущен */
-const SRV_VER = '0.5.14';   /* ✅ v0.5.14 — СТАБИЛЬНОСТЬ ЗА ТУННЕЛЕМ:
+const SRV_VER = '0.5.15';   /* ✅ v0.5.15 — ЧИНЯТ СТАРЫЙ КЭШ ИГРОКА:
+   1) 404 теперь с Content-Type: text/plain — в консоли честное
+      «Not found» вместо пугающего «MIME type ('') is not executable»;
+   2) алиасы старых путей: js/X.js (старая раскладка без подпапок,
+      осталась в закэшированном index.html) автоматически разыскивается
+      в js/game/, js/ui/, js/core/, js/data/, js/main/ — игра собирается
+      БЕЗ Ctrl+Shift+R;
+   3) index.html отдаётся no-store (браузер и edge туннеля больше
+      не держат старый index.html);
+   4) favicon версионирован (?v=096 в index.html) — уходит старая
+      иконка вкладки на 8788-туннеле.
+   ДАЛЕЕ — v0.5.14: СТАБИЛЬНОСТЬ ЗА ТУННЕЛЕМ:
    keep-alive 65 с + clientError guard (net::ERR_HTTP2_PROTOCOL_ERROR на
    случайных файлах за devtunnels-прокси — прокси переиспользовал
    keep-alive соединение на границе 5-секундного таймаута Node).
@@ -263,6 +274,20 @@ function deliverPending(target) {
   return n;
 }
 
+/* ✅ v0.5.15 404 С ПРАВИЛЬНЫМ Content-Type. Раньше res.writeHead(404)
+   шёл без заголовка — браузер в strict-режиме видел «MIME type ('')»
+   и пугал «Refused to apply style / execute script» вместо честного
+   «файл не найден». Всегда отвечаем text/plain */
+function send404(res, p) {
+  if (res.headersSent) { try { res.destroy(); } catch (eD) {} return; }
+  res.writeHead(404, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*'
+  });
+  res.end('Not found: ' + p);
+}
+
 function serveFile(req, res, urlPath) {
   let p = urlPath.split('?')[0].split('#')[0];
   // ✅ v0.3.5: заявка в друзья прямо из МЕНЮ (WS ещё не подключён).
@@ -390,6 +415,20 @@ function serveFile(req, res, urlPath) {
     return;
   }
   if (p === '/' || p === '') p = '/index.html';
+  /* ✅ v0.5.15 АЛИАСЫ СТАРЫХ ПУТЕЙ. Раньше index.html ссылался на
+     js/minimenu.js, js/itemicons.js и т.п. (без подпапок); в новой
+     раскладке они в js/game/, js/data/, js/ui/, js/core/. Если игрок
+     сидит со старым index.html в кэше (Ctrl+Shift+R не нажал), он
+     ловил 404 + «MIME type ('') is not executable» и игра не
+     собиралась. Теперь сервер сам находит файл по подпапкам */
+  const mOld = /^\/js\/([A-Za-z0-9_-]+\.js)$/.exec(decodeURIComponent(p));
+  if (mOld && !fs.existsSync(path.join(ROOT, decodeURIComponent(p)))) {
+    const dirs = ['js/game', 'js/ui', 'js/core', 'js/data', 'js/main'];
+    for (let di = 0; di < dirs.length; di++) {
+      const cand = path.join(ROOT, dirs[di], mOld[1]);
+      if (fs.existsSync(cand)) { p = '/' + dirs[di] + '/' + mOld[1]; break; }
+    }
+  }
   const file = path.normalize(path.join(ROOT, decodeURIComponent(p)));
   // не даём выйти за пределы папки игры
   if (!file.startsWith(ROOT)) { res.writeHead(403); res.end('Forbidden'); return; }
@@ -415,14 +454,18 @@ function serveFile(req, res, urlPath) {
     /gzip/.test(String(req.headers['accept-encoding'] || ''));
   let st;
   try { st = fs.statSync(file); } catch (eSt) {
-    res.writeHead(404); res.end('Not found: ' + p); return;
+    return send404(res, p);
   }
-  if (st.isDirectory()) { res.writeHead(404); res.end('Not found: ' + p); return; }
+  if (st.isDirectory()) { return send404(res, p); }
+  /* ✅ v0.5.15: index.html — no-store: браузер и edge туннеля не имеют
+     права держать старый index.html ни при каких условиях — раньше
+     из-за закэшированного старого index.html игра запрашивала пути
+     удалённых файлов и разваливалась до первого Ctrl+Shift+R */
   const headers = {
     'Content-Type': MIME[ext] || 'application/octet-stream',
     'Cache-Control': cacheable
       ? 'public, max-age=31536000, immutable'
-      : 'no-cache',
+      : (ext === '.html' ? 'no-cache, no-store, must-revalidate' : 'no-cache'),
     'Access-Control-Allow-Origin': '*'
   };
   if (gzOk) {
