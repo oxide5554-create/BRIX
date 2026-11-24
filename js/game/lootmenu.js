@@ -266,8 +266,9 @@ window.BrixLootMenu = (function () {
     var invGrid = document.getElementById('lootInvGrid');
     var hotGrid = document.getElementById('lootHotbarGrid');
     /* ✅ v0.4.22: у сундука 16 слотов (ящики: деревянный 12 / военный 18)
-       ✅ v0.4.43: у трупа тоже 16 — вещей может быть много */
-    var size = (curMode === 'chest' || curMode === 'corpse')
+       ✅ v0.4.43: у трупа тоже 16 — вещей может быть много
+       ✅ v0.5.17: у АИРДРОПА 16 — лута много */
+    var size = (curMode === 'chest' || curMode === 'corpse' || curMode === 'ad')
       ? 16 : (curMil ? 18 : 12);
 
     /* --- ящик/сундук/труп: лут разворачиваем в слоты ---
@@ -319,13 +320,15 @@ window.BrixLootMenu = (function () {
     document.getElementById('lootTitle').textContent =
       curMode === 'chest' ? t('loot.titleChest')
       : curMode === 'corpse' ? t('loot.titleCorpse', { n: curName || '?' })
+      : curMode === 'ad' ? (curName || 'АИРДРОП')
       : crateTitle(curMil);
     /* ✅ v0.4.22: у сундука своя подсказка — «класть» на первом месте
-       ✅ v0.4.43: у трупа — только забирать */
+       ✅ v0.4.43: у трупа — только забирать
+       ✅ v0.5.17: у аирдропа — тоже только забирать */
     var hintEl = document.getElementById('lootHint');
     if (hintEl) {
       hintEl.textContent = curMode === 'chest' ? t('loot.hintChest')
-        : curMode === 'corpse' ? t('loot.hintCorpse')
+        : (curMode === 'corpse' || curMode === 'ad') ? t('loot.hintCorpse')
         : t('loot.hint');
     }
     document.getElementById('lootInvCap').innerHTML =

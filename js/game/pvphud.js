@@ -128,6 +128,17 @@ window.BriXPvPHud = (function () {
     if (limitEl) limitEl.textContent = 'ДО ' + (limit || 30);
   }
 
+  /* ✅ v0.5.16 КОМАНДЫ: бейдж «ТЫ: …» показывает РЕАЛЬНУЮ команду игрока
+     (welcome.pvp.team — автобаланс СТАЛЬ/ПЛАМЯ; раньше был хардкод СТАЛЬ) */
+  function setTeam(team) {
+    build();
+    var red = team === 'red';
+    teamBadge.textContent = red ? 'ТЫ: ПЛАМЯ (КРАСНЫЕ)' : 'ТЫ: СТАЛЬ (СИНИЕ)';
+    teamBadge.style.color = red ? '#ffcdbd' : '#9fc6ee';
+    teamBadge.style.background = red ? 'rgba(255,90,60,.12)' : 'rgba(77,163,255,.1)';
+    teamBadge.style.borderColor = red ? 'rgba(255,90,60,.45)' : 'rgba(77,163,255,.35)';
+  }
+
   /** победа: 'bwin' — баннер 5 с */
   function showWin(team, blue, red) {
     build();
@@ -266,6 +277,7 @@ window.BriXPvPHud = (function () {
     build: build,
     destroy: destroy,
     setScores: setScores,
+    setTeam: setTeam,
     showWin: showWin,
     showRespawn: showRespawn,
     hideRespawn: hideRespawn,

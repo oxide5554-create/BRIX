@@ -376,7 +376,12 @@ window.BrixGLB = (function () {
           var skeleton = new THREE.Skeleton(bones, boneInverses || undefined);
           root.updateMatrixWorld(true);
           list.forEach(function (mesh) {
-            mesh.bind(skeleton, new THREE.Matrix4()); // bind = identity (как в GLTFLoader)
+            /* ✅ v0.5.20: ВОЗВРАТ к identity-бинду (v092): он правильный
+               для рук/игроков/шприца — с matrixWorld-биндом (v0.5.19)
+               они ломались. Моделям вроде аирдропа, где скин-меш под
+               нодой с трансформом, нужный бинд ставит САМ потребитель
+               после загрузки (см. airdrop.js mountDrop) */
+            mesh.bind(skeleton, new THREE.Matrix4());
           });
         });
 

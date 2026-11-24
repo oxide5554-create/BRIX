@@ -41,6 +41,11 @@ const REALM = (process.env.BRIX_REALM || 'brixland').toLowerCase() === 'brixpvp'
 const PORT = Number(process.env.BRIX_PORT) || (REALM === 'brixpvp' ? 8788 : 8787);
 const ROOT = __dirname;
 
+/* ✅ v0.5.16 ЛИМИТ ОНЛАЙНА: ПВП-арена — 10, выживание — 25 (было общее 64).
+   Едет в /status (max) — клиент показывает «НА СЕРВЕРЕ: X из лимита»
+   во вкладке СЕРВЕРА и в счётчиках */
+const MAX_PLAYERS = REALM === 'brixpvp' ? 10 : 25;
+
 /* ✅ v0.4.64 метаданные реалма: имя и режим едут в /status и welcome —
    по ним клиент включает вкладку серверов и ПВП-режим интерфейса */
 const SRV_NAME = REALM === 'brixpvp' ? 'BRIX • BrixPvP' : 'BRIX • BrixLand';
@@ -369,7 +374,7 @@ function serveFile(req, res, urlPath) {
       'Access-Control-Allow-Origin': '*'
     });
     res.end(JSON.stringify({
-      ok: true, players: players.size, max: 64, inGame: countInGame(),
+      ok: true, players: players.size, max: MAX_PLAYERS, inGame: countInGame(),
       names: names, map: REALM === 'brixpvp' ? 'Полигон (СЕКТОР-9)' : 'Brixland',
       /* ✅ v0.4.64: КТО этот сервер — для вкладки «СЕРВЕРА» (список
          серверов с живыми счётчиками) и ПВП-режима клиента */
@@ -613,6 +618,17 @@ if (Bots) {
     countInGame: countInGame
   });
 }
+
+/* ============================================================
+   ✅ v0.5.17 АИРДРОП (только реалм brixland): самолёт раз в 30 мин
+   (или по команде админа op:'airdrop') сбрасывает 1–3 ящика с
+   парашютами. Лут живёт НА СЕРВЕРЕ (worldObjs.adrops) и переживает
+   рестарт. Сим в brix-airdrop.js: поверхность приземления —
+   adSurfaceAt ниже (рельеф + постройки + чекблоки). Сеть: 'plane' на
+   вылет + 'planeS' раз в 2 с — клиенты докручивают полёт сами,
+   без пинга каждый кадр.
+   ============================================================ */
+const Airdrops = REALM === 'brixland' ? require('./brix-airdrop.js') : null;
 function makeObjRng(seed) {
   let a = (seed === undefined ? OBJ_SEED : seed) | 0;
   return () => {
@@ -829,8 +845,12 @@ function writeWorldNow() {
          ✅ v0.4.44: v7 — + ДЕРЕВЬЯ И РУДЫ (синхронизация и сохранение
          запасов как у бочек: срубленное/раскопанное не возвращается
          после рестарта сервера и одинаково для новичков) */
-      v: 7,
+      v: 8,
+      /* ✅ v0.5.17: v8 — + АИРДРОПЫ (самолёт/ящики с лутом, переживают
+         рестарт; старый v7 читается — adrops просто пусто) */
       dropSeq: worldObjs.dropSeq,
+      adrops: worldObjs.adrops || [],
+      adropSeq: worldObjs.adropSeq | 0,
       cb: worldObjs.cb.map((c) => ({
         id: c.id, x: c.x, z: c.z, rot: c.rot, item: c.item, seed: c.seed, mil: c.mil,
         taken: c.taken, gone: c.gone, loot: c.loot,
@@ -1019,7 +1039,9 @@ function loadWorldObjs() {
     // ✅ v0.4.31: v5 — новая шкала хп; v4 читаем и МИГРИРУЕМ хп
     // ✅ v0.4.43: v6 — + С4 и трупы (v3/v4/v5 читаются, недостающее = [])
     // ✅ v0.4.44: v7 — + деревья и руды (v3..v7 читаются)
-    if (!j || (j.v !== 3 && j.v !== 4 && j.v !== 5 && j.v !== 6 && j.v !== 7) || !Array.isArray(j.cb)) return null;
+    // ✅ v0.5.17: v8 — + АИРДРОПЫ (v3..v8 читаются; старые без adrops — пусто)
+    if (!j || (j.v !== 3 && j.v !== 4 && j.v !== 5 && j.v !== 6 &&
+        j.v !== 7 && j.v !== 8) || !Array.isArray(j.cb)) return null;
     const drops = new Map();
     (j.drops || []).forEach((d) => { if (d && d.id) drops.set(d.id, d); });
     const builds = Array.isArray(j.builds) ? j.builds.filter((b) =>
@@ -1062,6 +1084,10 @@ function loadWorldObjs() {
       Number.isFinite(c.x) && Number.isFinite(c.z)).slice(0, 40) : [];
     const corpses = Array.isArray(j.corpses) ? j.corpses.filter((c) => c && c.id &&
       Number.isFinite(c.x) && Number.isFinite(c.z)).slice(0, CORPSE_MAX) : [];
+    /* ✅ v0.5.17: ящики аирдропа из сохранения (v8; v7 — пусто).
+       Упавший (st 'ok') лежит где лежал, падающий (st 'fall') допадает */
+    const adrops = Array.isArray(j.adrops) ? j.adrops.filter((d) => d && d.id &&
+      Number.isFinite(d.x) && Number.isFinite(d.z)).slice(0, 30) : [];
     /* ✅ v0.4.44: запасы деревьев/руд из сохранения (v7). Формат тот же,
        что у welcome-world: trees [{w, g, fd}], ores {iron, sulfur, stone} */
     let world = null;
@@ -1078,13 +1104,23 @@ function loadWorldObjs() {
       };
     }
     return { cb: j.cb, drops, dropSeq: j.dropSeq || 0, builds, c4, corpses, world,
+      /* ✅ v0.5.17: ящики аирдропа возвращаются в мир (v8; старый v7 —
+         просто пусто). Без этой строки загрузка молча теряла adrops! */
+      adrops: adrops,
+      adropSeq: adrops.reduce((m, d) => Math.max(m, Number(String(d.id).slice(2)) || 0), 0),
       /* ✅ v0.4.62: надгробия сломанных — читаем, последние 600 */
       btomb: Array.isArray(j.btomb) ? j.btomb.map(String).slice(-600) : [],
       corpseSeq: corpses.reduce((m, c) => Math.max(m, Number(String(c.id).slice(1)) || 0), 0),
       /* ✅ v0.4.14: берём МАКСИМУМ из файла и сайдкара — откат файла
          в прошлое поколение невозможен */
       epoch: Math.max(j.epoch | 0, readEpochSidecar()) };   // ✅ v0.4.13: поколение мира
-  } catch (e) { return null; }
+  } catch (e) {
+    /* ✅ v0.5.18: молчаливый catch прятал битый сейв — мир создавался
+       пустым без объяснений. Теперь причина видна в логе */
+    console.log('[objs] мир НЕ загружен из world-objs.json — ошибка: ' +
+      (e && e.message ? e.message : e));
+    return null;
+  }
 }
 
 const _loaded = loadWorldObjs();
@@ -1141,6 +1177,32 @@ if (worldObjs.world) {
 worldObjs.c4 = worldObjs.c4 || [];
 worldObjs.corpses = worldObjs.corpses || [];
 worldObjs.corpseSeq = worldObjs.corpseSeq | 0;
+/* ✅ v0.5.16 ПВП-АРЕНА: мешки-лутбоксы с игроков не падают (см. case
+   'corpse') — и старые из сейва не нужны: чистим при старте brixpvp */
+if (REALM === 'brixpvp' && worldObjs.corpses.length) {
+  console.log('[corpse] арена: убраны старые трупы-лутбоксы: ' + worldObjs.corpses.length);
+  worldObjs.corpses = [];
+  markDirty();
+}
+/* ✅ v0.5.17 АИРДРОПЫ: ящики с парашютами (лут на сервере; если сейв
+   старый v7 — просто пусто; падающие после рестарта ДОПАДАЮТ сами) */
+worldObjs.adrops = Array.isArray(worldObjs.adrops) ? worldObjs.adrops : [];
+worldObjs.adropSeq = worldObjs.adropSeq | 0;
+if (worldObjs.adrops.length) {
+  console.log('[air] восстановлено ящиков из сейва: ' + worldObjs.adrops.length +
+    ' (падают: ' + worldObjs.adrops.filter((d) => d.st === 'fall').length + ')');
+}
+if (Airdrops) {
+  Airdrops.init({
+    broadcast: broadcast,
+    players: players,
+    worldObjs: worldObjs,
+    heightAt: brixHeightAt,
+    surfaceAt: adSurfaceAt,
+    markDirty: markDirty,
+    writeWorldNow: writeWorldNow
+  });
+}
 /* ✅ v0.4.44: бочки со старым файлом (hp 2) переводим на новую шкалу 6 хп —
    «камень 6 ударов / железо 4 / булава 1». Сломанные (brk) не трогаем */
 worldObjs.cb.forEach((c) => (c.barrels || []).forEach((b) => {
@@ -2056,6 +2118,15 @@ function adminOp(p, msg) {
       console.log('[admin] ' + p.name + ' телепортировался к ' + target.name + ' (' + x + ' : ' + z + ')');
       break;
     }
+    /* ✅ v0.5.17 ПРИЗЫВ АИРДРОПА: самолёт вылетает СЕЙЧАС (1-3 ящика
+       с парашютами, лут на сервере). Кнопка в админ-панели */
+    case 'airdrop': {
+      if (!Airdrops) { p.send({ t: 'aok', op, info: 'Аирдропы только на BrixLand' }); break; }
+      const res = Airdrops.callPlane(p.name);
+      p.send({ t: 'aok', op, info: res });
+      console.log('[admin] ' + p.name + ' призвал самолёт с грузом');
+      break;
+    }
     /* телепорт ИГРОКА к себе */
     case 'bring': {
       const target = players.get(String(msg.tid || ''));
@@ -2300,6 +2371,15 @@ server.on('upgrade', (req, sock) => {
             ', предметов ' + ((p.psaved.inv || []).length) + ')');
         }
         if (!world && msg.meta) initWorld(msg.meta);
+        /* ✅ v0.5.16 КОМАНДЫ АРЕНЫ: автобаланс ДО welcome — команда
+           уезжает и в снапшоте (бейдж «ТЫ: …»), и в 'join' (tm) */
+        if (Bots) {
+          p.ateam = Bots.pickTeam(p.id);
+          /* тост команды отправим при ПЕРВОМ 's' (когда игрок уже В ИГРЕ):
+             на welcome фаза клиента ещё не 'playing' — тост пропал бы */
+          p.pendingToast = 'ТЫ ИГРАЕШЬ ЗА: ' +
+            (p.ateam === 'red' ? 'ПЛАМЯ (красные)' : 'СТАЛЬ (синие)');
+        }
         // АВТОРИТЕТНЫЙ welcome: свой id + ВСЕ игроки с позициями + мир
         p.send({
           t: 'welcome',
@@ -2335,14 +2415,20 @@ server.on('upgrade', (req, sock) => {
           /* ✅ v0.4.46: СОХРАНЕНИЕ ЭТОГО ИГРОКА (позиция+инвентарь+слот
              хотбара) — client восстановит сразу после спавна */
           psave: p.psaved || undefined,
+          /* ✅ v0.5.17 АИРДРОП: ящики (упавшие и ПАДАЮЩИЕ — с текущей
+             высотой) и самолёт в воздухе; клиент сам докручивает
+             движение, сервер шлёт только ключевые события */
+          adrops: Airdrops ? Airdrops.snapshotDrops() : undefined,
+          adplane: Airdrops ? Airdrops.planeState() : undefined,
           /* ✅ v0.5.0 ПВП-АРЕНА: боты «ПОЛИГОНА» + счёт команд + своя
-             команда (все игроки — СТАЛЬ, синие). Клиент строит бот-вью
-             сразу, счётчик килов СТАЛЬ/ПЛАМЯ — сверху */
-          pvp: Bots ? Bots.snapshot() : undefined
+             команда (✅ v0.5.16 автобаланс: СТАЛЬ или ПЛАМЯ — где меньше
+             живых людей). Клиент строит бот-вью сразу, счётчик килов
+             СТАЛЬ/ПЛАМЯ — сверху */
+          pvp: Bots ? Bots.snapshot(p) : undefined
         });
         // ✅ v0.4.3: в join едет lvl/aid — у всех игроков список полный сразу
         broadcast({ t: 'join', id: p.id, n: p.name, c: p.c,
-          lvl: p.lvl || 1, aid: p.aid || '' }, p.id);
+          lvl: p.lvl || 1, aid: p.aid || '', tm: p.ateam }, p.id);
         /* ✅ v0.4.16: BRIX-ID КАЖДОГО вошедшего — в консоли сервера.
            Так владелец узнаёт свой ID, чтобы вписать его в admins.json */
         console.log('[mp] ' + p.name + ' (' + p.id + ', BRIX-ID: ' +
@@ -2364,6 +2450,12 @@ server.on('upgrade', (req, sock) => {
           // счётчики (иначе «В ИГРЕ» у других остаётся 0 до следующего пуша)
           // ✅ v0.4.58: si — id скинутого предмета в руках (для обёртки у других)
           if (!p.state) pushCount();
+          /* ✅ v0.5.16: тост команды арены — сейчас игрок В ИГРЕ и тост
+             реально покажется (на welcome фаза была ещё не 'playing') */
+          if (p.pendingToast) {
+            p.send({ t: 'atoast', m: p.pendingToast });
+            p.pendingToast = null;
+          }
           p.state = {
             x: msg.x, y: msg.y, z: msg.z, yaw: msg.yaw,
             a: msg.a, tool: msg.tool, si: String(msg.si || '').slice(0, 24), ph: msg.ph, n: p.name,
@@ -2891,6 +2983,9 @@ server.on('upgrade', (req, sock) => {
            сервера труп переживает (world-objs.json v7).
            ============================================================ */
         case 'corpse': {
+          /* ✅ v0.5.16 ПВП-АРЕНА: мешки-лутбоксы с игроков НЕ падают
+             (просьба владельца: на арене труп-лутбокс не создаётся) */
+          if (REALM === 'brixpvp') break;
           if (!p.dead) break;                       // прислал живой — игнор
           const kx = Number(msg.x), kz = Number(msg.z);
           if (!Number.isFinite(kx) || !Number.isFinite(kz)) break;
@@ -2925,6 +3020,21 @@ server.on('upgrade', (req, sock) => {
             age: 0 }, null);
           console.log('[corpse] труп ' + rec.id + ' (' + rec.n + ') с ' +
             Object.keys(cinv).length + ' видами вещей (' + rec.x + ', ' + rec.z + ')');
+          break;
+        }
+        /* ============================================================
+           ✅ v0.5.17 АИРДРОП: F у ящика ('adOpen') — сервер шлёт
+           актуальный лут ('adLoot'); 'adTake' — взять предмет
+           (оптимистично у клиента, сервер — авторитет: всем
+           'adLoot', опустел — 'adGone'). Проверка 6 м и авторитет —
+           в brix-airdrop.js
+           ============================================================ */
+        case 'adOpen': {
+          if (Airdrops) Airdrops.handleOpen(p, msg);
+          break;
+        }
+        case 'adTake': {
+          if (Airdrops) Airdrops.handleTake(p, msg);
           break;
         }
         /* F у трупа: сервер отвечает текущим содержимым */
@@ -2987,10 +3097,11 @@ server.on('upgrade', (req, sock) => {
              неуязвим всегда, даже с выключенным бессмертием */
           if (target.god) break;
           if (!p.state) break;
-          /* ✅ v0.5.0 ПВП-АРЕНА: СВОИХ НЕ УБИВАЕМ — на «Полигоне» все
-             игроки одна команда СТАЛЬ (синие), урон игрок-в-игрока
-             полностью блокируется (боты свои тоже не трогают) */
-          if (Bots) break;
+          /* ✅ v0.5.16 ПВП-АРЕНА: СВОИХ НЕ УБИВАЕМ — урон игрок-в-игрока
+             идёт только между РАЗНЫМИ командами (игроки теперь и за
+             СТАЛЬ, и за ПЛАМЯ — автобаланс при входе). Боты свои тоже
+             не трогают. В BrixLand (без Bots) пвп работает как раньше */
+          if (Bots && (p.ateam === 'red') === (target.ateam === 'red')) break;
           const kind = String(msg.kind || 'shot');
           const d2 = dist2(p.state.x, p.state.z, target.state.x, target.state.z);
           if (kind === 'shot' && d2 > 130 * 130) break;      // дальше 130 м
@@ -3034,6 +3145,9 @@ server.on('upgrade', (req, sock) => {
             /* ✅ v0.5.3 АРЕНА: килл подтверждён — игрок может забрать
                награду (полное хп через 'kreward', патроны — у клиента) */
             if (Bots) p.lastRewardAt = Date.now();
+            /* ✅ v0.5.16: килл игрока игроком ЧУЖОЙ команды — в счёт
+               команды стрелка (лидерборд и счёт СТАЛЬ/ПЛАМЯ) */
+            if (Bots) Bots.onPlayerKill(p, target, hs);
             console.log('[mp] ' + p.name + ' убил ' + target.name +
               (kind === 'shot' ? ' (выстрел)' : ' (инструментом)'));
           }
@@ -3493,6 +3607,15 @@ if (Bots) setInterval(() => {
   }
 }, 100);
 
+/* ✅ v0.5.17 АИРДРОП: шаг сима самолёта и ящиков 2 Гц. init — ниже,
+   после загрузки worldObjs (ящики из сейва). Авторотация 30 мин —
+   внутри модуля */
+if (Airdrops) setInterval(() => {
+  try { Airdrops.tick(0.5); } catch (eAir) {
+    console.log('[air] ошибка шага сима (сервер работает дальше): ' + eAir.message);
+  }
+}, 500);
+
 /* ============================================================
    ✅ v0.4.34 ХОЛОД (зимний апдейт, этап 1) — АВТОРИТЕТ СЕРВЕРА.
    Зима = высокие горы со снегом. Высоту рельефа сервер считает
@@ -3588,6 +3711,29 @@ function brixHeightAt(x, z) {
   h = brixLerp(h, -7, edge);
 
   return h;
+}
+
+/* --- ✅ v0.5.17 поверхность для приземления аирдропа: первое, чего
+   коснётся ящик — земля/горы (brixHeightAt), ФУНДАМЕНТ или ПОТОЛОК
+   (крыша) построек (клетки f/c в радиусе клетки), насыпь чекблока --- */
+function adSurfaceAt(x, z) {
+  let s = brixHeightAt(x, z);
+  const gx = Math.round(x / CELL), gz = Math.round(z / CELL);
+  for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+    const cell = buildCell.get((gx + dx) + ',' + (gz + dz));
+    if (!cell) continue;
+    if (cell.f && isFinite(cell.f.top) && cell.f.top > s) s = cell.f.top;
+    if (cell.c && isFinite(cell.c.top) && cell.c.top > s) s = cell.c.top;
+  }
+  for (const cb of worldObjs.cb) {
+    if (cb.gone) continue;
+    const ddx = cb.x - x, ddz = cb.z - z;
+    if (ddx * ddx + ddz * ddz < 20) {
+      const cbH = brixHeightAt(cb.x, cb.z) + 0.95;
+      if (cbH > s) s = cbH;
+    }
+  }
+  return s;
 }
 
 /* --- параметры холода --- */

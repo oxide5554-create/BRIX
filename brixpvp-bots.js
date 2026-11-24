@@ -10,13 +10,16 @@
  *
  *  Команды: СТАЛЬ (синие, юг, z>0) и ПЛАМЯ (красные, север, z<0).
  *  · на арене всегда 10 бойцов: 5 синих + 5 красных;
- *  · КАЖДЫЙ ИГРОК — синий (СТАЛЬ): при входе игрока СЕРВЕР УБИРАЕТ
- *    одного СИНЕГО бота (синих ботов = 5 − игроки), состав сторон
- *    остаётся 5 на 5; вышел игрок — бот вернулся;
+ *  · ✅ v0.5.16 ИГРОКИ ЗА ОБЕ КОМАНДЫ: при входе АВТОБАЛАНС — игрок
+ *    попадает к СТАЛИ или ПЛАМЕНИ (где меньше живых людей, ничья →
+ *    СТАЛЬ); бот ЕГО команды уходит (синих ботов = 5 − синие игроки,
+ *    красных = 5 − красные), состав сторон остаётся 5 на 5;
+ *    вышел игрок — бот вернулся;
  *  · ИИ ботов авторитетен у сервера: патруль/поиск/бой по нав-графу;
  *  · боты стреляют в БЛИЖАЙШЕГО врага с прямой видимостью, очередями
  *    2–4 патрона, урон 7, магазин 30, перезарядка 2.6 с;
- *  · своих не убивают; phit игрок-в-игрок на арене блокируется;
+ *  · своих не убивают; урон игрок-в-игрока — только между РАЗНЫМИ
+ *    командами (✅ v0.5.16: игроки и за ПЛАМЯ);
  *  · ПОБЕДА ДО 30 → ЛИДЕРБОРД → НОВЫЙ РАУНД (v0.5.6).
  *
  *  Протокол (всем):
@@ -285,7 +288,8 @@ function arenaPlayers() {
     const lx = p.state.x, lz = p.state.z;
     if (Math.abs(lx) > HALF_W + 1 || Math.abs(lz) > HALF_D + 1) return;
     out.push({
-      ref: p, id: p.id, name: p.name, god: !!p.god, team: 'blue',
+      ref: p, id: p.id, name: p.name, god: !!p.god,
+      team: (p.ateam === 'red' ? 'red' : 'blue'),   // ✅ v0.5.16: команды игроков
       x: lx, y: p.state.y - AY, z: lz
     });
   });
@@ -435,8 +439,8 @@ function botShoot(b, dt) {
     if (p.hp <= 0) {
       p.dead = true;
       api.broadcast({ t: 'pdeath', tid: p.id, by: b.name }, null);
-      addKill('red', { k: 'bot', i: b.i, n: b.name },
-        { k: 'player', id: p.id, n: p.name }, false);
+      addKill(b.team, { k: 'bot', i: b.i, n: b.name },
+        { k: 'player', id: p.id, n: p.name }, false);   // ✅ v0.5.16: в счёт команды бота
       console.log('[bots] ' + b.name + ' убил игрока ' + p.name);
     }
   } else {
@@ -447,11 +451,24 @@ function botShoot(b, dt) {
   }
 }
 
+/** команда стрелка-игрока (✅ v0.5.16: игроки и за ПЛАМЯ; ref есть у
+    киллов из handleBhit/onPlayerKill, у старых сообщений — поиск по id) */
+function teamOfPlayerBy(by) {
+  if (by.ref) return (by.ref.ateam === 'red' ? 'red' : 'blue');
+  let t = 'blue';
+  if (api && by.id) api.players.forEach((q) => {
+    if (q.id === by.id && q.ateam === 'red') t = 'red';
+  });
+  return t;
+}
+
 function killBot(b, by, hs) {
   b.state = 'dead';
   b.deadT = 0; b.respawnT = 5;
   b.st = 5;
-  addKill(by.k === 'player' ? 'blue' : (by.i !== undefined ? teamOfBotIdx(by.i) : 'blue'),
+  /* ✅ v0.5.16: килл игрока идёт в счёт ЕГО команды (СТАЛЬ или ПЛАМЯ) */
+  addKill(by.k === 'player' ? teamOfPlayerBy(by)
+    : (by.i !== undefined ? teamOfBotIdx(by.i) : 'blue'),
     by, { k: 'bot', i: b.i, n: b.name }, hs);
   api.broadcast({ t: 'bdead', i: b.i, by: by, hs: hs ? 1 : 0 }, null);
   console.log('[bots] ' + b.name + ' убит — счёт СТАЛЬ ' + score.blue + ' : ' + score.red + ' ПЛАМЯ');
@@ -469,7 +486,8 @@ function leaderboardRows() {
   if (api) {
     api.players.forEach((p) => {
       const st = stats.get('p' + p.id);
-      out.push({ id: String(p.id), n: p.name, t: 'blue',
+      out.push({ id: String(p.id), n: p.name,
+        t: (p.ateam === 'red' ? 'red' : 'blue'),   // ✅ v0.5.16: команда игрока
         k: st ? st.k : 0, d: st ? st.d : 0 });
     });
   }
@@ -510,17 +528,23 @@ function addKill(team, by, victim, hs) {
   }
 }
 
-/** сколько ботов каждой команды нужно при N игроках (все игроки — СТАЛЬ) */
-function wantedBots(nPlayers) {
-  const blue = Math.max(0, 5 - nPlayers);
-  const total = Math.max(0, 10 - nPlayers);
-  const red = Math.min(5, total - blue);
-  return { blue: blue, red: red };
+/** сколько ботов каждой команды нужно: в команде 5 мест, часть занимают
+    ЛЮДИ СВОЕЙ команды (✅ v0.5.16 — игроки и за ПЛАМЯ, автобаланс) */
+function humansPerTeam() {
+  const n = { blue: 0, red: 0 };
+  if (api) api.players.forEach((p) => {
+    if (!p.state) return;                    // как раньше: считаем только В ИГРЕ
+    n[p.ateam === 'red' ? 'red' : 'blue']++;
+  });
+  return n;
+}
+function wantedBots(nBlue, nRed) {
+  return { blue: Math.max(0, 5 - nBlue), red: Math.max(0, 5 - nRed) };
 }
 
 function reconcile() {
-  const n = api ? api.countInGame() : 0;
-  const want = wantedBots(n);
+  const hum = humansPerTeam();
+  const want = wantedBots(hum.blue, hum.red);
   const have = { blue: 0, red: 0 };
   bots.forEach(b => { if (b.state !== 'dead') have[b.team]++; else have[b.team] += 0; });
   const totalHave = { blue: 0, red: 0 };
@@ -545,8 +569,8 @@ function reconcile() {
   while (totalHave.red < want.red) { bots.push(makeBot('red', totalHave.red++)); }
   bi = 0; ri = 0;
   bots.forEach(b => { if (b.team === 'blue') b.idx = bi++; else b.idx = ri++; });
-  if (api) console.log('[bots] состав: СТАЛЬ ботов ' + want.blue + ' + игроков ' + n +
-    ' против ПЛАМЯ ' + want.red);
+  if (api) console.log('[bots] состав: СТАЛЬ — ботов ' + want.blue + ' + людей ' +
+    hum.blue + ' против ПЛАМЯ — ботов ' + want.red + ' + людей ' + hum.red);
 }
 
 function step(dt) {
@@ -557,13 +581,20 @@ function step(dt) {
       roundOver = 0;
       score = { blue: 0, red: 0 };
       stats = new Map();                      // статистика нового матча
-      bots.forEach(b => { b.hp = 100; b.state = 'patrol'; b.st = 0; spawnBot(b, true); });
+      /* ✅ v0.5.16 ФИКС «трупы ботов лежат после раунда»: spawnBot(b, true)
+         НЕ шлёт 'bspawn' — клиентские регдоллы оставались лежать весь
+         новый раунд. Запоминаем, кто был мёртв, и шлём им 'bspawn' */
+      const wereDead = [];
+      bots.forEach(b => { if (b.state === 'dead') wereDead.push(b.i);
+        b.hp = 100; b.state = 'patrol'; b.st = 0; spawnBot(b, true); });
       if (api) {
+        wereDead.forEach((bi) => api.broadcast({ t: 'bspawn', i: bi }, null));
         api.broadcast({ t: 'bscore', blue: 0, red: 0, limit: BOTS_LIMIT }, null);
         api.broadcast({ t: 'atoast', m: 'НОВЫЙ РАУНД — счёт 0:0, до ' +
           BOTS_LIMIT + ' килов' }, null);
       }
-      console.log('[bots] новый раунд: счёт 0:0, боты на спавнах');
+      console.log('[bots] новый раунд: счёт 0:0, боты на спавнах (встало трупов: ' +
+        wereDead.length + ')');
     }
     return;
   }
@@ -689,10 +720,11 @@ module.exports.init = function (opts) {
     ', солидов ' + SOLIDS.length + ', узлов нав-графа ' + nodes.length);
 };
 
-/** снапшот для welcome нового игрока */
-module.exports.snapshot = function () {
+/** снапшот для welcome нового игрока (p — чтобы едет ЕГО команда) */
+module.exports.snapshot = function (p) {
   return {
-    team: 'blue', limit: BOTS_LIMIT,
+    team: (p && p.ateam === 'red') ? 'red' : 'blue',   // ✅ v0.5.16: команда этого игрока
+    limit: BOTS_LIMIT,
     map: curMapId,                            // ✅ v0.5.5: карта для клиента
     mapName: MapData.get(curMapId).name,
     blue: score.blue, red: score.red,
@@ -728,9 +760,10 @@ module.exports.handleBhit = function (p, msg) {
   const i = Number(msg.i);
   const b = bots.find(x => x.i === i);
   if (!b || b.state === 'dead') return null;
-  /* ✅ СВОИХ НЕ УБИВАЕМ: игрок — СТАЛЬ (синие), урон синим ботам
-     игнорируется полностью (защита и от читов, и от ошибок клиента) */
-  if (b.team === 'blue') return null;
+  /* ✅ СВОИХ НЕ УБИВАЕМ: урон ботам СВОЕЙ команды игнорируется полностью
+     (защита от читов и ошибок клиента). ✅ v0.5.16: команда игрока может
+     быть и ПЛАМЯ — тогда красные боты для него свои, синие — враги */
+  if (b.team === (p.ateam === 'red' ? 'red' : 'blue')) return null;
   const lx = p.state.x, lz = p.state.z;
   const d2 = (lx - b.x) * (lx - b.x) + (lz - b.z) * (lz - b.z);
   if (d2 > 90 * 90) return null;               // дальше 90 м — чит
@@ -740,10 +773,33 @@ module.exports.handleBhit = function (p, msg) {
   b.lastSeen = { x: lx, y: p.state.y - AY, z: lz }; b.seenT = Date.now() / 1000;
   if (b.target === null || b.target === undefined) { b.state = 'seek'; b.repathT = 0; }
   if (b.hp <= 0 && b.state !== 'dead') {
-    killBot(b, { k: 'player', id: p.id, n: p.name }, !!msg.hs);
+    killBot(b, { k: 'player', id: p.id, n: p.name, ref: p }, !!msg.hs);
     /* ✅ v0.5.3: килл подтверждён — игрок может забрать награду
        (полные патроны у клиента + полное хп через 'kreward') */
     p.lastRewardAt = Date.now();
   }
   return { t: 'bupd', i: b.i, hp: Math.max(0, Math.round(b.hp)) };
+};
+
+/* ---------- ✅ v0.5.16 КОМАНДЫ ИГРОКОВ ---------- */
+
+/** автобаланс при входе: команда, где меньше живых людей; ничья → СТАЛЬ.
+    ВАЖНО: exceptId — сам входящий ИСКЛЮЧАЕТСЯ из подсчёта (иначе он
+    засчитывает сам себя как СТАЛЬ и первый игрок уезжал за ПЛАМЯ).
+    Вызывается из server.js при входе игрока (результат — в p.ateam) */
+module.exports.pickTeam = function (exceptId) {
+  let nb = 0, nr = 0;
+  if (api) api.players.forEach((p) => {
+    if (p.id === exceptId) return;
+    if (p.ateam === 'red') nr++; else nb++;
+  });
+  return nr < nb ? 'red' : 'blue';
+};
+
+/** игрок убил игрока ЧУЖОЙ команды (server.js case 'phit'): килл — в счёт
+    команды стрелка, смерть — жертве. Свои до этого места не доходят */
+module.exports.onPlayerKill = function (killer, victim, hs) {
+  addKill(killer.ateam === 'red' ? 'red' : 'blue',
+    { k: 'player', id: killer.id, n: killer.name, ref: killer },
+    { k: 'player', id: victim.id, n: victim.name }, !!hs);
 };

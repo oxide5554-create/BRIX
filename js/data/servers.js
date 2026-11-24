@@ -20,7 +20,7 @@ window.BrixData.SERVERS = [
     modeKey: 'srv.mode.vanilla',
     size: 3000,
     ping: 12,
-    max: 64
+    max: 25                 // ✅ v0.5.16: лимит выживания 25 (было 64)
   },
   {
     id: 'brixpvp',
@@ -32,7 +32,7 @@ window.BrixData.SERVERS = [
     modeKey: 'srv.mode.pvp',
     size: 3000,
     ping: 12,
-    max: 64
+    max: 10                 // ✅ v0.5.16: лимит арены 10 (было 64)
   }
 ];
 

@@ -404,6 +404,19 @@ window.BrixAdmin = (function () {
       'Фундаменты, стены, окна, двери и потолки ВСЕХ игроков. ' +
       'Лут, бочки и дропы не трогаются. У игроков дом уберётся сам.'));
 
+    /* ---------- ✅ v0.5.17 СОБЫТИЯ: ПРИЗЫВ АИРДРОПА ---------- */
+    body.appendChild(secTitle('СОБЫТИЯ СЕРВЕРА'));
+    var airBtn = el('button', 'bap-btn font-h', '✈ ПРИЗВАТЬ САМОЛЁТ С ГРУЗОМ');
+    airBtn.onclick = function () {
+      if (window.menuAudio) menuAudio.click();
+      sendOp('airdrop');
+      toast(ru('Calling the plane…', 'Вызываю самолёт…'), 3);
+    };
+    body.appendChild(airBtn);
+    body.appendChild(el('div', 'bap-note',
+      'Самолёт сбросит 1–3 аирдропа с отличным лутом. Он и так прилетает ' +
+      'каждые 30 минут — кнопка для нетерпеливых.'));
+
     /* ---------- 4. ТЕЛЕПОРТ ---------- */
     body.appendChild(secTitle('ТЕЛЕПОРТ ПО КООРДИНАТАМ'));
     var tpRow = el('div', 'bap-tprow');

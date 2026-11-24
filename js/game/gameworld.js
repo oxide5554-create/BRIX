@@ -686,6 +686,9 @@ window.BrixGameWorld = (function () {
         BrixCorpses.setScene(scene);
         BrixCorpses.build(objs.corpses);
       }
+      /* ✅ v0.5.17: АИРДРОПЫ — сцена и камера (звук самолёта громче/тише
+         по дистанции до камеры); сами ящики приедут из welcome (adrops) */
+      if (window.BrixAirdrop) BrixAirdrop.setScene(scene, camera);
       /* ✅ v0.4.43: ЖИВЫЕ С4 из снапшота — зашёл ПОСЛЕ постановки бомбы:
          видишь блок и слышишь тыки с ПРАВИЛЬНОЙ фазы (ms — остаток
          фьюза), взрыв решает сервер */
@@ -1130,6 +1133,11 @@ window.BrixGameWorld = (function () {
           } else if (chId) {
             e.preventDefault();
             openChest(chId);
+          } else if (window.BrixAirdrop && BrixAirdrop.nearest(camera.position, 4.2)) {
+            /* ✅ v0.5.17: F у АИРДРОПА — ящик большой, хватает дистанции
+               4.2 м (прицел не нужен); меню сразу, сервер уточнит лут */
+            e.preventDefault();
+            BrixAirdrop.loot(BrixAirdrop.nearest(camera.position, 4.2));
           } else if (window.BrixCorpses && window.BrixCorpses.aimed) {
             var aimDir = new THREE.Vector3();
             camera.getWorldDirection(aimDir);
@@ -1167,6 +1175,12 @@ window.BrixGameWorld = (function () {
     if (window.BrixLootMenu) {
       BrixLootMenu.init({
         take: function (cbId, item, amt) {
+          /* ✅ v0.5.17: АИРДРОП — своя ветка (оптимистично + adTake) */
+          if (cbId && String(cbId).charAt(0) === 'a' &&
+              String(cbId).charAt(1) === 'd' && window.BrixAirdrop) {
+            BrixAirdrop.take(cbId, item, amt || 0);
+            return;
+          }
           /* ✅ v0.4.43: ТРУП — своя ветка (оптимистично + corpseTake) */
           if (window.BrixCorpses && BrixCorpses.has(cbId)) {
             BrixCorpses.take(cbId, item, amt || 0);
@@ -1392,6 +1406,14 @@ window.BrixGameWorld = (function () {
             BrixHud.toast(String(msg.m).slice(0, 140), 5);
           }
         } catch (eAt) {}
+      });
+      /* ✅ v0.5.17 АИРДРОП: самолёт (вылет/якорь/улёт) + ящики
+         (сброс/посадка/убран/лут/отказ) — один обработчик на все */
+      ['plane', 'planeS', 'planeGone', 'adNew', 'adLand', 'adGone',
+        'adLoot', 'adDeny'].forEach(function (ev) {
+        BrixNet.on(ev, function (m) {
+          if (window.BrixAirdrop) BrixAirdrop.onNet(m);
+        });
       });
       /* ============================================================
          ✅ v0.4.43 С4 ПОД ПОЛНЫМ КОНТРОЛЕМ СЕРВЕРА. Сервер рассылает
@@ -3809,6 +3831,7 @@ window.BrixGameWorld = (function () {
       tickC4(dt);          // ✅ v0.4.41: полёт/тыки/взрывы С4
       tickDebris(dt);      // ✅ v0.4.43: обломки разрушенных построек
       if (window.BrixCorpses) BrixCorpses.tick(dt);   // ✅ v0.4.43: пульс колец трупов
+      if (window.BrixAirdrop) BrixAirdrop.tick(dt);   // ✅ v0.5.17: полёт/падение/парашют/звук
       updateCrosshair();
     }
 
@@ -4322,8 +4345,16 @@ window.BrixGameWorld = (function () {
             if (window.BrixArena && msg.pvp.b) BrixArena.feedBots(msg.pvp.b);
             if (window.BriXPvPHud) {
               BriXPvPHud.setScores(msg.pvp.blue || 0, msg.pvp.red || 0, msg.pvp.limit || 30);
+              /* ✅ v0.5.16: бейдж команды игрока — РЕАЛЬНАЯ команда из
+                 welcome (автобаланс СТАЛЬ/ПЛАМЯ) */
+              if (msg.pvp.team) BriXPvPHud.setTeam(msg.pvp.team);
               BrixArena.feedScore(msg.pvp.blue || 0, msg.pvp.red || 0, msg.pvp.limit || 30);
             }
+          }
+          /* ✅ v0.5.17 АИРДРОП: ящики (упавшие и ПАДАЮЩИЕ) + самолёт
+             в воздухе — зашёл после/во время: увидишь как остальные */
+          if (window.BrixAirdrop && (msg.adrops || msg.adplane)) {
+            BrixAirdrop.build(msg.adrops || [], msg.adplane || null);
           }
           /* ✅ v0.4.65 ПВП-АРЕНА: ПОСТРОЙКИ BrixLand на арену НЕ ПРИЕЗЖАЮТ
              (ни с сервера — у реалма свой пустой bd, ни из локального
