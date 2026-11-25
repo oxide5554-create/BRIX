@@ -12,6 +12,7 @@ window.BrixI18N = (function () {
     'menu.servers': 'СЕРВЕРА',
     'menu.friends': 'ДРУЗЬЯ',
     'menu.news': 'НОВОСТИ',
+    'menu.rewards': 'НАГРАДЫ',   /* ✅ v0.5.23: полка наград — кнопка в меню (не в игре) */
     'menu.skins': 'МАГАЗИН',   // ✅ v0.4.62: было «СКИНЫ»
     'menu.options': 'НАСТРОЙКИ',
     'menu.quit': 'ВЫХОД',
@@ -67,6 +68,7 @@ window.BrixI18N = (function () {
     'srv.subtitle': 'Официальные сервера BRIX',
     'srv.mode.vanilla': 'ВЫЖИВАНИЕ',
     'srv.mode.pvp': 'ПВП АРЕНА',
+    'srv.mode.wipe': 'ВАЙП-МИР',
     'srv.connect': 'ПОДКЛЮЧИТЬСЯ',
     'srv.online': 'ОНЛАЙН',
     'srv.land.desc': 'Классическое выживание: крафт, постройки, деревья и руда, день/ночь, погода.',
@@ -346,6 +348,8 @@ window.BrixI18N = (function () {
     'load.tip9': 'Совет: скины оружия меняют только вид — характеристики остаются прежними.',
     'load.tip10': 'Совет: карта сервера живёт на сервере — после перезапуска деревья и руды восстановятся.',
     'load.step.connect': 'Подключение к серверу…',
+    'load.newmap': 'НОВАЯ КАРТА №{n} — свой ландшафт: дорога, озеро, горы, лес, лозы и чекблоки сгенерированы заново{extra}',
+    'load.newmap.wipe': '· мир вайпа',
     'load.step.auth': 'Авторизация…',
     'load.step.terrain': 'Генерация ландшафта…',
     'load.step.flora': 'Размещение растительности…',
@@ -394,11 +398,40 @@ window.BrixI18N = (function () {
     'mm.quitYes': 'ДА',
     'mm.quitWait': 'ДА ({s})',
 
+    // ✅ v0.5.22 ВАЙП-МИР (BrixWipe): обратный отсчёт и вайп
+    'wipe.timer': 'ВАЙП ЧЕРЕЗ',
+    'wipe.soon': 'ВАЙП МИРА ЧЕРЕЗ {n} С — МИР ПЕРЕГЕНЕРИРУЕТСЯ!',
+    'wipe.now': 'ВАЙП! МИР СТЁРТ, НОВАЯ КАРТА ГЕНЕРИРУЕТСЯ…',
+    'wipe.card': 'Вайп каждые сутки — сервер сам тикает и генерирует новую карту (пустыня, арктика, кактусы)',
+    // ✅ v0.5.22 ЧАТ (Enter / кнопка на телефоне)
+    'chat.open': 'Чат — напиши сообщение (Enter — отправить, Esc — закрыть)',
+    'chat.placeholder': 'Сообщение…',
+    'chat.send': 'ОТПРАВИТЬ',
+    'chat.empty': 'Сообщений пока нет — напиши первым!',
+    'chat.mute': 'Слишком быстро — подожди секунду',
+    // ✅ v0.5.22 УРОВНИ / НАГРАДЫ (полка в правом нижнем углу)
+    'rw.title': 'НАГРАДЫ ЗА УРОВНИ',
+    'rw.level': 'УРОВЕНЬ {n}',
+    'rw.next': 'До {n} уровня',
+    'rw.max': 'МАКСИМАЛЬНЫЙ УРОВЕНЬ',
+    'rw.claim': 'ЗАБРАТЬ {n} МОНЕТ',
+    'rw.claimed': 'ЗАБРАНО',
+    'rw.locked': 'НУЖЕН УР. {n}',
+    'rw.reward': 'Награда за каждый уровень: монеты',
+    'rw.gain': '+{n} опыта — {src}',
+    'rw.lvlup': 'УРОВЕНЬ {n}! Награда ждёт на полке',
+    'rw.src.tree': 'дерево срублено',
+    'rw.src.stone': 'камень добыт',
+    'rw.src.iron': 'железо добыто',
+    'rw.src.sulfur': 'сера добыта',
+
     // Общие
     'common.close': 'Закрыть',
     'common.cancel': 'Отмена',
     'common.beta': 'БЕТА',
-    'footer.version': 'v0.4.7 · СТРОИТЕЛЬСТВО: план строителя в инвентаре (клик — в руки, Z — меню), хотбар 6 слотов, фундамент/стена/потолок с коллизиями, плавный бег между фундаментами, постройки живут на сервере — память + автосейв + снапшот новым игрокам · сборка 15.11.2026'
+    /* ✅ v0.5.22: строка версии/подсказки в футере меню УБРАНА —
+       оставляем пусто, чтобы не мусорить экран */
+    'footer.version': '',
   };
 
   var en = {
@@ -406,6 +439,7 @@ window.BrixI18N = (function () {
     'menu.servers': 'SERVERS',
     'menu.friends': 'FRIENDS',
     'menu.news': 'NEWS',
+    'menu.rewards': 'REWARDS',   /* ✅ v0.5.23: rewards button — in the menu */
     'menu.skins': 'SHOP',   // ✅ v0.4.62: was “SKINS”
     'menu.options': 'OPTIONS',
     'menu.quit': 'QUIT',
@@ -724,6 +758,8 @@ window.BrixI18N = (function () {
     'load.tip9': 'Tip: weapon skins change looks only — stats stay the same.',
     'load.tip10': 'Tip: the world lives on the server — trees and ores respawn after restarts.',
     'load.step.connect': 'Connecting to server…',
+    'load.newmap': 'NEW MAP #{n} — own landscape: road, lake, mountains, forest, vines and checkblocks regenerated{extra}',
+    'load.newmap.wipe': '· wipe world',
     'load.step.auth': 'Authorizing…',
     'load.step.terrain': 'Generating terrain…',
     'load.step.flora': 'Placing vegetation…',
@@ -768,10 +804,37 @@ window.BrixI18N = (function () {
     'mm.quitYes': 'YES',
     'mm.quitWait': 'YES ({s})',
 
+    // ✅ v0.5.22 WIPE WORLD (BrixWipe): countdown and wipe
+    'wipe.timer': 'WIPE IN',
+    'wipe.soon': 'WORLD WIPE IN {n} S — THE MAP IS REGENERATING!',
+    'wipe.now': 'WIPE! WORLD CLEARED, NEW MAP GENERATING…',
+    'wipe.card': 'Daily wipe — the server counts down and generates a new map (desert, arctic, cacti)',
+    // ✅ v0.5.22 CHAT (Enter / mobile button)
+    'chat.open': 'Chat — type a message (Enter to send, Esc to close)',
+    'chat.placeholder': 'Message…',
+    'chat.send': 'SEND',
+    'chat.empty': 'No messages yet — be the first!',
+    'chat.mute': 'Too fast — wait a second',
+    // ✅ v0.5.22 LEVELS / REWARDS (shelf in the bottom-right corner)
+    'rw.title': 'LEVEL REWARDS',
+    'rw.level': 'LEVEL {n}',
+    'rw.next': 'To level {n}',
+    'rw.max': 'MAX LEVEL',
+    'rw.claim': 'CLAIM {n} COINS',
+    'rw.claimed': 'CLAIMED',
+    'rw.locked': 'NEED LVL {n}',
+    'rw.reward': 'Reward for each level: coins',
+    'rw.gain': '+{n} XP — {src}',
+    'rw.lvlup': 'LEVEL {n}! Reward is waiting on the shelf',
+    'rw.src.tree': 'tree felled',
+    'rw.src.stone': 'stone mined',
+    'rw.src.iron': 'iron mined',
+    'rw.src.sulfur': 'sulfur mined',
+
     'common.close': 'Close',
     'common.cancel': 'Cancel',
     'common.beta': 'BETA',
-    'footer.version': 'v0.4.7 · BUILDING: plan in the inventory (click to take in hands, Z — menu), 6-slot hotbar, foundation/wall/ceiling with collisions, smooth running between foundations, builds live on the server — memory + autosave + snapshot for newcomers · build 15.11.2026'
+    'footer.version': '',
   };
 
   var dicts = { ru: ru, en: en };

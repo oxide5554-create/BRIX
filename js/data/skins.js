@@ -24,39 +24,9 @@ window.BrixData = window.BrixData || {};
 
   BrixData.SKINS = [
     {
-      id: 'exkimo', item: 'revolver', type: 'weapon', rarity: 'rare', price: 450,
-      name: { ru: 'Револьвер «Экскимо»', en: 'Revolver “Eskimo”' },
-      short: { ru: '«Экскимо»', en: '“Eskimo”' },
-      iconUrl: ax('assets/icons/skin_revolver_exkimo.png')
-    },
-    {
-      id: 'candy', item: 'thompson', type: 'weapon', rarity: 'epic', price: 700,
-      name: { ru: 'Томпсон «Леденцовый выстрел»', en: 'Thompson “Candy Shot”' },
-      short: { ru: '«Леденцовый выстрел»', en: '“Candy Shot”' },
-      iconUrl: ax('assets/icons/skin_thompson_candy.png')
-    },
-    {
-      id: 'gift', item: 'c4', type: 'weapon', rarity: 'rare', price: 550,
-      name: { ru: 'С4 «Бомбический подарок»', en: 'C4 “Bomb Gift”' },
-      short: { ru: '«Бомбический подарок»', en: '“Bomb Gift”' },
-      iconUrl: ax('assets/icons/skin_c4_gift.png')
-    },
-    {
-      id: 'frozen', item: 'stoneAxe', type: 'tool', rarity: 'uncommon', price: 300,
-      name: { ru: 'Каменный топор «Замороженое дерево»', en: 'Stone Axe “Frozen Wood”' },
-      short: { ru: '«Замороженое дерево»', en: '“Frozen Wood”' },
-      iconUrl: ax('assets/icons/skin_stone_axe_frozen.png')
-    },
-    {
-      /* ✅ v0.4.62: скин «Ретро» — для ЖЕЛЕЗНОЙ кирки (pickaxe.glb),
-         а не каменной: обёртка рисовалась по развёртке pickaxe.glb
-         (проверено наложением UV-контура) */
-      id: 'retro', item: 'ironPickaxe', type: 'tool', rarity: 'uncommon', price: 300,
-      name: { ru: 'Железная кирка «Ретро»', en: 'Iron Pickaxe “Retro”' },
-      short: { ru: '«Ретро»', en: '“Retro”' },
-      iconUrl: ax('assets/icons/skin_pickaxe_retro.png')
-    },
-    {
+      /* ✅ v0.5.22: в магазине ОДИН скин — «Ледяные руны» (просьба игрока:
+         остальные скины из магазина убраны). Файлы обёрток остальных
+         скинов сохранены в assets/skins/ на случай возврата */
       id: 'ice', item: 'ironAxe', type: 'tool', rarity: 'rare', price: 400,
       name: { ru: 'Железный топор «Ледяные руны»', en: 'Iron Axe “Ice Runes”' },
       short: { ru: '«Ледяные руны»', en: '“Ice Runes”' },

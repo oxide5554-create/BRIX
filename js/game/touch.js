@@ -130,6 +130,7 @@ window.BrixTouch = (function () {
         '<button class="btx-btn" data-act="build">СТРОЙ</button>' +
         '<button class="btx-btn" data-act="reload">R</button>' +
         '<button class="btx-btn" data-act="crouch">СИД</button>' +
+        '<button class="btx-btn" data-act="chat">ЧАТ</button>' +
       '</div>' +
       '<div id="btxMain">' +
         '<button class="btx-btn" data-act="run">БЕГ</button>' +
@@ -298,6 +299,8 @@ window.BrixTouch = (function () {
       case 'build':    if (down) { key('KeyZ', true); setTimeout(function () { key('KeyZ', false); }, 60); } break;
       case 'reload':   if (down) { key('KeyR', true); setTimeout(function () { key('KeyR', false); }, 60); } break;
       case 'pause':    if (down) { key('KeyM', true); setTimeout(function () { key('KeyM', false); }, 60); } break;
+      /* ✅ v0.5.22: ЧАТ на тач-экране — открыть строку ввода */
+      case 'chat':     if (down && window.BrixChat) BrixChat.show(true); break;
     }
   }
 
@@ -323,6 +326,11 @@ window.BrixTouch = (function () {
     if (!phaseOk) tapped = false;   // новая сессия — снова нужен включающий тап
     var c = window.__brixControls;
     var show = want && phaseOk && !!(c && c.enabled) && !anyUiOpen();
+    /* ✅ v0.5.22: класс на body — наградная полка поднимается НАД
+       боевыми кнопками (не перекрываются) */
+    try {
+      document.body.classList.toggle('brix-touch-ui', want && phaseOk);
+    } catch (eB) {}
     if (show !== visible) {
       visible = show;
       if (!built && show) build();

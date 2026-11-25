@@ -27,6 +27,11 @@ window.BrixTerrain = (function () {
   // границ (крупное «гуляние» линии) и пятна (рваные края биомов)
   var S_TRANS = 7079;
   var S_PATCH = 8081;
+  /* ✅ v0.5.22 ПУСТЫНЯ И АРКТИКА (вайп-мир): крупный шум ТЕМПЕРАТУРЫ
+     делит карту на климатические зоны. Включается сервером
+     (welcome/status.biomes → window.BRIX_BIOMES = 1) только на
+     BrixWipe — BrixLand остаётся прежним */
+  var S_TEMP = 9099;
 
   /* ✅ v0.4.64 СВОЙ РЕЛЬЕФ НА КАЖДОМ СЕРВЕРЕ: гамма-смещение сидов.
      BrixPvP ставит window.BRIX_TERRAIN_SEED = 77701 ДО генерации —
@@ -38,6 +43,58 @@ window.BrixTerrain = (function () {
   function peak(x, z, cx, cz, sigma, amp) {
     return amp * N.gauss(x, z, cx, cz, sigma);
   }
+
+  /* ✅ v0.5.23 ПЛАН ЛАНДШАФТА ПО СИДУ (1:1 с server.js brixLayout —
+     МЕНЯТЬ ТОЛЬКО В ОБОИХ ФАЙЛАХ СРАЗУ!): ОЗЕРО и ТРИ ПИКА выбираются
+     детерминированным ПСЧ от сида карты. Каждая вайп-карта — СВОИ озеро,
+     горы и долины (пользователь: «генерация случайная — свой ландшафт,
+     озера»). Сид 0 (BrixLand/BrixPvP) = прежняя карта без изменений.
+     Пик не ставится в озеро; озеро и пики — не ближе 250 м к спавну */
+  var _layoutSeed = -1, _layout = null;
+  function layoutAt() {
+    var seed = (window.BRIX_TERRAIN_SEED || 0) | 0;
+    if (_layoutSeed === seed && _layout) return _layout;
+    if (!seed) {
+      _layout = {
+        lake: { x: 170, z: 150, r: 110 },
+        peaks: [
+          { x: -230, z: -150, r: 95, a: 56 },
+          { x: 255, z: -230, r: 105, a: 64 },
+          { x: -130, z: 255, r: 85, a: 42 }
+        ]
+      };
+    } else {
+      var a = (seed ^ 0x9E3779B9) >>> 0;
+      function nxt() {
+        a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
+        return a / 4294967296;
+      }
+      var la = nxt() * Math.PI * 2, ld = 250 + nxt() * 100;
+      var lake = {
+        x: Math.round(Math.cos(la) * ld),
+        z: Math.round(Math.sin(la) * ld),
+        r: Math.round(88 + nxt() * 42)
+      };
+      var peaks = [];
+      for (var i = 0; i < 3; i++) {
+        var px = 0, pz = 0, pr = 0;
+        for (var t = 0; t < 3; t++) {
+          var pa = nxt() * Math.PI * 2, pd = 250 + nxt() * 130;
+          px = Math.round(Math.cos(pa) * pd);
+          pz = Math.round(Math.sin(pa) * pd);
+          pr = Math.round(85 + nxt() * 28);
+          var dlx = px - lake.x, dlz = pz - lake.z;
+          if (Math.sqrt(dlx * dlx + dlz * dlz) > lake.r + pr) break;
+        }
+        peaks.push({ x: px, z: pz, r: pr, a: Math.round(44 + nxt() * 22) });
+      }
+      _layout = { lake: lake, peaks: peaks };
+    }
+    _layoutSeed = seed;
+    return _layout;
+  }
+  /** точки озера/пиков текущей карты (road.js и лоадер — для текста) */
+  function layoutInfo() { return layoutAt(); }
 
   /**
    * Высота рельефа в точке мира. Используется и для геометрии,
@@ -67,14 +124,16 @@ window.BrixTerrain = (function () {
       r + (N.fbm(x * 0.005 + 7.3, z * 0.005 + 2.9, S_MOUNT_MASK + seedOff(), 3) - 0.5) * 0.55);
     var ridge = Math.pow(N.ridged(x * 0.006, z * 0.006, S_MOUNT + seedOff(), 4), 1.3) * 72;
 
-    // отдельные заметные пики
-    var peaks =
-      peak(x, z, -230, -150, 95, 56) +
-      peak(x, z, 255, -230, 105, 64) +
-      peak(x, z, -130, 255, 85, 42);
+    // ✅ v0.5.23: пики и озеро — ПО СИДУ карты (layoutAt, 1:1 с сервером)
+    var LY = layoutAt();
+    var peaks = 0;
+    for (var pi = 0; pi < LY.peaks.length; pi++) {
+      var P = LY.peaks[pi];
+      peaks += peak(x, z, P.x, P.z, P.r, P.a);
+    }
 
     // котловина озера
-    var lakeG = N.gauss(x, z, 170, 150, 110);
+    var lakeG = N.gauss(x, z, LY.lake.x, LY.lake.z, LY.lake.r);
     var lakeMask = N.smoothstep(0.15, 0.7, lakeG);
 
     var h = 5 + spawnBlend * (hills + detail) * (1 - lakeMask * 0.85);
@@ -154,6 +213,21 @@ window.BrixTerrain = (function () {
         в шейдере (terrainlook.js) — карта и мир выглядят ОДНО.
      Результат пишется в общий пул _ks (без аллокаций в цикле). */
   var _ks = { moist: 0, dirtK: 0, rockK: 0, snowK: 0, sandK: 0, deepK: 0 };
+  /* ✅ v0.5.22: температура точки 0..1 (крупный шум с рваными краями).
+     0..0.32 — арктика (вечный снег), 0.62..1 — пустыня (пески и кактусы) */
+  function tempAt(x, z) {
+    return N.fbm(x * 0.0012 + 31.7, z * 0.0012 + 11.3, S_TEMP + seedOff(), 3);
+  }
+  /** ✅ v0.5.22: климат точки для растительности — 'desert' | 'arctic' | null.
+     Пороги выровнены с отрисовкой песка/снега в biomeKsAt: кактусы растут
+     ровно там, где рисуется песок, зимние ели — где снег */
+  function climateAt(x, z) {
+    if (!window.BRIX_BIOMES) return null;
+    var t = tempAt(x, z);
+    if (t >= 0.62) return 'desert';
+    if (t <= 0.36) return 'arctic';
+    return null;
+  }
   function biomeKsAt(h, ny, x, z) {
     var moist = N.fbm(x * 0.02, z * 0.02, S_MOIST + seedOff(), 3);
     // крупное возмущение границ: двигает высотные пороги биомов
@@ -182,6 +256,27 @@ window.BrixTerrain = (function () {
 
     // тёмное дно
     _ks.deepK = 1 - N.smoothstep(-3, 1.2, h);
+
+    /* ✅ v0.5.22 КЛИМАТИЧЕСКИЕ ЗОНЫ (только вайп-мир, BRIX_BIOMES=1):
+       жара → ПУСТЫНЯ (пески до горизонта, снега нет), холод → АРКТИКА
+       (вечный снег почти от воды, песков нет). Границы гуляют тем же
+       крупным шумом + рваные пятна — переходы живые, не прямые линии */
+    if (window.BRIX_BIOMES) {
+      var temp = tempAt(x, z);
+      var desertK = ragged(N.smoothstep(0.58, 0.70, temp), patch, 0.4);
+      var arcticK = ragged(1 - N.smoothstep(0.30, 0.42, temp), patch, 0.4);
+      if (desertK > 0) {
+        _ks.sandK = Math.max(_ks.sandK, desertK);
+        _ks.moist = Math.max(_ks.moist, 0.92);   // сухая трава на кромке пустыни
+        _ks.snowK *= (1 - desertK);
+        _ks.dirtK *= (1 - desertK);
+      }
+      if (arcticK > 0) {
+        _ks.snowK = Math.max(_ks.snowK, arcticK * N.smoothstep(0.16, 0.34, ny));
+        _ks.sandK *= (1 - arcticK);
+        _ks.moist = Math.min(_ks.moist, 0.35);
+      }
+    }
     return _ks;
   }
 
@@ -300,6 +395,13 @@ window.BrixTerrain = (function () {
     colorAt: colorAt,
     surfaceAt: surfaceAt,
     biomeKsAt: biomeKsAt,
+    /* ✅ v0.5.22: климат точки ('desert'/'arctic'/null) — кактусы и
+       зимние ели в world.js, следы в песке/снегу (footprints) */
+    climateAt: climateAt,
+    tempAt: tempAt,
+    /* ✅ v0.5.23: план карты (озеро/пики по сиду) — road.js строит
+       СВОЙ путь, лоадер показывает «карта №сид» */
+    layoutInfo: layoutInfo,
     buildTerrainGeometry: buildTerrainGeometry
   };
 })();

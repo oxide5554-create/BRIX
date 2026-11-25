@@ -50,11 +50,19 @@
   }
 
   function paintVersion() {
+    /* ✅ v0.5.22: подсказка с версией в футере меню УБРАНА (просьба
+       игрока) — элемент скрыт целиком, а не просто пустой */
     var el = document.getElementById('sidebarVersion');
     var elM = document.getElementById('mobileVersion');
     var html = versionHtml();
-    if (el) el.innerHTML = html;
-    if (elM) elM.innerHTML = html;
+    if (el) {
+      el.innerHTML = html;
+      el.style.display = html ? '' : 'none';
+    }
+    if (elM) {
+      elM.innerHTML = html;
+      elM.style.display = html ? '' : 'none';
+    }
   }
 
   /** жёсткая перезагрузка с пробивкой кэша (можно звать из консоли: BrixForceRefresh()) */
@@ -326,7 +334,10 @@
   }
 
   function renderHudServer() {
-    var srv = BrixData.ADMIN_SERVER;
+    /* ✅ v0.5.22: имя/карта ВЫБРАННОГО сервера (не всегда BrixLand) —
+       при входе на BrixWipe/BrixPvP HUD показывает тот сервер */
+    var srv = (window.BrixData && BrixData.serverById(BrixGame.state.serverId)) ||
+              BrixData.ADMIN_SERVER;
     var t = function (k) { return BrixState.t(k); };
     document.getElementById('hudServerName').textContent = srv.name;
     document.getElementById('hudServerInfo').textContent =
@@ -392,6 +403,26 @@
           info.players + '/' + (info.max || 64) +
           (info.inGame !== undefined ? ' · В ИГРЕ: ' + info.inGame : '');
       }
+      /* ✅ v0.5.23: ТАЙМЕР ВАЙПА на HUD (только вайп-мир). Дедлайн хранит
+         gameworld.js (window.__brixWipeDeadline) — локальный тик каждые
+         3 с, чтобы игрок видел «через сколько часов», а не гадал */
+      var wipeEl = document.getElementById('hudWipe');
+      if (wipeEl) {
+        var dl = window.__brixWipeDeadline || 0;
+        if (dl > Date.now() + 60000) {
+          var left = dl - Date.now();
+          var hh = Math.floor(left / 3600000);
+          var mm = Math.floor((left % 3600000) / 60000);
+          wipeEl.textContent = t('wipe.timer') + ' ' +
+            (hh > 0 ? hh + ' ч ' : '') + mm + ' м · ' + t('wipe.card');
+          wipeEl.style.display = '';
+        } else if (dl > 0) {
+          wipeEl.textContent = t('wipe.soon', { n: Math.max(1, Math.round((dl - Date.now()) / 1000)) });
+          wipeEl.style.display = '';
+        } else {
+          wipeEl.style.display = 'none';
+        }
+      }
     }, 3000);
     // ✅ v0.3.3: соцсеть — присутствие, заявки в друзья, онлайн сервера
     if (window.BrixFriends) BrixFriends.init();
@@ -446,6 +477,9 @@
         if (document.getElementById('gameLayer').classList.contains('hidden')) {
           showGameLayer();
         }
+        /* ✅ v0.5.22: HUD-имя сервера обновляется под ВЫБРАННЫЙ сервер
+           (BrixLand / BrixPvP / BrixWipe), а не зашитый BrixLand */
+        renderHudServer();
         document.getElementById('gameHud').classList.toggle('hidden', g.phase !== 'playing');
         // пауза видна, пока мышь не захвачена (как в оригинале)
         document.getElementById('pauseOverlay').classList.toggle('hidden', g.phase !== 'playing');

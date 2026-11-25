@@ -25,6 +25,10 @@ window.BrixWorld = (function () {
   var T = window.BrixTerrain;
   var N = window.BrixNoise;
 
+  /* ✅ v0.5.23: смещение сида для генераторов объектов — деревья, руды,
+     лагерь, облака на вайп-карте СВОИ (сид 0 = прежний BrixLand) */
+  function seedOffW() { return ((window.BRIX_TERRAIN_SEED || 0) | 0) * 7919; }
+
   var nextFrame = function () {
     return new Promise(function (r) { requestAnimationFrame(function () { r(); }); });
   };
@@ -158,7 +162,7 @@ window.BrixWorld = (function () {
        а игрок смотрит с земли СНИЗУ — FrontSide отсекал заднюю грань,
        и облака были НЕВИДИМЫ. Теперь side: DoubleSide — видны всегда */
     var clouds = new THREE.Group();
-    var rng = N.makeRng(777);
+    var rng = N.makeRng(777 + seedOffW());   /* ✅ v0.5.23: облака по сиду */
     var cloudMat = new THREE.MeshBasicMaterial({
       color: 0xf7f5ef,
       alphaMap: cloudTex,
@@ -457,7 +461,10 @@ window.BrixWorld = (function () {
   /* ---------------- Растительность и руды ---------------- */
 
   async function buildDecor(scene, yieldProgress) {
-    var rng = N.makeRng(20261113);
+    /* ✅ v0.5.23: ДЕРЕВЬЯ И РУДЫ — ПО СИДУ КАРТЫ (пользователь: «своя
+       генерация»): у каждой вайп-карты лес и жилы стоят в СВОИХ местах.
+       Сид 0 (BrixLand) → прежняя расстановка без изменений */
+    var rng = N.makeRng(20261113 + seedOffW());
     var dummy = new THREE.Object3D();
     var i;
     var decorDisposables = [];
@@ -545,6 +552,9 @@ window.BrixWorld = (function () {
       if (h < 3.5 || h > 42 || slopeAt(x, z) > 0.45) continue;
       // ✅ v0.4.38: деревья не растут НА грунтовой дороге (коридор 3.4 м)
       if (window.BrixRoad && BrixRoad.near(x, z, 3.4)) continue;
+      /* ✅ v0.5.22: в ПУСТЫНЕ ели не растут — там кактусы (ниже);
+         в арктике ёлки остаются, но получают снежный оттенок (ниже) */
+      if (T.climateAt && T.climateAt(x, z) === 'desert') continue;
       trees.push({
         x: x, z: z, y: h,
         scale: 0.8 + rng() * 0.8,
@@ -601,7 +611,9 @@ window.BrixWorld = (function () {
         woodLeft: TREE_WOOD_MIN + Math.floor(rng() * (TREE_WOOD_MAX - TREE_WOOD_MIN + 1)),
         state: 'alive',          // alive | shake | falling | fallen | gone
         shakeT: 0, fallT: 0, hideT: 0,
-        fallDir: 1
+        fallDir: 1,
+        /* ✅ v0.5.22: климат дерева — арктические получают снежный оттенок */
+        climate: T.climateAt ? T.climateAt(p.x, p.z) : null
       };
       // коллайдер ствола: радиус геометрии ствола × масштаб дерева + запас
       var c = {
@@ -613,6 +625,81 @@ window.BrixWorld = (function () {
       rec.collider = c;
       return rec;
     });
+
+    /* ✅ v0.5.22 СНЕЖНЫЕ ЕЛИ АРКТИКИ: у листвы («Leavs») свои цвета
+       вершин-инстансов — инстансы в арктике белеют (иней), у кромки —
+       чуть желтее. Ствол не трогаем */
+    treeInst.forEach(function (im) {
+      if (im.userData.isTrunkPart || !im.setColorAt) return;
+      var snowC = new THREE.Color(0xeef4fa);
+      var dryC = new THREE.Color(0xd9d0a0);
+      var any = false;
+      treeRecords.forEach(function (rec, k) {
+        if (rec.climate === 'arctic') { im.setColorAt(k, snowC); any = true; }
+        else if (rec.climate === 'desert') { im.setColorAt(k, dryC); any = true; }
+      });
+      if (any && im.instanceColor) im.instanceColor.needsUpdate = true;
+    });
+
+    /* ---- 1c. ✅ v0.5.22 КАКТУСЫ ПУСТЫНИ (вайп-мир) ----
+       Сагуаро (assets/models/cactus_saguaro.glb) растёт ТОЛЬКО в
+       пустыне (T.climateAt = 'desert'): детерминированно по rng,
+       как деревья. Коллайдеры — сквозь 3-метровый кактус не пройти.
+       Модель тяжёлая (HD) — ставим умеренно, инстансами по частям */
+    var cactiRecords = [];
+    if (!window.BRIX_PVP && window.BRIX_BIOMES) {
+      var cactusGlb = await loadModel('assets/models/cactus_saguaro.glb');
+      var cactusModel = extractParts(cactusGlb);
+      var cactusK = 2.6 / Math.max(cactusModel.size.y, 0.01);  // высота ≈ 2.6–3.6 м
+      var cactusRecs = [];
+      /* ✅ v0.5.22a: 4000 попыток и мягче фильтры — зона пустыни может
+         быть небольшой, кактусы должны заполнить её весь */
+      for (var ci = 0; ci < 4000 && cactusRecs.length < 30; ci++) {
+        var cx2 = (rng() - 0.5) * T.WORLD_SIZE * 0.9;
+        var cz2 = (rng() - 0.5) * T.WORLD_SIZE * 0.9;
+        if (!T.climateAt || T.climateAt(cx2, cz2) !== 'desert') continue;
+        var ch2 = T.heightAt(cx2, cz2);
+        if (ch2 < 2.6 || ch2 > 40 || slopeAt(cx2, cz2) > 0.42) continue;
+        if (window.BrixRoad && BrixRoad.near(cx2, cz2, 3.0)) continue;
+        cactusRecs.push({
+          x: cx2, y: T.meshHeightAt ? T.meshHeightAt(cx2, cz2) : ch2, z: cz2,
+          scale: 0.85 + rng() * 0.55,
+          rot: rng() * Math.PI * 2
+        });
+      }
+      var cactusInsts = cactusModel.parts.map(function (part) {
+        var im = new THREE.InstancedMesh(part.geo, part.mat, cactusRecs.length);
+        cactusRecs.forEach(function (r, k) {
+          dummy.position.set(r.x, r.y, r.z);
+          dummy.rotation.set(0, r.rot, 0);
+          dummy.scale.setScalar(r.scale * cactusK);
+          dummy.updateMatrix();
+          im.setMatrixAt(k, dummy.matrix);
+        });
+        im.instanceMatrix.needsUpdate = true;
+        im.castShadow = true;
+        im.receiveShadow = true;
+        scene.add(im);
+        decorDisposables.push(im);
+        return im;
+      });
+      cactusRecs.forEach(function (r, k) {
+        var cc = {
+          x: r.x, z: r.z,
+          r: 0.45 * r.scale * cactusK + 0.08,
+          kind: 'cactus', active: true
+        };
+        colliders.push(cc);
+        cactiRecords.push({ i: k, x: r.x, y: r.y, z: r.z, collider: cc, meshes: cactusInsts });
+      });
+      /* отладочный доступ (автотесты): координаты кактусов */
+      window.__brixCacti = cactusRecs;
+      if (cactusRecs.length) {
+        console.log('[BrixWorld] пустыня: кактусов ' + cactusRecs.length);
+      }
+      await yieldProgress(0.545);
+      await nextFrame();
+    }
 
     /* ---- 2. ✅ РУДНЫЕ ЖИЛЫ (киркой): камень / железо / сера ---- */
     // v0.2.5: кусты и декоративные камни убраны — остались только
@@ -1005,7 +1092,7 @@ window.BrixWorld = (function () {
   function buildSpawnCamp(scene, spawn) {
     var group = new THREE.Group();
     var disposables = [];
-    var rng = N.makeRng(4242);
+    var rng = N.makeRng(4242 + seedOffW());   /* ✅ v0.5.23: лагерь по сиду */
 
     // лагерь ставим в 6 м в сторону от точки спавна, чтобы не мешал обзору
     var dirAngle = rng() * Math.PI * 2;

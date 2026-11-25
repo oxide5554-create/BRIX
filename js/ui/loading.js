@@ -25,9 +25,18 @@ window.BrixLoading = (function () {
     }, 2000 + Math.floor(Math.random() * 3001));
   }
 
+  /* ✅ v0.5.23: строка «НОВАЯ КАРТА №…» — заполняет gameworld.js */
+  function setMapInfo(txt) {
+    var el = document.getElementById('loadingMap');
+    if (!el) return;
+    if (txt) { el.textContent = txt; el.style.display = ''; }
+    else { el.textContent = ''; el.style.display = 'none'; }
+  }
+
   function show() {
     var el = document.getElementById('loadingScreen');
     el.classList.remove('hidden');
+    setMapInfo('');
 
     el.querySelector('#loadingTitle').textContent = BrixState.t('load.title');
     el.querySelector('[data-server]').textContent = BrixData.ADMIN_SERVER.name;
@@ -73,5 +82,5 @@ window.BrixLoading = (function () {
     });
   }
 
-  return { init: init };
+  return { init: init, setMapInfo: setMapInfo };
 })();

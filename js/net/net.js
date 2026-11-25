@@ -644,6 +644,30 @@ window.BrixNet = (function () {
     });
   }
 
+  /* ✅ v0.5.22: то же, но возвращает ОБЪЕКТ /status (seed, biomes,
+     wipeIn, realm) — гейту входа хватит одного запроса, чтобы ещё ДО
+     сборки мира знать сид вайп-карты и включить пустыню/арктику */
+  function checkServerInfo(port, timeoutMs) {
+    return new Promise(function (ok) {
+      var url = (window.BrixWsUrl ? BrixWsUrl.http(port)
+        : 'http://' + (location.hostname || 'localhost') + ':' + (Number(port) || 8787)) + '/status';
+      var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+      var t = setTimeout(function () {
+        if (ctrl) { try { ctrl.abort(); } catch (e0) {} }
+        ok(null);
+      }, timeoutMs || 3000);
+      try {
+        fetch(url, { cache: 'no-store', signal: ctrl ? ctrl.signal : undefined })
+          .then(function (r) {
+            clearTimeout(t);
+            if (!r || !r.ok) { ok(null); return; }
+            r.json().then(function (j) { ok(j || null); }).catch(function () { ok(null); });
+          })
+          .catch(function () { clearTimeout(t); ok(null); });
+      } catch (e) { clearTimeout(t); ok(null); }
+    });
+  }
+
   function announce(needWorld) {
     NAME = profileNick() || NAME;
     send({ t: 'hi', n: NAME, c: COLOR, lvl: ownLvl(), aid: ownAid(), need: !!needWorld });
@@ -891,6 +915,7 @@ window.BrixNet = (function () {
     showDownBanner: showDownBanner,
     hideDownBanner: hideNetDownBanner,
     checkServer: checkServer,
+    checkServerInfo: checkServerInfo,
     /* ✅ v0.4.64: выбрать сервер — WS пойдёт на его порт */
     useServer: function (srv) {
       targetPort = (srv && Number(srv.port)) || 8787;

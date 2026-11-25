@@ -1488,7 +1488,23 @@ window.BrixBuilding = (function () {
   /* ============================================================
      СИНХРОНИЗАЦИЯ
      ============================================================ */
-  var LS_KEY = 'brix-builds-v1';
+  /* ✅ v0.5.23 БЭКАП ПОСТРОЕК — У КАЖДОГО СЕРВЕРА СВОЙ (пользователь:
+     «с старого аккаунта в brixwipe он перенёс все свои ПОСТРОЙКИ с
+     brixland в brixwipe»). Раньше ключ был ОДИН на все серверы — дома
+     BrixLand восстанавливались (adoptLocalToServer!) и на вайп-мире.
+     Теперь ключ делится по реалму: window.BRIX_REALM ставит
+     gameworld.js по ответу сервера (realm из /status), запасной
+     вариант — порт соединения */
+  function lsKey() {
+    var r = String(window.BRIX_REALM || '');
+    if (!r) {
+      var p = 8787;
+      try { p = Number((window.BrixNet && BrixNet.port) || 8787) || 8787; } catch (eP) {}
+      r = 'port' + p;
+    }
+    return 'brix-builds-v1-' + r;
+  }
+  var LS_KEY = 'brix-builds-v1';   // (оставлено для совместимости — используйте lsKey())
 
   /* ✅ v0.4.13 — ПОКОЛЕНИЕ МИРА (epoch), лечение «батник не работает»:
      CLEAR-BUILDS.bat повышает epoch в world-objs.json. Клиент хранит
@@ -1584,7 +1600,7 @@ window.BrixBuilding = (function () {
         recs.forEach(function (r) { var e2 = (r && r._ep) | 0; if (e2 < minEp) minEp = e2; });
       }
       backupEp = minEp;
-      localStorage.setItem(LS_KEY, JSON.stringify({ ep: minEp, list: recs }));
+      localStorage.setItem(lsKey(), JSON.stringify({ ep: minEp, list: recs }));
     } catch (e) { /* недоступно — играем без сохранения вкладок */ }
   }
 
@@ -1592,8 +1608,21 @@ window.BrixBuilding = (function () {
     /* ✅ v0.4.65 ПВП-АРЕНА: локальный бэкап построек BrixLand из
        localStorage на арену НЕ ВОССТАНАВЛИВАЕТСЯ — там своя локация */
     if (window.BRIX_PVP) return;
+    /* ✅ v0.5.23 ОДНОРАЗОВАЯ МИГРАЦИЯ: старый общий бэкап
+       'brix-builds-v1' — это дома BRIXLAND (ключ был один на все
+       серверы). Переезжает ТОЛЬКО в ключ brixland и сразу стирается —
+       на brixwipe/pvp он больше не восстановится никогда */
+    if (lsKey() === 'brix-builds-v1-brixland') {
+      try {
+        if (!localStorage.getItem(lsKey()) && localStorage.getItem('brix-builds-v1')) {
+          localStorage.setItem(lsKey(), localStorage.getItem('brix-builds-v1'));
+          localStorage.removeItem('brix-builds-v1');
+          console.log('[build] старый общий бэкап построек перенесён в ключ BrixLand');
+        }
+      } catch (eM) {}
+    }
     try {
-      var a = JSON.parse(localStorage.getItem(LS_KEY));
+      var a = JSON.parse(localStorage.getItem(lsKey()));
       if (!a) return;
       /* ✅ v0.4.13: новый формат {ep, list}; старый — просто массив (ep=0) */
       if (Array.isArray(a)) a = { ep: 0, list: a };

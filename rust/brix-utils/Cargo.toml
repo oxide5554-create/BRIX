@@ -1,0 +1,23 @@
+[package]
+name = "brix-utils"
+version = "0.5.22"
+edition = "2021"
+description = "Утилиты BRIX: brix-ping (диагностика пинга) и brix-info (сводка серверов)"
+authors = ["BRIX"]
+
+[[bin]]
+name = "brix-ping"
+path = "src/bin/brix-ping.rs"
+
+[[bin]]
+name = "brix-info"
+path = "src/bin/brix-info.rs"
+
+[lib]
+name = "brix_utils"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

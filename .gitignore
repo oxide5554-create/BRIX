@@ -1,1 +1,8 @@
 world-objs.json
+data/brixland/world-objs.json
+data/brixpvp/world-objs.json
+data/brixwipe/world-objs.json
+*.log
+node_modules/
+.DS_Store
+Thumbs.db

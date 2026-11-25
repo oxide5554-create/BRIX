@@ -48,7 +48,7 @@ choice /c YN /m "Udalit VSE postroyki? (Y - da, N - net)"
 if errorlevel 2 goto :done
 
 echo.
-node "%~dp0clear-builds.js"
+node "%~dp0tools\clear-builds.js"
 echo.
 pause
 

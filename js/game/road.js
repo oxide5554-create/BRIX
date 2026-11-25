@@ -46,6 +46,52 @@ window.BrixRoad = (function () {
   var LIFT = 0.07;       // над рельефом, м (иначе полосит z-fighting)
   var SAMPLES = 1100;    // точек полилинии (шаг ≈ 1.4 м)
 
+  /* ✅ v0.5.23 СВОЙ ПУТЬ ДОРОГИ НА КАЖДОЙ КАРТЕ (пользователь: «свой
+     путь дороги»): у карты с сидом > 0 маршрут ГЕНЕРИРУЕТСЯ — детерминиро-
+     ванный ПСЧ от сида шагает от спавна к краям, огибая воду и крутые
+     склоны (высота из T.heightAt — она уже по сиду). У BrixLand (сид 0)
+     остаётся проверенный маршрут WP — карта не меняется. */
+  function makeWps() {
+    var T = window.BrixTerrain;
+    var seed = (window.BRIX_TERRAIN_SEED || 0) | 0;
+    if (!seed || !T) return WP;
+    var a = (seed ^ 0x68BC21EB) >>> 0;
+    function nxt() {
+      a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
+      return a / 4294967296;
+    }
+    var wps = [];
+    var x = -40 + nxt() * 40, z = -40 + nxt() * 40;   // старт у спавна
+    var ang = nxt() * Math.PI * 2;
+    var steps = 30 + Math.floor(nxt() * 10);          // 30..39 сегментов
+    for (var s = 0; s < steps; s++) {
+      ang += (nxt() - 0.5) * 1.1;                     // извилистость
+      var len = 42 + nxt() * 26;                      // сегмент 42..68 м
+      var cx = 0, cz = 0, ok = false;
+      for (var t = 0; t < 6; t++) {                   // до 6 попыток сегмента
+        var na = ang + (t ? (nxt() - 0.5) * 1.6 : 0); // отклонить курс
+        var nx = x + Math.cos(na) * len, nz = z + Math.sin(na) * len;
+        var rr = Math.sqrt(nx * nx + nz * nz);
+        if (rr > 385) continue;                      // не уходим в море
+        var h = T.heightAt(nx, nz);
+        if (h < 3.2 || h > 42) continue;             // ни воды, ни снежников
+        var sl = Math.max(
+          Math.abs(T.heightAt(nx + 4, nz) - T.heightAt(nx - 4, nz)),
+          Math.abs(T.heightAt(nx, nz + 4) - T.heightAt(nx, nz - 4))) / 8;
+        if (sl > 0.5) continue;                      // не пропасть
+        cx = Math.round(nx); cz = Math.round(nz);
+        ang = na;
+        ok = true;
+        break;
+      }
+      if (!ok) break;                                // упёрлись — хватит
+      wps.push([cx, cz]);
+      x = cx; z = cz;
+    }
+    if (wps.length < 8) return WP;                   // защита от вырождения
+    return wps;
+  }
+
   /* тона дороги (v0.4.40 «ярче и контрастнее») — линейные RGB 0..1.
      Диапазоны подобраны по квантилям шума вдоль пути:
      n1: 5%=0.26, 50%=0.50, 95%=0.73 — пороги сжаты к центру,
@@ -76,9 +122,10 @@ window.BrixRoad = (function () {
 
   function ensurePts() {
     if (PTS) return PTS;
+    var wps = makeWps();   /* ✅ v0.5.23: свой маршрут для карты с сидом */
     PTS = [];
     for (var s = 0; s < SAMPLES; s++) {
-      var p = crPoint(WP, s / (SAMPLES - 1));
+      var p = crPoint(wps, s / (SAMPLES - 1));
       PTS.push({ x: p[0], z: p[1] });
     }
     return PTS;

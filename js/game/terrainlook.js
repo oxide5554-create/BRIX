@@ -237,6 +237,19 @@ window.BrixTerrainLook = (function () {
         ctx.stroke();
       });
     }
+    /* ✅ v0.5.22: КРУПНЫЕ ДЮНЫ — вторая рябь с длинной волной (пустыня
+       занимает большие зоны, мелкой ряби мало для масштаба) */
+    for (i = 0; i < 22; i++) {
+      var dy = rng() * S, dx = rng() * S, dlen = 120 + rng() * 130;
+      ctx.strokeStyle = rng() < 0.5 ? 'rgba(148,120,74,0.22)' : 'rgba(224,203,160,0.24)';
+      ctx.lineWidth = 3 + rng() * 4;
+      wrapDraw(ctx, S, dx, dy, dlen, function () {
+        ctx.beginPath();
+        ctx.moveTo(dx - dlen / 2, dy);
+        ctx.quadraticCurveTo(dx, dy - 7 - rng() * 6, dx + dlen / 2, dy);
+        ctx.stroke();
+      });
+    }
     // крупные тёмные песчинки
     for (i = 0; i < 420; i++) {
       ctx.fillStyle = 'rgba(120,96,60,' + (0.25 + rng() * 0.3) + ')';

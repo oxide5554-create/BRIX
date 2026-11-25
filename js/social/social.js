@@ -479,6 +479,12 @@ window.BrixFriends = (function () {
                 /* adminIds — для «магазин скинами только у админов» */
                 adminIds: j.adminIds || null,
                 mode: j.mode || null,
+                /* ✅ v0.5.23: вайп-мир — сколько осталось до вайпа (мс),
+                   realm — какой это сервер. Карточка СЕРВЕРА покажет
+                   «ВАЙП ЧЕРЕЗ …» таймером */
+                realm: j.realm || null,
+                wipeIn: j.wipeIn,
+                seed: j.seed,
                 ms: Math.max(0, Math.round(performance.now() - t0))
               };
               /* ✅ v0.5.12: реестр ВСЕХ игроков из /status.reg — вкладка

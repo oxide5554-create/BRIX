@@ -37,7 +37,15 @@ window.BrixScreens = (function () {
   // ================= ДОМАШНИЙ ЭКРАН =================
   function renderHome(layer) {
     var S = BrixState.data;
-    var latest = BrixData.NEWS[0];
+    /* ✅ v0.5.22: новостная лента ОЧИЩЕНА — если новостей нет,
+       «СВЕЖЕЕ В НОВОСТЯХ» не показывается вовсе */
+    var latest = BrixData.NEWS && BrixData.NEWS[0];
+
+    if (!latest) {
+      layer.innerHTML =
+        '<p class="home-hint">' + BrixState.t('home.hint') + '</p>';
+      return;
+    }
 
     layer.innerHTML =
       '<p class="home-hint">' + BrixState.t('home.hint') + '</p>' +
@@ -61,11 +69,21 @@ window.BrixScreens = (function () {
   // живой счётчик онлайна (опрос /status своего порта) и свой состав
   // игроков. Карточки «СЛУЖЕБНЫЙ СЕРВЕР»/«Последний сервер» убраны,
   // надписи ADMIN больше нет — вкладка для всех игроков.
+  /* ✅ v0.5.23: «через 12 ч 34 м» из миллисекунд — для таймера вайпа */
+  function fmtWipe(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000));
+    var h = Math.floor(s / 3600);
+    var m = Math.floor((s % 3600) / 60);
+    if (h > 0) return BrixState.t('wipe.timer') + ' ' + h + ' ч ' + (m < 10 ? '0' : '') + m + ' м';
+    return BrixState.t('wipe.timer') + ' ' + m + ' м';
+  }
+
   function renderServers(layer) {
     var servers = BrixData.SERVERS || [];
 
     var cards = servers.map(function (srv) {
       var isPvp = srv.mode === 'pvp';
+      var isWipe = srv.realm === 'brixwipe';
       var icon = isPvp ? BrixIcon('swords', 24) : BrixIcon('trees', 24);
       var iconStyle = isPvp
         ? 'display:grid;place-items:center;width:48px;height:48px;flex-shrink:0;border:1px solid rgba(205,65,47,.6);background:rgba(205,65,47,.15);color:var(--rust-bright)'
@@ -87,6 +105,12 @@ window.BrixScreens = (function () {
                   /* ✅ v0.5.11: пинг карточки — РЕАЛЬНЫЙ (RTT /status),
                      фейковые 12 ms из servers.js больше не показываются */
                   '<span class="good"><span>' + BrixIcon('signal', 13) + '</span><span data-srv-ping="' + srv.id + '">—</span></span>' +
+                  /* ✅ v0.5.23: ВАЙП-МИР — таймер «ВАЙП ЧЕРЕЗ …» (пользователь:
+                     «чтобы было написано когда будет вайп, через сколько часов —
+                     чтобы не гадать») */
+                  (isWipe
+                    ? '<span class="good"><span>' + BrixIcon('clock', 13) + '</span><span data-srv-wipe="' + srv.id + '">—</span></span>'
+                    : '') +
                 '</div>' +
               '</div>' +
             '</div>' +
@@ -176,6 +200,13 @@ window.BrixScreens = (function () {
         if (pingEl) {
           pingEl.textContent = (info.ms !== undefined && info.ms !== null)
             ? info.ms + ' ms' : '—';
+        }
+        /* ✅ v0.5.23: ТАЙМЕР ВАЙПА на карточке BrixWipe — сколько
+           часов/минут осталось, обновляется с каждым /status */
+        var wipeEl = layer.querySelector('[data-srv-wipe="' + srv.id + '"]');
+        if (wipeEl) {
+          wipeEl.textContent = (typeof info.wipeIn === 'number')
+            ? fmtWipe(info.wipeIn) : '—';
         }
         if (stateEl) stateEl.textContent = BrixState.t('srv.online');
         onlineEl.textContent = info.players + '/' + (info.max || srv.max || 64) + ' — ' +
@@ -687,9 +718,30 @@ window.BrixScreens = (function () {
   // ================= НОВОСТИ =================
   function renderNews(layer) {
     var S = BrixState.data;
-    var featured = BrixData.NEWS[0];
-    var rest = BrixData.NEWS.slice(1);
+    var featured = BrixData.NEWS && BrixData.NEWS[0];
+    var rest = featured ? BrixData.NEWS.slice(1) : [];
     var artHues = [14, 32, 100, 45, 80];
+
+    /* ✅ v0.5.22: лента очищена — аккуратная пустая вкладка вместо падения */
+    if (!featured) {
+      layer.innerHTML =
+        '<div class="screen-panel">' +
+          '<div class="panel-head">' +
+            '<div>' +
+              '<h2 class="font-h">' + BrixState.t('news.title') + '</h2>' +
+              '<p class="subtitle">' + BrixState.t('news.subtitle') + '</p>' +
+            '</div>' +
+            '<div class="head-right">' +
+              '<button class="close-btn" data-close>' + BrixIcon('x', 17) + '</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="panel-body rust-scroll">' +
+            '<div class="news-wrap"><div class="fr-empty">Пока новостей нет</div></div>' +
+          '</div>' +
+        '</div>';
+      bindClose(layer);
+      return;
+    }
 
     layer.innerHTML =
       '<div class="screen-panel">' +

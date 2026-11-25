@@ -43,8 +43,13 @@ window.BrixState = (function () {
     profileId: '',
     nickSet: false,   // ✅ v0.3.4: первый вход — попросить указать ник
     social: { friends: [], incoming: [], outgoing: [], notifs: [] },  // ✅ v0.3.3 соцсеть
-    level: 12,
-    hoursPlayed: 3.5,
+    /* ✅ v0.5.22: у ВСЕХ — 0 часов и 1 уровень (просьба игрока);
+       уровень растёт от добычи ресурсов (xp), награды за уровни —
+       монеты (кнопка-полка в правом нижнем углу, js/game/rewards.js) */
+    level: 1,
+    hoursPlayed: 0,
+    xp: 0,                 // опыт к следующему уровню
+    claimedLevels: [],     // уровни, за которые уже забрана награда
     lastServerId: null,
     quitOpen: false,
     quitDone: false
@@ -83,6 +88,8 @@ window.BrixState = (function () {
         profileId: data.profileId,
         level: data.level,
         hoursPlayed: data.hoursPlayed,
+        xp: data.xp,
+        claimedLevels: data.claimedLevels,
         lastServerId: data.lastServerId
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(persist));
@@ -94,6 +101,14 @@ window.BrixState = (function () {
       var raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
         var saved = JSON.parse(raw);
+        /* ✅ v0.5.22 СБРОС ПРОГРЕССА (просьба игрока: «пусть у всех
+           будет по 0 часов и 1 уровень»): старые сохранения больше не
+           подмешивают уровень/часы/опыт — все начинают с чистого листа.
+           В мультиплеере настоящий уровень прислает СЕРВЕР (welcome.lvl) */
+        delete saved.level;
+        delete saved.hoursPlayed;
+        delete saved.xp;
+        delete saved.claimedLevels;
         Object.keys(saved).forEach(function (k) {
           if (k === 'settings') {
             data.settings = Object.assign({}, defaultSettings, saved.settings || {});
@@ -113,6 +128,51 @@ window.BrixState = (function () {
     },
     hydrate: hydrate,
     save: save,
+
+    /* ================= УРОВНИ И ОПЫТ (v0.5.22) =================
+       Уровень 1 → 2: 300 опыта, 2 → 3: 600, 3 → 4: 900… (каждый
+       следующий уровень требует на 300 больше), максимум 250.
+       Опыт дают ресурсы ПОСЛЕ ПОЛНОГО ломания (см. gameworld.js):
+       дерево 25, камень 30, железо 15, сера 15. */
+    MAX_LEVEL: 250,
+    xpNeeded: function (lvl) {
+      /* сколько опыта нужно, чтобы подняться С уровня lvl на lvl+1 */
+      return 300 * Math.max(1, lvl | 0);
+    },
+    /** добавить опыт; вернёт {lvlUp: true/false, level} */
+    addXp: function (n) {
+      var up = false;
+      data.xp += Math.max(0, n | 0);
+      while (data.level < this.MAX_LEVEL &&
+             data.xp >= this.xpNeeded(data.level)) {
+        data.xp -= this.xpNeeded(data.level);
+        data.level++;
+        up = true;
+      }
+      if (data.level >= this.MAX_LEVEL) data.xp = 0;
+      emit();
+      return { lvlUp: up, level: data.level };
+    },
+    /**.setLevel — синхрон с сервера (сервер — авторитет в мультиплеере) */
+    setLevelSync: function (lvl, xp) {
+      data.level = Math.max(1, Math.min(this.MAX_LEVEL, lvl | 0 || 1));
+      data.xp = Math.max(0, Math.floor(Number(xp) || 0));
+      emit();
+    },
+    /** забрать награду за уровень (монеты); true — если успешно */
+    claimLevelReward: function (lvl) {
+      lvl = lvl | 0;
+      if (lvl < 1 || lvl > data.level) return false;
+      if (data.claimedLevels.indexOf(lvl) !== -1) return false;
+      data.claimedLevels.push(lvl);
+      data.coins += this.levelReward(lvl);
+      emit();
+      return true;
+    },
+    /** награда за уровень: монеты (пока только монеты) */
+    levelReward: function (lvl) {
+      return 50;
+    },
 
     // ---- действия ----
     setScreen: function (s) { data.screen = s; data.quitOpen = false; emit(); },
@@ -219,6 +279,12 @@ window.BrixState = (function () {
     addPlaySeconds: function (sec) {
       data.hoursPlayed += sec / 3600;
       emit();
+    },
+
+    /** ✅ v0.5.22: минуты в часах для профиля (0 ч до первой игры) */
+    hoursText: function () {
+      var h = Math.floor(data.hoursPlayed);
+      return String(h);
     },
 
     setLastServer: function (id) { data.lastServerId = id; emit(); },

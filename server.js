@@ -29,16 +29,21 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');   /* ✅ v0.5.14: gzip статики за туннелем */
 
-/* ✅ v0.4.64 ДВА СЕРВЕРА ОДНИМ КОДОМ: BRIX_REALM решает, КТО этот процесс.
-   Запуск (см. START-GAME.bat):
-     node server.js                                → BrixLand  (порт 8787, выживание)
-     BRIX_REALM=brixpvp BRIX_PORT=8788 node server.js → BrixPvP (порт 8788, пвп-арена)
-   У каждого реалма СВОЯ папка data/<realm>/ — свои миры, свои сохранения
-   игроков, свои регистры соцсети и свой счётчик онлайна (/status).
+/* ✅ v0.5.16 ЧЕТЫРЕ РЕАЛМА ОДНИМ КОДОМ: BRIX_REALM решает, КТО этот процесс.
+   Запуск (см. START-ALL.bat):
+     node server.js                                   → BrixLand (порт 8787, выживание)
+     BRIX_REALM=brixpvp  BRIX_PORT=8788 node server.js → BrixPvP  (порт 8788, пвп-арена)
+     BRIX_REALM=brixwipe BRIX_PORT=8789 node server.js → BrixWipe (порт 8789, вайп раз в сутки,
+                                                          карта генерируется заново: пустыня/арктика/кактусы)
+     BRIX_REALM=menu    BRIX_PORT=8780 node server.js → МЕНЮ      (порт 8780, только раздача
+                                                          интерфейса — меню отделено от сервера)
+   У каждого игрового реалма СВОЯ папка data/<realm>/ — свои миры, свои сохранения
+   игроков (и СВОЙ инвентарь), свои регистры соцсети и свой счётчик онлайна (/status).
    admins.json и bans.json — ОБЩИЕ (в корне): админ/бан — на весь BRIX */
-const REALM = (process.env.BRIX_REALM || 'brixland').toLowerCase() === 'brixpvp'
-  ? 'brixpvp' : 'brixland';
-const PORT = Number(process.env.BRIX_PORT) || (REALM === 'brixpvp' ? 8788 : 8787);
+const REALM_ENV = (process.env.BRIX_REALM || 'brixland').toLowerCase();
+const REALM = ['brixpvp', 'brixwipe', 'menu'].indexOf(REALM_ENV) !== -1 ? REALM_ENV : 'brixland';
+const PORT = Number(process.env.BRIX_PORT) ||
+  (REALM === 'brixpvp' ? 8788 : REALM === 'brixwipe' ? 8789 : REALM === 'menu' ? 8780 : 8787);
 const ROOT = __dirname;
 
 /* ✅ v0.5.16 ЛИМИТ ОНЛАЙНА: ПВП-арена — 10, выживание — 25 (было общее 64).
@@ -48,13 +53,53 @@ const MAX_PLAYERS = REALM === 'brixpvp' ? 10 : 25;
 
 /* ✅ v0.4.64 метаданные реалма: имя и режим едут в /status и welcome —
    по ним клиент включает вкладку серверов и ПВП-режим интерфейса */
-const SRV_NAME = REALM === 'brixpvp' ? 'BRIX • BrixPvP' : 'BRIX • BrixLand';
+const SRV_NAME = REALM === 'brixpvp' ? 'BRIX • BrixPvP'
+  : REALM === 'brixwipe' ? 'BRIX • BrixWipe'
+  : REALM === 'menu' ? 'BRIX • Меню'
+  : 'BRIX • BrixLand';
 const SRV_MODE = REALM === 'brixpvp' ? 'pvp' : 'vanilla';
+
+/* ✅ v0.5.22 СИД РЕЛЬЕФА: у вайп-мира СВОЙ (берётся из wipe.json и
+   меняется при каждом вайпе) — клиент строит ту же карту по сиду из
+   /status и welcome. У BrixLand/BrixPvP сид 0 — прежние миры */
+let TERRAIN_SEED = 0;
+const SEED_MULT = 7919;   // тот же множитель, что seedOff() в js/game/terrain.js
 
 /* ✅ v0.4.64 ПАПКА ДАННЫХ РЕАЛМА: data/brixland/ и data/brixpvp/.
    Старые файлы из корня (до v0.4.64) переезжают в data/brixland —
    мир, сохранения и соцсеть BrixLand НЕ ТЕРЯЮТСЯ */
 const DATA_DIR = path.join(ROOT, 'data', REALM);
+
+/* ============================================================
+   ✅ v0.5.23 ВАЙП-МИР: таймер и СИД читаются ПЕРВЫМИ (до генерации
+   мира объектов/чекблоков/лоз) — wipe.json {next, last, seed}.
+   Сид вайп-карты живёт в wipe.json и переживает рестарт; каждые
+   сутки сервер сам стирает мир и берёт НОВЫЙ сид (wipeNow ниже)
+   ============================================================ */
+const WIPE_INTERVAL_MS = 24 * 60 * 60 * 1000;   // сутки
+const WIPE_FILE = path.join(DATA_DIR, 'wipe.json');
+const WIPE = { next: 0, last: 0, seed: 0 };   // ✅ v0.5.23: сид РАНЬШЕ генерации мира
+if (REALM === 'brixwipe') {
+  try {
+    if (fs.existsSync(WIPE_FILE)) {
+      const w = JSON.parse(fs.readFileSync(WIPE_FILE, 'utf8'));
+      WIPE.next = Number(w.next) || 0;
+      WIPE.last = Number(w.last) || 0;
+      WIPE.seed = Number(w.seed) || 0;
+    }
+  } catch (eW0) { console.log('[wipe] wipe.json не читается — создам заново'); }
+  if (!WIPE.next) {
+    /* первый запуск реалма: первые сутки живут ТЕКУЩАЯ карта */
+    WIPE.next = Date.now() + WIPE_INTERVAL_MS;
+    WIPE.seed = 100000 + Math.floor(Math.random() * 900000);
+    try { fs.writeFileSync(WIPE_FILE, JSON.stringify(WIPE, null, 2)); } catch (eW1) {}
+    console.log('[wipe] таймер запущен: первый вайп через ' +
+      Math.round(WIPE_INTERVAL_MS / 3600000) + ' ч, сид ' + WIPE.seed);
+  }
+  TERRAIN_SEED = WIPE.seed;
+  console.log('[wipe] текущая карта: сид ' + TERRAIN_SEED +
+    ', до вайпа ' + Math.max(0, Math.round((WIPE.next - Date.now()) / 60000)) + ' мин');
+}
 fs.mkdirSync(DATA_DIR, { recursive: true });
 if (REALM === 'brixland') {
   ['world-objs.json', 'world-epoch.json', 'players.json', 'social.json']
@@ -74,7 +119,19 @@ if (REALM === 'brixland') {
    версии не присылает — и панель на 9 молчит). В консоли при старте
    печатается ПОЛНЫЙ ПУТЬ папки сервера — чтобы admins.json правился
    именно там, где сервер РЕАЛЬНО запущен */
-const SRV_VER = '0.5.15';   /* ✅ v0.5.15 — ЧИНЯТ СТАРЫЙ КЭШ ИГРОКА:
+const SRV_VER = '0.5.23';   /* ✅ v0.5.16 — ЧЕТЫРЕ РЕАЛМА + УРОВНИ/ЧАТ/ВАЙП:
+   1) РЕАЛМ menu (порт 8780): меню ОТДЕЛЕНО от сервера — только раздача
+      интерфейса, без мира; BrixWipe (порт 8789) — вайп раз в сутки;
+   2) УРОВНИ И ОПЫТ НА СЕРВЕРЕ (анти-чит): полное ломание ресурса даёт
+      опыт (дерево 25, камень 30, железо/сера 15), 300*n до следующего
+      уровня (макс 250); xp/lvl хранятся в players.json КАЖДОГО реалма;
+   3) ЧАТ: {t:'chat'} → всем {t:'chat', id, n, c, m} (антиспам 0.4 с);
+   4) ВАЙП-СИСТЕМА: wipe.json {next,last,seed}; в момент вайпа сервер
+      сам стирает мир, берёт НОВЫЙ сид, рассылает 'wipenow'; /status
+      несёт seed/biomes/wipeIn — клиент строит карту ПО СИДУ СЕРВЕРА;
+   5) /ping — быстрый эндпоинт для утилит диагностики задержки (rust/);
+   6) HTTP-сокеты тоже TCP_NODELAY + keep-alive — минимальный пинг.
+   —— История v0.5.15 — чинят старый кэш игрока:
    1) 404 теперь с Content-Type: text/plain — в консоли честное
       «Not found» вместо пугающего «MIME type ('') is not executable»;
    2) алиасы старых путей: js/X.js (старая раскладка без подпапок,
@@ -347,6 +404,17 @@ function serveFile(req, res, urlPath) {
     });
     return;
   }
+  // ✅ v0.5.22: мгновенный /ping — для утилит диагностики (rust/brix-ping)
+  // и сравнения задержки туннеля с прямым подключением. Без gzip, no-cache
+  if (p === '/ping') {
+    res.writeHead(200, {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.end('pong');
+    return;
+  }
   // ✅ v0.3.3: живой счётчик онлайна — сколько игроков РЕАЛЬНО на сервере
   if (p === '/status') {
     const names = [];
@@ -375,10 +443,23 @@ function serveFile(req, res, urlPath) {
     });
     res.end(JSON.stringify({
       ok: true, players: players.size, max: MAX_PLAYERS, inGame: countInGame(),
-      names: names, map: REALM === 'brixpvp' ? 'Полигон (СЕКТОР-9)' : 'Brixland',
+      names: names,
+      map: REALM === 'brixpvp' ? 'Полигон (СЕКТОР-9)'
+        : REALM === 'brixwipe' ? 'Генерация (вайп раз в сутки)'
+        : REALM === 'menu' ? 'Меню' : 'Brixland',
       /* ✅ v0.4.64: КТО этот сервер — для вкладки «СЕРВЕРА» (список
          серверов с живыми счётчиками) и ПВП-режима клиента */
       realm: REALM, mode: SRV_MODE, name: SRV_NAME,
+      /* ✅ v0.5.22 МЕНЮ отдельно: это НЕ игровой сервер — только раздача
+         интерфейса; клиент не должен предлагать к нему подключиться */
+      menu: REALM === 'menu' ? 1 : undefined,
+      /* ✅ v0.5.22 ВАЙП-МИР: текущий сид карты, флаг пустыни/арктики и
+         сколько осталось до вайпа (мс) — клиент строит карту по сиду
+         СЕРВЕРА и предупреждает об вайпе */
+      seed: TERRAIN_SEED || undefined,
+      biomes: REALM === 'brixwipe' ? 1 : undefined,
+      wipeIn: (REALM === 'brixwipe' && WIPE.next)
+        ? Math.max(0, WIPE.next - Date.now()) : undefined,
       /* ✅ v0.5.12: реестр игроков [{id, name, on, ls}] — как 'plist',
          но доступно из меню */
       reg: reg.slice(0, 300),
@@ -600,6 +681,13 @@ function rosterFor() {
 /* ✅ v0.4.64: раскладка чекблоков — СВОЙ сид у каждого реалма
    (BrixPvP — арена с лутом в своих точках, не как в BrixLand) */
 const OBJ_SEED = REALM === 'brixpvp' ? 77702 : 20261114;
+/* ✅ v0.5.23: константы рельефа и кэш плана ландшафта — НАВЕРХУ, потому
+   что чекблоки (buildCheckblockLayout → brixHeightAt) считаются на
+   старте, раньше нижней секции рельефа */
+const COLD_WORLD_HALF = 450;         // WORLD_SIZE 900 / 2 (terrain.js)
+const S_HILLS = 1013, S_DETAIL = 2027, S_MOUNT_MASK = 3041,
+  S_MOUNT = 4051;                    // сиды слоёв шума — как в terrain.js
+let _layoutFor = -1, _layout = null; // кэш brixLayout() для текущего сида
 
 /* ============================================================
    ✅ v0.5.0 БОТЫ «ПОЛИГОНА» (только реалм brixpvp): авторитетный
@@ -628,10 +716,10 @@ if (Bots) {
    вылет + 'planeS' раз в 2 с — клиенты докручивают полёт сами,
    без пинга каждый кадр.
    ============================================================ */
-const Airdrops = REALM === 'brixland' ? require('./brix-airdrop.js') : null;
-/* ✅ v0.5.21 ТЫКВЕННЫЕ ЛОЗЫ: рост тыквы тикает на сервере (8 мин),
+const Airdrops = REALM === 'brixland' ? require('./brix-airdrop.js') : null;/* ✅ v0.5.21 ТЫКВЕННЫЕ ЛОЗЫ: рост тыквы тикает на сервере (8 мин),
    синхронизируется и сохраняется как у аирдропов — см. brix-vines.js */
-const Vines = REALM === 'brixland' ? require('./brix-vines.js') : null;
+/* ✅ v0.5.22: лозы с тыквами — и в вайп-мире (выживание как в BrixLand) */
+const Vines = (REALM === 'brixland' || REALM === 'brixwipe') ? require('./brix-vines.js') : null;
 function makeObjRng(seed) {
   let a = (seed === undefined ? OBJ_SEED : seed) | 0;
   return () => {
@@ -646,15 +734,28 @@ const CHECKBLOCK_COUNT = 40;   // ✅ v0.3.8: 40 кандидатов — кли
 
 /* ✅ v0.3.7: ОДНА формула раскладки чекблоков — и у сервера, и в режиме
    вкладок (gameworld.js __buildLocalObjects). ВАЖНО: последовательность
-   вызовов rnd() в обеих копиях должна совпадать СИМВОЛ В СИМВОЛ */
+   вызовов rnd() в обеих копиях должна совпадать СИМВОЛ В СИМВОЛ.
+   ✅ v0.5.23: ЧЕКБЛОКИ ПО СИДУ РЕАЛМА (пользователь: «свои чекблоки»
+   на каждой карте) + ПОДЪЁМ ИЗ ВОДЫ: точка обязана быть на суше
+   (brixHeightAt > 2.8 — море/озеро ниже), не в горах (> 44) и не у
+   спавна (< 55 м). Формула 1:1 с раскладкой вкладок НЕ нужна:
+   серверные позиции едут клиенту в welcome.cb по id */
 function buildCheckblockLayout(seed) {
   const rnd = makeObjRng(seed);
   const ITEMS = ['washer', 'fridge', 'tv'];
   const cb = [];
   for (let i = 0; i < CHECKBLOCK_COUNT; i++) {
-    let x, z;
-    do { x = (rnd() - 0.5) * 680; z = (rnd() - 0.5) * 680; }
-    while (Math.sqrt(x * x + z * z) < 40);
+    let x = 0, z = 0, ok = false;
+    for (let t = 0; t < 40; t++) {
+      x = (rnd() - 0.5) * 680; z = (rnd() - 0.5) * 680;
+      const rr = Math.sqrt(x * x + z * z);
+      if (rr < 55) continue;                       // не на спавне
+      const h = (REALM === 'brixpvp') ? 5 : brixHeightAt(x, z);
+      if (h < 2.8 || h > 44) continue;             // не в воде/на пиках
+      ok = true;
+      break;
+    }
+    if (!ok) { x = 120 + i * 9; z = -90 - i * 7; } // страховка (не бывает)
     const rec = {
       id: 'c' + i,
       x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10,
@@ -886,7 +987,10 @@ function writeWorldNow() {
           stone: world.ores.stone.slice()
         }
       } : null,
-      epoch: worldObjs.epoch | 0   // ✅ v0.4.13: поколение мира
+      epoch: worldObjs.epoch | 0,   // ✅ v0.4.13: поколение мира
+      /* ✅ v0.5.23: сид, под который сгенерирована раскладка чекблоков —
+         сменился сид карты → раскладка перегенерируется при старте */
+      cseed: worldObjs.cseed | 0
     };
     fs.writeFileSync(OBJS_FILE, JSON.stringify(data));
     writeEpochSidecar(worldObjs.epoch | 0);   // ✅ v0.4.14: дубль поколения
@@ -1020,7 +1124,11 @@ function freshWorldObjs() {
       c4: [], corpses: [], corpseSeq: 0, btomb: [],
       epoch: readEpochSidecar() };
   }
-  const cb = buildCheckblockLayout(OBJ_SEED);
+  /* ✅ v0.5.23: раскладка чекблоков СВОЯ У КАЖДОГО РЕАЛМА — сид рельефа
+     подмешан (у BrixLand сид 0 → прежняя раскладка). После вайпа
+     wipeNow() зовёт freshWorldObjs заново с НОВЫМ сидом — чекблоки
+     перегенерируются вместе с картой */
+  const cb = buildCheckblockLayout(OBJ_SEED + srvSeedOff());
   cb.forEach((c) => { c.gone = false; c.loot = rollLoot(c.mil); });
   /* ✅ v0.4.13: epoch — поколение мира. CLEAR-BUILDS.bat повышает его
      в world-objs.json; если клиент приносит бэкап из СТАРОГО поколения
@@ -1136,6 +1244,24 @@ loadPlayerSaves();   // ✅ v0.4.46: сохранения игроков (поз
 loadSocialReg();     // ✅ v0.4.62: реестр всех игроков (social.json)
 const worldObjs = _loaded || freshWorldObjs();
 if (_loaded) console.log('[objs] мир загружен из world-objs.json (лут/бочки как были)');
+
+/* ✅ v0.5.23 ЧЕКБЛОКИ — ПОД СИД КАРТЫ: в world-objs.json хранится cseed
+   (сид, под который сгенерирована раскладка). Если сид карты сменился
+   (новый вайп / первый запуск с этой версией) — раскладка
+   ПЕРЕГЕНЕРИРУЕТСЯ: чекблоки и бочки встают на сушу НОВОЙ карты.
+   Лут перезаполняется, epoch не трогаем (лут и так свежий) */
+(function ensureCheckblocksForSeed() {
+  if (REALM === 'brixpvp' || REALM === 'menu') return;
+  const wantSeed = OBJ_SEED + srvSeedOff();
+  if (worldObjs.cseed === wantSeed && Array.isArray(worldObjs.cb) &&
+      worldObjs.cb.length) return;
+  const fresh = freshWorldObjs();
+  worldObjs.cb = fresh.cb;
+  worldObjs.cseed = wantSeed;
+  console.log('[objs] чекблоки перегенерированы под сид карты ' +
+    (TERRAIN_SEED | 0) + ': ' + worldObjs.cb.length + ' шт (на суше)');
+  markDirty();
+})();
 
 /* ============================================================
    ✅ v0.4.63 СТАРЫЕ ИГРОКИ ВО «ВСЕ ИГРОКИ» (просьба игрока:
@@ -2316,7 +2442,24 @@ function applyHit(p, msg) {
 
 const server = http.createServer((req, res) => serveFile(req, res, req.url));
 
+/* ✅ v0.5.22 ПИНГ-ОПТИМИЗАЦИЯ: TCP_NODELAY на КАЖДОМ HTTP-сокете —
+   ответы (в т.ч. /status, /ping и стatics) уходят сразу, без копления
+   в буфере Nagle. На локалке и за туннелем это минус десятки мс */
+server.on('connection', (sock) => { try { sock.setNoDelay(true); } catch (e) {} });
+
 server.on('upgrade', (req, sock) => {
+  /* ✅ v0.5.22: РЕАЛМ menu (порт 8780) — ТОЛЬКО интерфейс, мира нет.
+     WebSocket сюда не нужен: мягко отказываем (клиент всё равно
+     подключается к игровым портам 8787/8788/8789) */
+  if (REALM === 'menu') {
+    try {
+      sock.write('HTTP/1.1 501 Not Implemented\r\n' +
+        'Connection: close\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n' +
+        'Это сервер МЕНЮ (порт 8780): подключайтесь к игровым серверам 8787/8788/8789');
+    } catch (e) {}
+    setTimeout(() => { try { sock.destroy(); } catch (e2) {} }, 200);
+    return;
+  }
   const key = req.headers['sec-websocket-key'];
   if (!key) { sock.destroy(); return; }
   sock.write(
@@ -2367,18 +2510,28 @@ server.on('upgrade', (req, sock) => {
         // в мини-меню (M). Присылаются клиентом, сервер только хранит
         p.lvl = Math.max(1, Math.min(9999, Number(msg.lvl) || 1));
         p.aid = String(msg.aid || '').slice(0, 16);
+        /* ✅ v0.4.46: СОХРАНЕНИЕ ИГРОКА по BRIX-ID — позиция/хп/инвентарь/
+           слот хотбара. Хп сервер восстанавливает СРАЗУ (он авторитет урона),
+           остальное уезжает клиенту в welcome.psave
+           ✅ v0.5.22: поднимено ДО блока уровня — xp/lvl читаются отсюда */
+        p.psaved = (p.aid && playerSaves.get(p.aid)) || null;
+        /* ✅ v0.5.22 УРОВЕНЬ — АВТОРИТЕТ СЕРВЕРА: у вернувшегося игрока
+           xp/lvl читаются из players.json ЭТОГО реалма (накрутить себя
+           нельзя — клиентские цифры не принимаются). У каждого сервера
+           свой прогресс */
+        if (p.psaved) {
+          if (p.psaved.lvl) p.lvl = Math.max(1, Math.min(250, Math.floor(Number(p.psaved.lvl) || 1)));
+          if (p.psaved.xp !== undefined) p.xp = Math.max(0, Math.floor(Number(p.psaved.xp) || 0));
+        } else { p.xp = 0; }
         /* ✅ v0.4.62: реестр всех игроков — зашёл (on = 1, ls = сейчас) */
         touchSocial(p, true);
         p.send = (obj2) => { try { sock.write(wsEncodeText(JSON.stringify(obj2))); } catch (e) {} };
         players.set(p.id, p);
-        /* ✅ v0.4.46: СОХРАНЕНИЕ ИГРОКА по BRIX-ID — позиция/хп/инвентарь/
-           слот хотбара. Хп сервер восстанавливает СРАЗУ (он авторитет урона),
-           остальное уезжает клиенту в welcome.psave */
-        p.psaved = (p.aid && playerSaves.get(p.aid)) || null;
         if (p.psaved) {
           p.hp = Math.max(1, Math.min(100, Math.round(Number(p.psaved.hp) || 100)));
           console.log('[players] ' + p.name + ' — сохранение найдено (hp ' + p.hp +
-            ', предметов ' + ((p.psaved.inv || []).length) + ')');
+            ', предметов ' + ((p.psaved.inv || []).length) +
+            (p.psaved.lvl ? ', ур. ' + p.psaved.lvl : '') + ')');
         }
         if (!world && msg.meta) initWorld(msg.meta);
         /* ✅ v0.5.16 КОМАНДЫ АРЕНЫ: автобаланс ДО welcome — команда
@@ -2401,6 +2554,12 @@ server.on('upgrade', (req, sock) => {
           /* ✅ v0.4.64: realm/mode/имя сервера — клиент включает
              ПВП-режим (без хотбара/крафта, E = список оружия) */
           realm: REALM, mode: SRV_MODE, sname: SRV_NAME,
+          /* ✅ v0.5.22: сид рельефа и флаг биомов вайп-мира (пустыня/
+             арктика/кактусы) — клиент строит ту же карту по сиду сервера */
+          seed: TERRAIN_SEED || undefined,
+          biomes: REALM === 'brixwipe' ? 1 : undefined,
+          /* ✅ v0.5.22: уровень/опыт — АВТОРИТЕТ СЕРВЕРА (players.json) */
+          lvl: p.lvl || 1, xp: p.xp || 0,
           /* ✅ v0.4.29: папка сервера в welcome — если версии не совпали,
              клиент покажет в баннере, из какой папки сервер работает,
              и игрок сразу увидит, что заменил server.js не там */
@@ -2485,6 +2644,36 @@ server.on('upgrade', (req, sock) => {
               (res.ty ? '/' + res.ty : '') + '#' + res.i + ' → остаток ' + res.l +
               (res.d ? ' (исчерпан)' : ''));
             broadcast(res, p.id);
+            /* ✅ v0.5.22 ОПЫТ ЗА ПОЛНОЕ ЛОМАНИЕ (авторитет сервера):
+               дерево 25, камень 30, железо 15, сера 15 → xp в players.json
+               реалма, уровень растёт до 250 (300*n опыта на следующий).
+               Клиенту — 'xp' (тост + линия в наградной полке) */
+            if (res.d === 1 && res.by === p.id) {
+              const gain = res.k === 'tree' ? 25
+                : res.ty === 'stone' ? 30 : 15;
+              p.xp = (p.xp || 0) + gain;
+              let up = false;
+              while ((p.lvl || 1) < 250 && p.xp >= 300 * (p.lvl || 1)) {
+                p.xp -= 300 * (p.lvl || 1);
+                p.lvl = (p.lvl || 1) + 1;
+                up = true;
+              }
+              if ((p.lvl || 1) >= 250) p.xp = 0;
+              if (p.aid) {   // xp/lvl — в сохранение игрока (переживает выход)
+                const ps2 = playerSaves.get(p.aid);
+                if (ps2) { ps2.xp = p.xp; ps2.lvl = p.lvl || 1; markPlayersDirty(); }
+              }
+              p.send({ t: 'xp', xp: p.xp, lvl: p.lvl || 1,
+                gained: gain,
+                src: res.k === 'tree' ? 'дерево срублено'
+                  : res.ty === 'stone' ? 'камень добыт'
+                  : res.ty === 'iron' ? 'железо добыто' : 'сера добыта' });
+              if (up) {
+                broadcast({ t: 'join', id: p.id, n: p.name, c: p.c,
+                  lvl: p.lvl || 1, aid: p.aid || '', tm: p.ateam }, p.id);
+                console.log('[xp] ' + p.name + ' → уровень ' + p.lvl);
+              }
+            }
           }
           break;
         }
@@ -2500,6 +2689,20 @@ server.on('upgrade', (req, sock) => {
         case 'ping':   // ✅ v0.4.0: клиент проверяет «жив ли сервер»
           p.send({ t: 'pong' });
           break;
+        /* ✅ v0.5.22 ЧАТ: {t:'chat', m} → ВСЕМ {t:'chat', id, n, c, m}.
+           Антиспам: не чаще одного сообщения в 0.4 с на игрока.
+           Работает и в режиме вкладок (BroadcastChannel ретранслирует) */
+        case 'chat': {
+          const m2 = String(msg.m || '')
+            .replace(/[\u0000-\u001f\u007f]/g, ' ')
+            .trim().slice(0, 120);
+          if (!m2) break;
+          if (p.chatLast && Date.now() - p.chatLast < 400) break;
+          p.chatLast = Date.now();
+          console.log('[chat] ' + p.name + ': ' + m2);
+          broadcast({ t: 'chat', id: p.id, n: p.name, c: p.c, m: m2 }, null);
+          break;
+        }
 
         /* ✅ fix v0.4.30 «ПОСТРОЙКИ НЕ ЛОМАЮТСЯ»: в этом switch было ДВА
            case 'bhit' — для бочек и для построек. JavaScript выполняет
@@ -3243,7 +3446,10 @@ server.on('upgrade', (req, sock) => {
             yaw: Math.round((Number(msg.yaw) || 0) * 100) / 100,
             hp: Math.max(1, Math.min(100, Math.round(Number(msg.hp) || 100))),
             hot: Math.max(0, Math.min(5, Math.floor(Number(msg.hot) || 0))),
-            inv: inv, at: Date.now()
+            inv: inv, at: Date.now(),
+            /* ✅ v0.5.22: xp/уровень игрока живут НА СЕРВЕРЕ (этого реалма) */
+            xp: Math.max(0, Math.floor(Number(p.xp) || 0)),
+            lvl: Math.max(1, Math.min(250, Math.floor(Number(p.lvl) || 1)))
           });
           touchSocial(p, true);   // ✅ v0.4.62: реестр — «был в сети только что»
           markPlayersDirty();
@@ -3712,27 +3918,88 @@ function brixSmoothstep(a, b, x) {
 function brixLerp(a, b, t) { return a + (b - a) * t; }
 
 /* --- высота рельефа (копия heightAt из js/game/terrain.js, 1:1) --- */
-const COLD_WORLD_HALF = 450;         // WORLD_SIZE 900 / 2
-const S_HILLS = 1013, S_DETAIL = 2027, S_MOUNT_MASK = 3041,
-  S_MOUNT = 4051;                    // сиды слоёв шума — как в terrain.js
+/* ✅ v0.5.22: у ВАЙП-мира свой сид — слои шума сдвигаются как на клиенте
+   (seedOff() = seed * 7919): карта сервера и карты игроков СОВПАДАЮТ */
+function srvSeedOff() { return TERRAIN_SEED * SEED_MULT; }
+/* COLD_WORLD_HALF и сиды слоёв шума — объявлены НАВЕРХУ (рядом с
+   OBJ_SEED): buildCheckblockLayout вызывает brixHeightAt на старте,
+   до выполнения этой секции (const «до инициализации» = крах) */
+
+/* ✅ v0.5.23 ПЛАН ЛАНДШАФТА ПО СИДУ: ОЗЕРО и ТРИ ПИКА больше не прибиты
+   к одним координатам — каждая вайп-карта получает СВОИ (пользователь:
+   «генерация случайная — свой ландшафт, озера»). Сид 0 (BrixLand/BrixPvP)
+   = прежняя карта без изменений. Формула 1:1 скопирована в
+   js/game/terrain.js (layoutAt) — МЕНЯТЬ ТОЛЬКО В ОБОИХ ФАЙЛАХ СРАЗУ! */
+function brixLayout() {
+  if (_layoutFor === (TERRAIN_SEED | 0) && _layout) return _layout;
+  const seed = TERRAIN_SEED | 0;
+  if (!seed) {
+    /* прежняя карта BrixLand: озеро и пики как были всегда */
+    _layout = {
+      lake: { x: 170, z: 150, r: 110 },
+      peaks: [
+        { x: -230, z: -150, r: 95, a: 56 },
+        { x: 255, z: -230, r: 105, a: 64 },
+        { x: -130, z: 255, r: 85, a: 42 }
+      ]
+    };
+  } else {
+    /* новая карта: детерминированный ПСЧ от сида (одинаковый у клиента) */
+    let a = (seed ^ 0x9E3779B9) >>> 0;
+    const nxt = () => {
+      a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
+      return a / 4294967296;
+    };
+    const la = nxt() * Math.PI * 2, ld = 250 + nxt() * 100;
+    const lake = {
+      x: Math.round(Math.cos(la) * ld),
+      z: Math.round(Math.sin(la) * ld),
+      r: Math.round(88 + nxt() * 42)          // сигма озера 88..130
+    };
+    const peaks = [];
+    for (let i = 0; i < 3; i++) {
+      let px = 0, pz = 0, pr = 0;
+      /* пик не должен стоять В ОЗЕРЕ — до трёх попыток сдвига */
+      for (let t = 0; t < 3; t++) {
+        const pa = nxt() * Math.PI * 2, pd = 250 + nxt() * 130;
+        px = Math.round(Math.cos(pa) * pd);
+        pz = Math.round(Math.sin(pa) * pd);
+        pr = Math.round(85 + nxt() * 28);
+        const dlx = px - lake.x, dlz = pz - lake.z;
+        if (Math.sqrt(dlx * dlx + dlz * dlz) > lake.r + pr) break;
+      }
+      peaks.push({
+        x: px, z: pz, r: pr,
+        a: Math.round(44 + nxt() * 22)        // высота пика 44..66
+      });
+    }
+    _layout = { lake, peaks };
+  }
+  _layoutFor = TERRAIN_SEED | 0;
+  return _layout;
+}
+
 function brixHeightAt(x, z) {
   const r = Math.sqrt(x * x + z * z) / COLD_WORLD_HALF;
 
   const spawnBlend = brixSmoothstep(0.14, 0.3, r);
 
-  const hills = (brixFbm(x * 0.012, z * 0.012, S_HILLS, 4) - 0.45) * 30;
-  const detail = (brixFbm(x * 0.05, z * 0.05, S_DETAIL, 3) - 0.5) * 3.5;
+  const hills = (brixFbm(x * 0.012, z * 0.012, S_HILLS + srvSeedOff(), 4) - 0.45) * 30;
+  const detail = (brixFbm(x * 0.05, z * 0.05, S_DETAIL + srvSeedOff(), 3) - 0.5) * 3.5;
 
   const mountMask = brixSmoothstep(0.55, 0.82,
-    r + (brixFbm(x * 0.005 + 7.3, z * 0.005 + 2.9, S_MOUNT_MASK, 3) - 0.5) * 0.55);
-  const ridge = Math.pow(brixRidged(x * 0.006, z * 0.006, S_MOUNT, 4), 1.3) * 72;
+    r + (brixFbm(x * 0.005 + 7.3, z * 0.005 + 2.9, S_MOUNT_MASK + srvSeedOff(), 3) - 0.5) * 0.55);
+  const ridge = Math.pow(brixRidged(x * 0.006, z * 0.006, S_MOUNT + srvSeedOff(), 4), 1.3) * 72;
 
-  const peaks =
-    56 * brixGauss(x, z, -230, -150, 95) +
-    64 * brixGauss(x, z, 255, -230, 105) +
-    42 * brixGauss(x, z, -130, 255, 85);
+  /* ✅ v0.5.23: пики и озеро — ПО СИДУ (см. brixLayout) */
+  const L = brixLayout();
+  let peaks = 0;
+  for (let i = 0; i < L.peaks.length; i++) {
+    const p = L.peaks[i];
+    peaks += p.a * brixGauss(x, z, p.x, p.z, p.r);
+  }
 
-  const lakeG = brixGauss(x, z, 170, 150, 110);
+  const lakeG = brixGauss(x, z, L.lake.x, L.lake.z, L.lake.r);
   const lakeMask = brixSmoothstep(0.15, 0.7, lakeG);
 
   let h = 5 + spawnBlend * (hills + detail) * (1 - lakeMask * 0.85);
@@ -3759,6 +4026,62 @@ if (Vines) {
     markDirty: markDirty,
     writeWorldNow: writeWorldNow
   });
+}
+
+/* ============================================================
+   ✅ v0.5.22 ВАЙП-СИСТЕМА (только реалм brixwipe, порт 8789).
+   СЕРВЕР САМ ТИКАЕТ ВРЕМЯ ДО ВАЙПА (каждые СУТКИ) и в момент вайпа:
+     1) берёт НОВЫЙ случайный сид рельефа (карта генерируется заново —
+        и на сервере, и у всех клиентов, которые строят её по сиду
+        из /status и welcome);
+     2) стирает мир: постройки, С4, трупы, бочки/лут, надгробия,
+        дропы, лозы (тыквы заново);epoch++ — старые бэкапы браузеров
+        не примутся;
+     3) рассылает ВСЕМ 'wipenow' — игроки показывают тост и
+        перезагружаются на новую карту;
+     4) сохраняет wipe.json {next, last, seed} — вайп переживает
+        рестарт сервера (тикает даже когда игроков 0).
+   Погода/время (world-env.json) и сохранения игроков (players.json)
+   НЕ трогаются: вайп — это про КАРТУ.
+   ============================================================ */
+
+/* ✅ v0.5.23 ВАЙП: функция и тик — только у реалма brixwipe.
+   Сама функция объявлена здесь (все зависимости ниже по файлу —
+   hoisted/вызываются в момент вайпа), интервал тикает раз в 30 с */
+function wipeNow() {
+  WIPE.last = Date.now();
+  WIPE.next = Date.now() + WIPE_INTERVAL_MS;
+  WIPE.seed = 100000 + Math.floor(Math.random() * 900000);
+  TERRAIN_SEED = WIPE.seed;
+  _layoutFor = -1; _layout = null;                 // план ландшафта — под новый сид
+  /* — стереть мир — */
+  const fresh = freshWorldObjs();
+  ['cb', 'builds', 'c4', 'corpses', 'btomb'].forEach((k) => { worldObjs[k] = fresh[k]; });
+  worldObjs.drops = fresh.drops;
+  worldObjs.dropSeq = 0;
+  worldObjs.corpseSeq = 0;
+  /* ✅ v0.5.23: раскладка чекблоков теперь под НОВЫЙ сид (fresh.cb уже
+     сгенерирован с ним — TERRAIN_SEED обновлён выше) */
+  worldObjs.cseed = OBJ_SEED + srvSeedOff();
+  worldObjs.epoch = (worldObjs.epoch || 0) + 1;   // старые бэкапы — мимо
+  worldObjs.vines = [];                            // лозы пересчитаются с новым сидом
+  world = null;                                    // ресурсы задаст первый зашедший клиент
+  writeEpochSidecar(worldObjs.epoch);
+  markDirty();
+  writeWorldNow();
+  try { fs.writeFileSync(WIPE_FILE, JSON.stringify(WIPE, null, 2)); } catch (eW2) {}
+  if (Vines) Vines.init({ broadcast, players, worldObjs, heightAt: brixHeightAt,
+    fbm: brixFbm, markDirty, writeWorldNow });
+  broadcast({ t: 'wipenow', seed: WIPE.seed }, null);
+  console.log('[wipe] ===== ВАЙП ===== новый сид: ' + WIPE.seed +
+    ', мир стёрт, следующий вайп через 24 ч');
+}
+
+if (REALM === 'brixwipe') {
+  /* тик раз в 30 с: время вышло — вайп (проверка и при 0 игроков) */
+  setInterval(() => {
+    if (Date.now() >= WIPE.next) wipeNow();
+  }, 30000);
 }
 
 /* --- ✅ v0.5.17 поверхность для приземления аирдропа: первое, чего

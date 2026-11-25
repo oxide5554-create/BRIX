@@ -448,6 +448,22 @@ window.BrixGameWorld = (function () {
       );
     }
     var inventory = BrixInventory.init();
+    /* ✅ v0.5.22 ИНВЕНТАРЬ — У КАЖДОГО СЕРВЕРА СВОЙ (просьба игрока):
+       раньше инвентарь был синглтоном на вкладку — вещи «переезжали»
+       с BrixLand на арену/вайп-мир. Теперь при каждом входе в мир
+       инвентарь сбрасывается, и СРАЗУ выдаётся стартовый набор своего
+       сервера; сохранённые вещи этого сервера доедут из welcome.psave */
+    try {
+      if (!window.BRIX_PVP) {
+        inventory.slots = new Array(inventory.slots.length).fill(null);
+        inventory.slots[0] = { item: BrixItems.torch, count: 1 };
+        inventory.slots[1] = { item: BrixItems.stoneAxe, count: 1 };
+        inventory.slots[2] = { item: BrixItems.stonePickaxe, count: 1 };
+      } else {
+        inventory.slots = new Array(inventory.slots.length).fill(null);
+      }
+      if (inventory.renderAll) inventory.renderAll();
+    } catch (eInvReset) {}
     // руки от 1-го лица — порт FirstPersonPlayer из репозитория:
     // риг игрока (player_claude.glb) + топор (axe_claude.glb) в отдельной сцене
     var hands = new BrixFirstPerson(camera, renderer);
@@ -678,7 +694,14 @@ window.BrixGameWorld = (function () {
       window.__objsBuilt = true;   // сервер прислал свои объекты
       BrixProps.build(objs, {
         scene: scene,
-        groundY: window.BrixTerrain ? BrixTerrain.heightAt : function () { return 0; }
+        /* ✅ v0.5.23 ФИКС «ЛЕТАЮЩИХ» БОЧЕК/ХЛАМА: высота — от
+           ОТРИСОВЫВАЕМОЙ поверхности (meshHeightAt), а не от гладкой
+           heightAt: на буграх и кромках вода/земля у меша ниже, объекты
+           по heightAt висели в воздухе. Заодно все точки чекблока
+           стоят на одной видимой земле */
+        groundY: window.BrixTerrain
+          ? (BrixTerrain.meshHeightAt || BrixTerrain.heightAt)
+          : function () { return 0; }
       });
       /* ✅ v0.4.43: ТРУПЫ из снапшота — новый игрок сразу видит трупы
          погибших (они живут на сервере в world-objs.json) */
@@ -1568,6 +1591,12 @@ window.BrixGameWorld = (function () {
         rec.fallDir = Math.random() > 0.5 ? 1 : -1;
         fell = 1;
         BrixSfx.play('treeFall', { volume: 1 });
+        /* ✅ v0.5.22 ОПЫТ: дерево срублено ПОЛНОСТЬЮ — +25 опыта.
+           В сервер-режиме опыт начисляет СЕРВЕР (сообщение 'xp'),
+           чтобы нельзя было накрутить локально */
+        if (BrixNet.mode !== 'server' && window.BrixRewards) {
+          BrixRewards.gain(25, BrixState.t('rw.src.tree'));
+        }
       }
       // ✅ v0.3.2: шлём и ЗАПРОС (сервер решает сам), и ГОТОВЫЙ РЕЗУЛЬТАТ
       // (остаток/«упало»/сторона) — чтобы вкладки без сервера тоже сходились
@@ -1598,6 +1627,13 @@ window.BrixGameWorld = (function () {
         decor.hideOre(rec);
         broke = 1;
         BrixSfx.play('stoneBreak', { volume: 0.95 });   // жила рассыпалась
+        /* ✅ v0.5.22 ОПЫТ: жила добыта ПОЛНОСТЬЮ — камень +30,
+           железо +15, сера +15. В сервер-режиме опыт шлёт сервер */
+        if (BrixNet.mode !== 'server' && window.BrixRewards) {
+          var xpGain = rec.type === 'stone' ? 30 : 15;
+          var srcKey = 'rw.src.' + rec.type;
+          BrixRewards.gain(xpGain, BrixState.t(srcKey));
+        }
       }
       // ✅ v0.3.2: и ЗАПРОС серверу, и готовый результат для вкладок
       BrixNet.sendHit('ore', rec.type, rec.i, amount, rec.left, broke, 1);
@@ -3935,6 +3971,19 @@ window.BrixGameWorld = (function () {
       e.preventDefault();   // ПКМ — прицел, а не меню браузера
     });
 
+    /* ✅ v0.5.22 МОБИЛЬНЫЙ ХОТБАР: двойной тап по слоту = ИСПОЛЬЗОВАТЬ
+       предмет (тыква — съесть, шприц — укол). Функцию зовёт
+       inventory.js по двойному тапу на тач-устройствах */
+    window.BrixUseActiveItem = function () {
+      if (window.BrixGame && BrixGame.state.phase !== 'playing') return false;
+      if (dead) return false;
+      var s = inventory.slots[inventory.activeSlot];
+      if (!s || !s.item) return false;
+      if (s.item.tool === 'syringe') { useSyringe(); return true; }
+      if (s.item.tool === 'pumpkin') { usePumpkin(); return true; }
+      return false;
+    };
+
     /* ---------- создание мира и реальная загрузка ---------- */
     var run = async function () {
       var setStage = function (k, p) {
@@ -3960,9 +4009,17 @@ window.BrixGameWorld = (function () {
         /* ✅ v0.4.65: арена — ПЛОСКАЯ локация (не рельеф) */
         window.BRIX_PVP_FLAT = true;
         window.BRIX_TERRAIN_SEED = 0;
+        window.BRIX_BIOMES = 0;
       } else {
         window.BRIX_PVP_FLAT = false;
+        /* ✅ v0.5.22 ВАЙП-МИР: сид приедет из /status (гейт ниже, ДО
+           сборки рельефа) — пока ставим 0: BrixLand/BrixWipe без ответа
+           строят базовый Brixland, как раньше */
         window.BRIX_TERRAIN_SEED = 0;
+        window.BRIX_BIOMES = 0;
+        /* ✅ v0.5.23: реалм для разделения бэкапов построек (building.js
+           lsKey) — уточнится после ответа сервера (realm из /status) */
+        window.BRIX_REALM = 'brixland';
       }
       /* ✅ v0.4.66: арена из ПРОШЛОГО мира не должна «переезжать» —
          сброс (иначе локация/боты невидимы после повторного входа) */
@@ -3981,10 +4038,32 @@ window.BrixGameWorld = (function () {
          «Подключение к серверу…») */
       setStage('load.step.connect', 0);
       var gatePort = pvpSrv ? pvpSrv.port : 8787;
-      var gateOk = await BrixNet.checkServer(gatePort, 2500);
-      if (!gateOk && !cancelled) {
+      /* ✅ v0.5.22: гейт возвращает ОБЪЕКТ /status — из него сразу
+         берём сид и флаг биомов вайп-мира (ДО сборки рельефа) */
+      var gateInfo = await BrixNet.checkServerInfo(gatePort, 2500);
+      var gateOk = !!gateInfo;
+      if (!gateInfo && !cancelled) {
         await sleep(400);
-        gateOk = await BrixNet.checkServer(gatePort, 2500);
+        gateInfo = await BrixNet.checkServerInfo(gatePort, 2500);
+        gateOk = !!gateInfo;
+      }
+      if (gateInfo) {
+        /* сид рельефа вайп-сервера (у BrixLand он 0 — прежний мир) */
+        if (!pvpMode && typeof gateInfo.seed === 'number' && gateInfo.seed > 0) {
+          window.BRIX_TERRAIN_SEED = gateInfo.seed;
+          console.log('[gate] сид мира от сервера: ' + gateInfo.seed +
+            ' — дорога/озеро/горы/лес/чекблоки этой карты свои');
+        }
+        if (!pvpMode && gateInfo.biomes) window.BRIX_BIOMES = 1;
+        /* ✅ v0.5.23: реалм СЕРВЕРА — бэкапы построек делятся по нему */
+        if (gateInfo.realm) window.BRIX_REALM = String(gateInfo.realm);
+        /* ✅ v0.5.23: до вайпа (мс) — HUD-таймер и тосты */
+        if (gateInfo.wipeIn !== undefined) {
+          window.__brixWipeIn = gateInfo.wipeIn;
+          window.__brixWipeDeadline = Date.now() + gateInfo.wipeIn;
+        }
+        /* сид для лоадера («новая карта №…») */
+        if (typeof gateInfo.seed === 'number') window.__brixMapSeed = gateInfo.seed;
       }
       if (!gateOk) {
         if (!cancelled) {
@@ -4021,6 +4100,23 @@ window.BrixGameWorld = (function () {
         setStage('load.step.auth', 8);
         await sleep(400);
         if (cancelled) return;
+        /* ✅ v0.5.23: ИГРОК ДОЛЖЕН ЗНАТЬ НОВЫЙ ЛАНДШАФТ (просьба):
+           на загрузке показываем номер карты и что именно сгенерировано
+           заново — дорога, озеро, горы, лес, лозы, чекблоки */
+        try {
+          var _ms = window.__brixMapSeed | 0;
+          if (_ms > 0 && window.BrixLoading && BrixLoading.setMapInfo) {
+            /* ✅ v0.5.23: «НОВАЯ КАРТА №607058 — свой ландшафт…» — игрок
+               ЗНАЕТ, что карта свежая и чего ждать (дорога/озеро/горы/лозы) */
+            BrixLoading.setMapInfo(BrixState.t('load.newmap', {
+              n: _ms,
+              extra: window.BRIX_REALM === 'brixwipe' ? ' ' + BrixState.t('load.newmap.wipe') : ''
+            }));
+            await sleep(1600);
+            if (cancelled) return;
+            BrixLoading.setMapInfo('');
+          }
+        } catch (eNm) {}
 
         /* 2 — ландшафт: настоящая генерация высот и цветов */
         var terrainGeo = await T.buildTerrainGeometry(yieldStage('load.step.terrain', 10, 42));
@@ -4590,6 +4686,57 @@ window.BrixGameWorld = (function () {
         setTimeout(function () { pingCycle(); }, 1200);
         var pingTimer = setInterval(pingCycle, 2500);
 
+        /* ================= ✅ v0.5.22 НОВОЕ В МИРЕ =================
+           1) ЧАТ: ENTER открывает ввод, кнопка ЧАТ для мобильных;
+           2) НАГРАДНАЯ ПОЛКА: кнопка в правом нижнем углу (уровни,
+              линия опыта до следующего, награды-монеты за уровни);
+           3) ВАЙП-МИР: сервер прислал 'wipenow' — тост и перезаход
+              (карта перегенерирована, надо загрузить новый сид). */
+        if (window.BrixChat) BrixChat.sync(true);
+        if (window.BrixRewards) BrixRewards.sync(true);
+        /* ENTER / T — открыть чат (если он закрыт и мир играется) */
+        var chatKey = function (e) {
+          if (cancelled) { document.removeEventListener('keydown', chatKey); return; }
+          if (window.BrixChat && BrixChat.isOpen()) return;   // guard чата сам гасит клавиши
+          if (window.BrixGame && BrixGame.state.phase !== 'playing') return;
+          if (e.code === 'Enter' || e.code === 'KeyT') {
+            /* T — только без зажатых модификаторов (не ломать чит-комбо) */
+            if (e.code === 'KeyT' && (e.ctrlKey || e.altKey || e.metaKey)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            BrixChat.show(true);
+          }
+        };
+        document.addEventListener('keydown', chatKey);
+
+        /* вайп: сервер стёр мир и взял новый сид — игроку нужно
+           перезайти (локальный мир уже не совпадает с сервером) */
+        BrixNet.on('wipenow', function () {
+          try { if (window.BrixHud) BrixHud.toast(BrixState.t('wipe.now'), 8); } catch (eW) {}
+          setTimeout(function () {
+            location.reload();   // полная перезагрузка: новый сид, чистый мир
+          }, 1800);
+        });
+
+        /* ✅ v0.5.22 ОБРАТНЫЙ ОТСЧЁТ ВАЙПА: /status дал wipeIn —
+           предупреждаем за 60 и за 10 секунд */
+        (function wipeCountdown() {
+          var left = window.__brixWipeIn;
+          if (!left || left > 61000) return;
+          var warned = { 60: false, 10: false };
+          var tickW = setInterval(function () {
+            if (cancelled) { clearInterval(tickW); return; }
+            left -= 1000;
+            if (left <= 60000 && !warned[60]) { warned[60] = true;
+              try { if (window.BrixHud) BrixHud.toast(
+                BrixState.t('wipe.soon', { n: Math.round(left / 1000) }), 5); } catch (e1) {} }
+            if (left <= 10000 && !warned[10]) { warned[10] = true;
+              try { if (window.BrixHud) BrixHud.toast(
+                BrixState.t('wipe.soon', { n: Math.max(1, Math.round(left / 1000)) }), 6); } catch (e2) {} }
+            if (left <= 0) clearInterval(tickW);
+          }, 1000);
+        })();
+
         /* ✅ v0.5.11: СЕРВЕР ПРОПАЛ СРЕДИ ИГРЫ — не висим в вечном
            реконнекте: net.js через 8 c без успеха шлёт lostServer,
            здесь показываем сообщение и возвращаем игрока в меню
@@ -5146,6 +5293,9 @@ window.BrixGameWorld = (function () {
       if (window.BrixFurnace) BrixFurnace.shutdown();
       // ✅ v0.4.6: система строительства выключается вместе с миром
       if (window.BrixBuilding) BrixBuilding.shutdown();
+      /* ✅ v0.5.22: чат/полка наград прячутся вместе с миром */
+      if (window.BrixChat) BrixChat.sync(false);
+      if (window.BrixRewards) BrixRewards.sync(false);
       window.removeEventListener('resize', onResize);
       document.removeEventListener('pointerlockchange', onLockChange);
       renderer.domElement.removeEventListener('click', onCanvasClick);

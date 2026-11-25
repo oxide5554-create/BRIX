@@ -674,7 +674,26 @@ window.BrixInventory = (function () {
       try { self.swapItems(JSON.parse(data), { type: type, index: index }); } catch (err) {}
     });
     if (type === 'hotbar') {
-      div.addEventListener('click', function () { self.select(index); });
+      /* ✅ v0.5.22 МОБИЛЬНЫЙ ХОТБАР: Тап по слоту — выбрать;
+         ВТОРОЙ тап ПОДРЯД по ТОМУ ЖЕ слоту (≤450 мс) — ИСПОЛЬЗОВАТЬ
+         предмет: тыква съедается, шприц колется (window.BrixUseActiveItem
+         из gameworld.js). Оружие просто выбирается — стрельба кнопками */
+      div.addEventListener('click', function () {
+        var nowT = Date.now();
+        var isTouchUi = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0) ||
+          (window.BrixTouch && typeof BrixTouch.isTouchDevice === 'function' && BrixTouch.isTouchDevice());
+        if (isTouchUi && self.activeSlot === index &&
+            self._lastTapIdx === index && self._lastTapAt &&
+            nowT - self._lastTapAt < 450) {
+          self._lastTapAt = 0;
+          if (window.BrixUseActiveItem && window.BrixUseActiveItem()) return;
+          self.select(index);
+          return;
+        }
+        self._lastTapIdx = index;
+        self._lastTapAt = nowT;
+        self.select(index);
+      });
     }
     return div;
   };
