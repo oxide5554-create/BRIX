@@ -1138,6 +1138,11 @@ window.BrixGameWorld = (function () {
                4.2 м (прицел не нужен); меню сразу, сервер уточнит лут */
             e.preventDefault();
             BrixAirdrop.loot(BrixAirdrop.nearest(camera.position, 4.2));
+          } else if (window.BrixVines && BrixVines.nearest(camera.position, 4.2) >= 0) {
+            /* ✅ v0.5.21: F у ЛОЗЫ С ТЫКВОЙ — сорвать (тыква в инвентарь,
+               сервер — авторитет: 'vineTake' → 'vineUpd', отказ — 'vineDeny') */
+            e.preventDefault();
+            BrixVines.take(BrixVines.nearest(camera.position, 4.2));
           } else if (window.BrixCorpses && window.BrixCorpses.aimed) {
             var aimDir = new THREE.Vector3();
             camera.getWorldDirection(aimDir);
@@ -1413,6 +1418,14 @@ window.BrixGameWorld = (function () {
         'adLoot', 'adDeny'].forEach(function (ev) {
         BrixNet.on(ev, function (m) {
           if (window.BrixAirdrop) BrixAirdrop.onNet(m);
+        });
+      });
+      /* ✅ v0.5.21 ТЫКВЕННЫЕ ЛОЗЫ: 'vineUpd' — сервер применил рост/сбор
+         (у всех), 'vineDeny' — отказ (откат выдачи), 'vineTake' —
+         relay режима вкладок (сорвал другой) */
+      ['vineUpd', 'vineDeny', 'vineTake'].forEach(function (ev) {
+        BrixNet.on(ev, function (m) {
+          if (window.BrixVines) BrixVines.onNet(m);
         });
       });
       /* ============================================================
@@ -3454,6 +3467,43 @@ window.BrixGameWorld = (function () {
       }, Math.round((window.BrixFirstPerson && BrixFirstPerson.SYR_HEAL_T || 3.45) * 1000));
     }
 
+    /* ============================================================
+       ✅ v0.5.21 ТЫКВА (просьба игрока: «если взять в хотбар и как
+       шприц нажать ЛКМ — ты её съешь, она даёт 12 хп, но без анимации
+       поедания»). ЛКМ с тыквой в руках: МГНОВЕННО +12 ХП, тыква
+       расходуется, НИКАКОЙ анимации (руки не машут). Кулдаун 4.3 с —
+       чуть больше серверного анти-спама 'heal' (4 с), чтобы тыквы
+       не пропадали зря. В серверном режиме хп подтверждает сервер
+       (как у шприца: p.hp + 12, cap 100)
+       ============================================================ */
+    var PUM_HEAL = 12;
+    var PUM_CD = 4.3;
+    var pumCd = 0;
+    function usePumpkin() {
+      if (pumCd > 0) return;
+      var s = inventory.slots[inventory.activeSlot];
+      if (!s || !s.item || s.item.tool !== 'pumpkin') return;
+      if (myHp >= PLAYER_MAX_HP - 0.5) {
+        try { if (window.BrixHud) BrixHud.toast(BrixState.data.lang === 'en'
+          ? 'Health is already full' : 'Здоровье уже полное', 3); } catch (eT) {}
+        return;
+      }
+      pumCd = PUM_CD;
+      inventory.removeCount(inventory.activeSlot, 1);   // тыква съедена
+      /* БЕЗ анимации поедания: никаких triggerSwing/playSyringe —
+         только мгновенный эффект и тихий «хруст» */
+      BrixSfx.play('chop1', { volume: 0.24, rate: 1.35 });
+      setMyHp(Math.min(PLAYER_MAX_HP, myHp + PUM_HEAL));
+      try { if (window.BrixHud) BrixHud.toast(
+        BrixState.data.lang === 'en' ? '+12 HP' : '+12 ХП', 2.5); } catch (eT3) {}
+      if (BrixNet.mode === 'server') {
+        BrixNet.send({ t: 'heal', n: PUM_HEAL });   // сервер подтвердит и разошлёт
+      } else if (BrixNet.mode === 'tabs') {
+        BrixNet.send({ t: 'phit', tid: BrixNet.id, hp: Math.round(myHp),
+          kind: 'heal', by: '' });
+      }
+    }
+
     /** бросок С4 (ЛКМ с блоком в руках): убрать предмет, жест, физика */
     function throwC4() {
       if (c4Cooldown > 0) return;
@@ -3821,6 +3871,7 @@ window.BrixGameWorld = (function () {
         }
       }
       if (syrCd > 0) syrCd -= dt;   // ✅ v0.4.46: кулдаун шприца
+      if (pumCd > 0) pumCd -= dt;   // ✅ v0.5.21: кулдаун поедания тыквы
       tickTracers(dt);
       /* ✅ v0.5.5: дыры/пыль/вспышки тикают в любом мире */
       if (window.BrixFx) BrixFx.tick(dt);
@@ -3832,6 +3883,7 @@ window.BrixGameWorld = (function () {
       tickDebris(dt);      // ✅ v0.4.43: обломки разрушенных построек
       if (window.BrixCorpses) BrixCorpses.tick(dt);   // ✅ v0.4.43: пульс колец трупов
       if (window.BrixAirdrop) BrixAirdrop.tick(dt);   // ✅ v0.5.17: полёт/падение/парашют/звук
+      if (window.BrixVines) BrixVines.tick(dt);       // ✅ v0.5.21: рост тыквы по таймеру
       updateCrosshair();
     }
 
@@ -3862,6 +3914,8 @@ window.BrixGameWorld = (function () {
         var c4Sel = inventory.slots[inventory.activeSlot];
         /* ✅ v0.4.46: ШПРИЦ в руках — УКОЛ (+46 хп, клип из GLB) */
         if (c4Sel && c4Sel.item && c4Sel.item.tool === 'syringe') { useSyringe(); return; }
+        /* ✅ v0.5.21: ТЫКВА в руках — СЪЕСТЬ (+12 хп, без анимации) */
+        if (c4Sel && c4Sel.item && c4Sel.item.tool === 'pumpkin') { usePumpkin(); return; }
         if (c4Sel && c4Sel.item && c4Sel.item.tool === 'c4') { throwC4(); return; }
         if (revSlot() || sgSlot() || rifleSlot() || tpSlot() || rv3xSlot()) tryShoot();
         else hitWithTool();
@@ -4355,6 +4409,11 @@ window.BrixGameWorld = (function () {
              в воздухе — зашёл после/во время: увидишь как остальные */
           if (window.BrixAirdrop && (msg.adrops || msg.adplane)) {
             BrixAirdrop.build(msg.adrops || [], msg.adplane || null);
+          }
+          /* ✅ v0.5.21 ТЫКВЕННЫЕ ЛОЗЫ: состояние тыкв (висит/сорвана,
+             когда вырастет) — наложится на детерминированные лозы мира */
+          if (window.BrixVines && msg.vines) {
+            BrixVines.feedState(msg.vines);
           }
           /* ✅ v0.4.65 ПВП-АРЕНА: ПОСТРОЙКИ BrixLand на арену НЕ ПРИЕЗЖАЮТ
              (ни с сервера — у реалма свой пустой bd, ни из локального

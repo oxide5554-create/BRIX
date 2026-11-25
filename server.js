@@ -629,6 +629,9 @@ if (Bots) {
    без пинга каждый кадр.
    ============================================================ */
 const Airdrops = REALM === 'brixland' ? require('./brix-airdrop.js') : null;
+/* ✅ v0.5.21 ТЫКВЕННЫЕ ЛОЗЫ: рост тыквы тикает на сервере (8 мин),
+   синхронизируется и сохраняется как у аирдропов — см. brix-vines.js */
+const Vines = REALM === 'brixland' ? require('./brix-vines.js') : null;
 function makeObjRng(seed) {
   let a = (seed === undefined ? OBJ_SEED : seed) | 0;
   return () => {
@@ -851,6 +854,9 @@ function writeWorldNow() {
       dropSeq: worldObjs.dropSeq,
       adrops: worldObjs.adrops || [],
       adropSeq: worldObjs.adropSeq | 0,
+      /* ✅ v0.5.21: ТЫКВЕННЫЕ ЛОЗЫ — состояние тыквы каждой лозы
+         (g: висит/сорвана, t: когда вырастет снова), переживает рестарт */
+      vines: worldObjs.vines || [],
       cb: worldObjs.cb.map((c) => ({
         id: c.id, x: c.x, z: c.z, rot: c.rot, item: c.item, seed: c.seed, mil: c.mil,
         taken: c.taken, gone: c.gone, loot: c.loot,
@@ -1107,6 +1113,8 @@ function loadWorldObjs() {
       /* ✅ v0.5.17: ящики аирдропа возвращаются в мир (v8; старый v7 —
          просто пусто). Без этой строки загрузка молча теряла adrops! */
       adrops: adrops,
+      /* ✅ v0.5.21: тыквенные лозы (g — висит ли тыква, t — когда вырастет) */
+      vines: Array.isArray(j.vines) ? j.vines : [],
       adropSeq: adrops.reduce((m, d) => Math.max(m, Number(String(d.id).slice(2)) || 0), 0),
       /* ✅ v0.4.62: надгробия сломанных — читаем, последние 600 */
       btomb: Array.isArray(j.btomb) ? j.btomb.map(String).slice(-600) : [],
@@ -1188,6 +1196,8 @@ if (REALM === 'brixpvp' && worldObjs.corpses.length) {
    старый v7 — просто пусто; падающие после рестарта ДОПАДАЮТ сами) */
 worldObjs.adrops = Array.isArray(worldObjs.adrops) ? worldObjs.adrops : [];
 worldObjs.adropSeq = worldObjs.adropSeq | 0;
+/* ✅ v0.5.21: лозы из сейва (не было — заполнит Vines.init по формуле) */
+worldObjs.vines = Array.isArray(worldObjs.vines) ? worldObjs.vines : [];
 if (worldObjs.adrops.length) {
   console.log('[air] восстановлено ящиков из сейва: ' + worldObjs.adrops.length +
     ' (падают: ' + worldObjs.adrops.filter((d) => d.st === 'fall').length + ')');
@@ -2420,6 +2430,9 @@ server.on('upgrade', (req, sock) => {
              движение, сервер шлёт только ключевые события */
           adrops: Airdrops ? Airdrops.snapshotDrops() : undefined,
           adplane: Airdrops ? Airdrops.planeState() : undefined,
+          /* ✅ v0.5.21 ТЫКВЕННЫЕ ЛОЗЫ: состояние всех тыкв (висит/сорвана,
+             когда вырастет) — клиент наложит на свои детерминированные лозы */
+          vines: Vines ? Vines.snapshot() : undefined,
           /* ✅ v0.5.0 ПВП-АРЕНА: боты «ПОЛИГОНА» + счёт команд + своя
              команда (✅ v0.5.16 автобаланс: СТАЛЬ или ПЛАМЯ — где меньше
              живых людей). Клиент строит бот-вью сразу, счётчик килов
@@ -3037,6 +3050,16 @@ server.on('upgrade', (req, sock) => {
           if (Airdrops) Airdrops.handleTake(p, msg);
           break;
         }
+        /* ============================================================
+           ✅ v0.5.21 ТЫКВЕННЫЕ ЛОЗЫ: 'vineTake' {i} — игрок сорвал тыкву.
+           Сервер — авторитет: проверка 6 м и «висит ли тыква», затем
+           ВСЕМ 'vineUpd' (тыква исчезает у всех), рост через 8 мин,
+           запись на диск. Отказ — 'vineDeny' (клиент откатит выдачу)
+           ============================================================ */
+        case 'vineTake': {
+          if (Vines) Vines.handleTake(p, msg);
+          break;
+        }
         /* F у трупа: сервер отвечает текущим содержимым */
         case 'corpseOpen': {
           const cc = worldObjs.corpses.find((x) => x.id === String(msg.id || ''));
@@ -3616,6 +3639,16 @@ if (Airdrops) setInterval(() => {
   }
 }, 500);
 
+/* ✅ v0.5.21 ТЫКВЕННЫЕ ЛОЗЫ: init — НИЖЕ по модулю (после объявления
+   шума brixHeightAt/brixFbm: init считает координаты лоз СРАЗУ и
+   константы рельефа должны быть уже инициализированы), тик 1 ГЦ —
+   рост тыквы (8 мин после сбора) и рассылка 'vineUpd' */
+if (Vines) setInterval(() => {
+  try { Vines.tick(); } catch (eVin) {
+    console.log('[vine] ошибка шага сима (сервер работает дальше): ' + eVin.message);
+  }
+}, 1000);
+
 /* ============================================================
    ✅ v0.4.34 ХОЛОД (зимний апдейт, этап 1) — АВТОРИТЕТ СЕРВЕРА.
    Зима = высокие горы со снегом. Высоту рельефа сервер считает
@@ -3711,6 +3744,21 @@ function brixHeightAt(x, z) {
   h = brixLerp(h, -7, edge);
 
   return h;
+}
+
+/* ✅ v0.5.21 ТЫКВЕННЫЕ ЛОЗЫ: init здесь — шум объявлен ВЫШЕ, worldObjs
+   загружен (лозы из сейва). Координаты лоз считаем СРАЗУ (формула 1:1
+   с js/game/vines.js), тик роста тыквы (8 мин) — интервал выше */
+if (Vines) {
+  Vines.init({
+    broadcast: broadcast,
+    players: players,
+    worldObjs: worldObjs,
+    heightAt: brixHeightAt,
+    fbm: brixFbm,
+    markDirty: markDirty,
+    writeWorldNow: writeWorldNow
+  });
 }
 
 /* --- ✅ v0.5.17 поверхность для приземления аирдропа: первое, чего

@@ -135,7 +135,14 @@
       'assets/icons/building_plan.png',
       'assets/sfx/build/Construction_Wooden_Build_03.wav',
       'assets/sfx/build/Construction_Wooden_Build_04.wav',
-      'assets/sfx/build/Construction_Wooden_PickUp_04.wav'
+      'assets/sfx/build/Construction_Wooden_PickUp_04.wav',
+      /* ✅ v0.5.21: тыквенные лозы (если файлов нет — SelfCheck сразу
+         покажет «сервер не отдаёт: assets/models/pumpkin…» вместо
+         молчаливых серых заглушек в поле) */
+      'assets/models/pumpkin_vine.glb',
+      'assets/models/pumpkin.glb',
+      'assets/icons/pumpkin.png',
+      'assets/sfx/menu/safe_zone.ogg'
     ];
     var bust = function (u) { return window.BrixAsset ? window.BrixAsset(u) : u; };
     var head = function (u) {

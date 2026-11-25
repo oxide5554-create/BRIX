@@ -57,9 +57,68 @@ window.menuAudio = (function () {
 
       startAmbient();
       loadClickSample();
+      loadMenuMusic();   // ✅ v0.5.21: музыка меню — трек игрока safe_zone.ogg
+      /* ✅ v0.5.21: музыка играет ТОЛЬКО В МЕНЮ — ушёл в игру
+         (loading/playing) — стоп, вернулся в меню — продолжает */
+      try {
+        if (window.BrixGame && BrixGame.on) {
+          BrixGame.on(function (g5) { setInGame(g5.phase !== 'idle'); });
+        }
+      } catch (eBg) {}
     } catch (e) {
       ctx = null; // WebAudio недоступен — меню работает без звука
     }
+  }
+
+  /* ---------- ✅ v0.5.21 МУЗЫКА МЕНЮ (assets/sfx/menu/safe_zone.ogg):
+     трек пользователя «safe zone» крутится ЛУПОМ через musicGain
+     (громкость musicVol, мьют и отключение звука уважаются). Если файл
+     не доехал/не декодировался — меню остаётся с синтезированным
+     эмбиентом (стартует выше), ничего не ломается ---------- */
+  var musicBuf = null;
+  var musicSrc = null;
+  var inGame = false;
+  var MUSIC_GAIN = 0.85;              // громкость трека поверх эмбиента
+  function startMusicSrc() {
+    if (!ctx || !musicBuf || musicSrc) return;
+    var src = ctx.createBufferSource();
+    src.buffer = musicBuf;
+    src.loop = true;
+    var g4 = ctx.createGain();
+    g4.gain.value = MUSIC_GAIN;
+    src.connect(g4); g4.connect(musicGain);
+    src.start(0);
+    musicSrc = src;
+  }
+  function setInGame(v) {
+    inGame = !!v;
+    if (!ctx) return;
+    if (inGame && musicSrc) {
+      try { musicSrc.stop(); } catch (eM1) {}
+      try { musicSrc.disconnect(); } catch (eM2) {}
+      musicSrc = null;
+    } else if (!inGame && musicBuf) {
+      startMusicSrc();
+    }
+  }
+  function loadMenuMusic() {
+    if (!ctx || musicBuf) return;
+    var u = window.BrixAsset
+      ? window.BrixAsset('assets/sfx/menu/safe_zone.ogg')
+      : 'assets/sfx/menu/safe_zone.ogg';
+    var get = window.BrixFetch
+      ? BrixFetch.bytes(u)
+      : fetch(u).then(function (r) {
+          if (!r.ok) throw new Error('no music');
+          return r.arrayBuffer();
+        });
+    get.then(function (ab) { return ctx.decodeAudioData(ab); })
+      .then(function (buf) {
+        musicBuf = buf;
+        if (!inGame) { startMusicSrc(); }
+        console.log('[menuAudio] музыка меню (safe_zone) готова');
+      })
+      .catch(function () { musicBuf = null; });   // синт-эмбиент продолжает
   }
 
   /** Загрузка пользовательского звука нажатия (assets/sfx/click.mp3) */

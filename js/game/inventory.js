@@ -134,6 +134,16 @@ window.BrixItems = {
     id: 'syringe', name: 'Шприц', nameEn: 'Syringe',
     icon: BrixAx('assets/icons/syringe.png'), stackable: true, stack: 10, tool: 'syringe'
   },
+  /* ✅ v0.5.21 ТЫКВА (модель пользователя pumpkin.glb →
+     assets/models/pumpkin.glb, иконка pumpkin.png): ЕДА с тыквенных
+     лоз (растут в поле, тыква на лозе — рост/сбор тикает НА СЕРВЕРЕ,
+     см. js/game/vines.js + brix-vines.js). В хотбаре ЛКМ — СЪЕСТЬ
+     (как шприц, но БЕЗ анимации поедания): мгновенно +12 ХП,
+     тыква расходуется. Стакается по 10 */
+  pumpkin: {
+    id: 'pumpkin', name: 'Тыква', nameEn: 'Pumpkin',
+    icon: BrixAx('assets/icons/pumpkin.png'), stackable: true, stack: 10, tool: 'pumpkin'
+  },
   /* ✅ v0.4.7 ПЛАН СТРОИТЕЛЯ — живёт В ИНВЕНТАРЕ (не в хотбаре):
      открой инвентарь (E) и КЛИКНИ по плану — он в руках (синий ватман),
      дальше Z — меню строительства (фундамент/стена/потолок),

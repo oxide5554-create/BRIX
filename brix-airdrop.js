@@ -31,6 +31,10 @@
  *  • F у ящика → 'adOpen' (ответ 'adLoot'); взять — 'adTake'
  *    (оптимистично у клиента, сервер — авторитет, всем 'adLoot');
  *  • ПУСТОЙ ящик убирается ('adGone'), сервер пишет на диск сразу.
+ *  • ✅ v0.5.21: УПАВШИЙ ящик, который НИКТО НЕ ЗАЛУТАЛ, через
+ *    20 МИНУТ (ADROP_LIFE_MS) исчезает сам: таймер с момента касания
+ *    земли (lt в world-objs.json — переживает рестарт сервера);
+ *    пустым ящикам неважно — они убираются сразу при опустении.
  *
  *  Протокол (всем): 'plane' {x,y,z,dx,dz,sp,age}, 'planeS' {x,y,z},
  *   'planeGone', 'adNew' {id,x,y,z,st,fall,inv,mags}, 'adLand' {id,y},
@@ -47,6 +51,7 @@ const PLANE_SP = 26;          // скорость самолёта, м/с (~94 �
 const FALL_SP = 5.5;          // ✅ v0.5.20 скорость падения ящика, м/с (медленнее — просили)
 const ADROP_MAX = 30;         // страховка: не больше 30 ящиков в мире
 const AUTO_MS = 30 * 60 * 1000;   // ✈ каждые 30 минут
+const ADROP_LIFE_MS = 20 * 60 * 1000;  // ✅ v0.5.21: упал и не залутан — через 20 мин исчезает
 
 let api = null;               // { broadcast, players, worldObjs, heightAt,
                               //  surfaceAt, markDirty, writeWorldNow }
@@ -219,12 +224,35 @@ function tick(dt) {
     if (d.y <= surf) {
       d.y = Math.round(surf * 100) / 100;
       d.st = 'ok';
+      d.lt = Date.now();     // ✅ v0.5.21: момент касания — старт 20 минут
       api.broadcast({ t: 'adLand', id: d.id, y: d.y }, null);
       log(d.id + ' приземлился (' + d.x + ', ' + d.z + ') на ' + d.y);
       changed = true;
     }
   }
   if (changed) { api.markDirty(); api.writeWorldNow(); }
+
+  /* --- ✅ v0.5.21: УПАВШИЙ И НЕ ЗАЛУТАННЫЙ ящик исчезает через 20 мин.
+     Таймер (lt) писан на диск — переживает рестарт сервера: за 20 мин
+     никто не добрался — ящик убирается у всех и в сейве --- */
+  let expired = 0;
+  const nowMs = Date.now();
+  for (let i = wo.adrops.length - 1; i >= 0; i--) {
+    const d = wo.adrops[i];
+    if (!d || d.st !== 'ok' || !d.lt) continue;
+    if (nowMs - d.lt < ADROP_LIFE_MS) continue;
+    wo.adrops.splice(i, 1);
+    api.broadcast({ t: 'adGone', id: d.id }, null);
+    log(d.id + ' никто не залутал за ' + (ADROP_LIFE_MS / 60000) +
+      ' мин — исчез (' + d.x + ', ' + d.z + ')');
+    expired++;
+  }
+  if (expired) {
+    api.broadcast({ t: 'atoast',
+      m: '📦 Аирдроп никто не забрал за 20 минут — он исчез' }, null);
+    api.markDirty();
+    api.writeWorldNow();
+  }
 }
 
 /* ---------- F У ЯЩИКА / ВЗЯТИЕ ПРЕДМЕТА ---------- */
@@ -299,6 +327,11 @@ function planeState() {
 module.exports.init = function (deps) {
   api = deps;
   if (!Array.isArray(api.worldObjs.adrops)) api.worldObjs.adrops = [];
+  /* ✅ v0.5.21: упавшим ящикам из СТАРОГО сейва (без метки lt) даём
+     СВЕЖИЕ 20 минут — обновление не должно удалять их мгновенно */
+  api.worldObjs.adrops.forEach((d) => {
+    if (d && d.st === 'ok' && !d.lt) d.lt = Date.now();
+  });
   /* ✈ автотик каждые 30 минут — только если на сервере есть игроки */
   setInterval(() => {
     if (api.players.size >= 1) callPlane('auto');

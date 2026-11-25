@@ -883,6 +883,16 @@ window.BrixWorld = (function () {
     await yieldProgress(1);
     await nextFrame();
 
+    /* ---- 5. ✅ v0.5.21 ТЫКВЕННЫЕ ЛОЗЫ: детерминированное размещение
+       (формула 1:1 с сервером — см. js/game/vines.js), модели
+       pumpkin_vine.glb + pumpkin.glb. Рост/сбор тикает СЕРВЕР
+       (brix-vines.js), синхронизация и сохранение как у аирдропов ---- */
+    try {
+      if (window.BrixVines) BrixVines.build(scene);
+    } catch (eVin) {
+      console.warn('[BrixWorld] лозы не построились (не критично):', eVin);
+    }
+
     /* анимация: тряска/падение деревьев + тряска/исчезновение руды */
     var decorRef = {
       treeMeshes: treeInst,

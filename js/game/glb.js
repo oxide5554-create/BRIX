@@ -58,6 +58,17 @@ window.BrixGLB = (function () {
     var start = bv.byteOffset || 0;
     var bytes = bin.subarray(start, start + bv.byteLength);
     var mime = img.mimeType || 'image/png';
+    /* ✅ v0.5.21b: текстура НЕ валит модель. KTX2/Basis (Blender
+       «Image Format: KTX2») браузер как картинку не декодирует —
+       TextureLoader даёт событие ошибки ([object Event]), и раньше
+       reject убивал ВЕСЬ парсинг: вместо тыквы — серый куб. Теперь:
+       неподдерживаемый формат → материал цветом без текстуры. */
+    if (!/^image\/(png|jpeg|jpg|webp|gif|bmp|avif)$/.test(mime)) {
+      console.warn('[BrixGLB] текстура «' + (img.name || ('#' + texIndex)) +
+        '» в формате ' + mime + ' — не декодируется браузером. Переэкспортируй модель ' +
+        'из Blender (glTF 2.0, Image Format = PNG); пока материал без текстуры');
+      return Promise.resolve(null);
+    }
     var blob = new Blob([bytes], { type: mime });
     var url = URL.createObjectURL(blob);
 
@@ -77,7 +88,12 @@ window.BrixGLB = (function () {
         }
         texture.needsUpdate = true;
         resolve(texture);
-      }, undefined, reject);
+      }, undefined, function () {
+        /* битая/недокачавшаяся картинка — тоже не повод терять модель */
+        console.warn('[BrixGLB] текстура «' + (img.name || ('#' + texIndex)) +
+          '» не декодировалась — материал без неё');
+        resolve(null);
+      });
     });
   }
 
