@@ -44,9 +44,11 @@
 'use strict';
 
 const WATER_MIN = 2.4;        // суше этой высоты (уровень моря 2.2 + запас)
-const ISLAND_R = 450;         // радиус острова (WORLD_HALF из heightAt)
-const CHORD_START = 680;      // старт самолёта от центра (за краем)
-const CHORD_END = 1540;       // где исчезает (улетел в том же направлении)
+/* ✅ v0.5.25: мир 2000x2000 м (было 900) — хорда самолёта длиннее,
+   чтобы старт/исчезновение были ЗА краем новой карты */
+const ISLAND_R = 1000;        // половина мира (WORLD_HALF, terrain.js)
+const CHORD_START = 1150;     // старт самолёта от центра (за краем)
+const CHORD_END = 2600;       // где исчезает (улетел в том же направлении)
 const PLANE_SP = 26;          // скорость самолёта, м/с (~94 км/ч)
 const FALL_SP = 5.5;          // ✅ v0.5.20 скорость падения ящика, м/с (медленнее — просили)
 const ADROP_MAX = 30;         // страховка: не больше 30 ящиков в мире
@@ -111,11 +113,12 @@ function spawnPlane() {
   for (let i = 0; i < 14; i++) {
     const th = Math.random() * Math.PI * 2;
     const dx = Math.cos(th), dz = Math.sin(th);
-    const a2 = Math.random() * Math.PI * 2, rr = Math.random() * 320;
+    const a2 = Math.random() * Math.PI * 2, rr = Math.random() * 520;   /* ✅ v0.5.25: мир больше */
     const ox = Math.cos(a2) * rr, oz = Math.sin(a2) * rr;
     let land = 0, total = 0, maxH = -1e9;
-    /* острова пересекают путь в коридоре ±640 м — семплы суши там */
-    for (let d = -640; d <= 640; d += 40) {
+    /* ✅ v0.5.25: острова разбросаны до 800 м от центра — коридор
+       семплов шире (±860 м), иначе самолёт «не находит» сушу */
+    for (let d = -860; d <= 860; d += 40) {
       const h = hAt(ox + dx * d, oz + dz * d);
       total++;
       if (h > WATER_MIN) land++;
@@ -180,11 +183,13 @@ function spawnPlane() {
   return { n: drops.length, y: y };
 }
 
-/* ✅ v0.5.24: квадрат сетки A1..F6 по мировым координатам (как карта на M) */
+/* ✅ v0.5.25: квадрат сетки A1..K11 по мировым координатам (как карта
+   на M — сетка 11×11 под мир 2000 м, было A1..F6 под 900 м) */
 function gridOf(x, z) {
-  const L = 'ABCDEF';
-  const cx = Math.max(0, Math.min(5, Math.floor((x + 450) / 150)));
-  const cz = Math.max(0, Math.min(5, Math.floor((z + 450) / 150)));
+  const L = 'ABCDEFGHIJK';
+  const HALF = 1000, CELL = (HALF * 2) / 11;
+  const cx = Math.max(0, Math.min(10, Math.floor((x + HALF) / CELL)));
+  const cz = Math.max(0, Math.min(10, Math.floor((z + HALF) / CELL)));
   return L[cx] + (cz + 1);
 }
 

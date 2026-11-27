@@ -106,9 +106,11 @@ window.BrixAdmin = (function () {
         ' — он верный', 14);
       return;
     }
+    var mpA = (window.BrixNet && BrixNet.port) ||
+      ((window.BrixData && BrixData.mainPort) ? BrixData.mainPort() : 8787);
     toast('Сервер v' + BrixNet.serverSv + ' работает, но не подтвердил твой ID. ' +
       'Открой в браузере http://' + (location.hostname || 'localhost') +
-      ':8787/status — там папка сервера и его список админов. Твой ' +
+      ':' + mpA + '/status — там папка сервера и его список админов. Твой ' +
       'BRIX-ID: ' + (id || 'нет'), 14);
   }
 
@@ -151,10 +153,12 @@ window.BrixAdmin = (function () {
           'заново — в шапке окна должно быть «BRIX server v' +
           (window.BRIX_VER || '0.4.23') + '»', 14);
       } else if (msg && msg.why === 'notadmin') {
+        var mpB = (window.BrixNet && BrixNet.port) ||
+          ((window.BrixData && BrixData.mainPort) ? BrixData.mainPort() : 8787);
         toast('Сервер не подтвердил тебя как АДМИНА: впиши свой BRIX-ID в ' +
           'admins.json (рядом с server.js) и перезапусти сервер. Проверить: ' +
           'открой в браузере http://' + (location.hostname || 'localhost') +
-          ':8787/status — там папка сервера и список админов', 14);
+          ':' + mpB + '/status — там папка сервера и список админов', 14);
       } else {
         toast(ru('Server denied the admin command',
           'Сервер отклонил команду админа'), 5);

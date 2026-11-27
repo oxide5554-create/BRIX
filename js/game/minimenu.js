@@ -32,6 +32,10 @@ window.BrixMiniMenu = (function () {
   var opts = null;          // { getPos, onExit } — от gameworld.js
   var root = null;          // слой мини-меню (вигнетка + пункты)
   var mapRoot = null;       // слой карты
+  /* ✅ v0.5.26: ВИД КАРТЫ — центр (мировые координаты точки под центром
+     экрана) и зум в %. Карта КОМПАКТНАЯ по умолчанию (72% меньшей
+     стороны), её можно ТАЩИТЬ мышью/пальцем и приближать ползунком */
+  var mapView = { cx: 0, cz: 0, zoom: 100 };
   var listEl = null;        // панель списка игроков
   var listOpen = false;
   var menuOpen = false;
@@ -117,13 +121,79 @@ window.BrixMiniMenu = (function () {
           t('mm.mapClose') + '">' + (window.BrixIcon ? BrixIcon('x', 20) : 'X') + '</button>' +
         '<div class="brix-map-sector font-h" id="brixMapSector"></div>' +
         '<div class="brix-map-build font-h" id="brixMapBuild">' + t('mm.mapBuild') + '</div>' +
+        /* ✅ v0.5.26: ползунок зума + кнопка «ЦЕНТР» (вернуть вид) */
+        '<div class="brix-map-ctrl" id="brixMapCtrl">' +
+          '<button class="brix-map-ctrbtn font-h" id="brixMapCenter">ЦЕНТР</button>' +
+          '<span class="brix-map-ctrlabel">−</span>' +
+          '<input type="range" id="brixMapZoom" min="50" max="400" value="100" step="10" />' +
+          '<span class="brix-map-ctrlabel">+</span>' +
+        '</div>' +
       '</div>';
     document.body.appendChild(mapRoot);
     mapRoot.querySelector('#brixMapClose').onclick = function () {
       if (window.menuAudio) menuAudio.back();
       closeMap();           // ✅ после карты — снова мини-меню
     };
+    mapRoot.querySelector('#brixMapCenter').onclick = function () {
+      if (window.menuAudio) menuAudio.click();
+      mapView = { cx: 0, cz: 0, zoom: 100 };
+      mapRoot.querySelector('#brixMapZoom').value = 100;
+      if (mapOpen) drawMap();
+    };
+    mapRoot.querySelector('#brixMapZoom').oninput = function () {
+      mapView.zoom = Number(this.value) || 100;
+      if (window.menuAudio) menuAudio.hover();
+      if (mapOpen) drawMap();
+    };
+    wireMapDrag();
     return mapRoot;
+  }
+
+  /* ✅ v0.5.26: ПЕРЕТАСКИВАНИЕ КАРТЫ — мышью или ПАЛЬЦЕМ (pointer
+     events покрывают и то и другое). Тянешь canvas — вид уезжает
+     вместе с пальцем/курсором; центр вида ограничен разумными
+     пределами (не улететь в открытый океан без карты) */
+  function wireMapDrag() {
+    var cv = mapRoot.querySelector('#brixMapCanvas');
+    var dragging = false, lastX = 0, lastY = 0, moved = false;
+    var onDown = function (e) {
+      dragging = true; moved = false;
+      lastX = e.clientX; lastY = e.clientY;
+      try { cv.setPointerCapture(e.pointerId); } catch (eC) {}
+      e.preventDefault();
+    };
+    var onMove = function (e) {
+      if (!dragging) return;
+      var dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      if (Math.abs(dx) + Math.abs(dy) > 2) moved = true;
+      var T = window.BrixTerrain;
+      var HALF = T ? T.WORLD_HALF : 1000;
+      var WORLD = HALF * 2;
+      var vw = mapRoot.clientWidth || window.innerWidth;
+      var vh = mapRoot.clientHeight || window.innerHeight;
+      var mapS = Math.min(vw, vh) * 0.72 * (mapView.zoom / 100);
+      var k = mapS / WORLD;                 // экран.пиксель → мир
+      mapView.cx -= dx / k;
+      mapView.cz -= dy / k;
+      var lim = HALF * 1.6;
+      if (mapView.cx < -lim) mapView.cx = -lim;
+      if (mapView.cx > lim) mapView.cx = lim;
+      if (mapView.cz < -lim) mapView.cz = -lim;
+      if (mapView.cz > lim) mapView.cz = lim;
+      if (mapOpen) drawMap();
+    };
+    var onUp = function (e) {
+      dragging = false;
+      try { cv.releasePointerCapture(e.pointerId); } catch (eR) {}
+    };
+    cv.addEventListener('pointerdown', onDown);
+    cv.addEventListener('pointermove', onMove);
+    cv.addEventListener('pointerup', onUp);
+    cv.addEventListener('pointercancel', onUp);
+    /* touch-action: none — чтобы страница не скроллилась пальцем */
+    cv.style.touchAction = 'none';
+    cv.style.cursor = 'grab';
   }
 
   /* ============================================================
@@ -368,9 +438,19 @@ window.BrixMiniMenu = (function () {
      игрок — иконка marker.webp, повёрнутая по yaw.
      ============================================================ */
 
-  var MAP_PX = 640;          // разрешение картинки карты
-  var GRID = 6;              // 6×6 квадратов, как в Rust
-  var CELL = 900 / GRID;     // 150 м на клетку
+  /* ✅ v0.5.25 (просьба владельца): разрешение карты выше (мир 2000 м)
+     и сетка 11×11 (A1–K11) вместо 6×6 (A1–F6) — «чтобы клетки были
+     до 11 и дальше» */
+  var MAP_PX = 768;          // разрешение картинки карты
+  var GRID = 11;             // 11×11 квадратов (A1–K11)
+  function mapCellSize() {   // метров на клетку — от размера мира
+    var T = window.BrixTerrain;
+    return ((T && T.WORLD_SIZE) || 2000) / GRID;
+  }
+  function mapHalf() {
+    var T = window.BrixTerrain;
+    return T ? T.WORLD_HALF : 1000;
+  }
 
   function buildMapImage() {
     var T = window.BrixTerrain;
@@ -454,11 +534,12 @@ window.BrixMiniMenu = (function () {
     return cv;
   }
 
-  /** квадрат A1…F6 по мировым координатам */
+  /** квадрат A1…K11 по мировым координатам */
   function sectorAt(x, z) {
-    var LETTERS = 'ABCDEF';
-    var cx = Math.floor((x + 450) / CELL);
-    var cz = Math.floor((z + 450) / CELL);
+    var LETTERS = 'ABCDEFGHIJK';
+    var HALF = mapHalf(), CELL = mapCellSize();
+    var cx = Math.floor((x + HALF) / CELL);
+    var cz = Math.floor((z + HALF) / CELL);
     cx = Math.max(0, Math.min(GRID - 1, cx));
     cz = Math.max(0, Math.min(GRID - 1, cz));
     return LETTERS[cx] + (cz + 1);
@@ -522,26 +603,25 @@ window.BrixMiniMenu = (function () {
     var T = window.BrixTerrain;
     var HALF = T ? T.WORLD_HALF : 450;
 
-    /* фон — тёмный океан с виньеткой (поля экрана = открытое море) */
+    /* фон — ЦВЕТ ВОДЫ той же палитры, что и вода на карте: «пустое»
+       место вокруг карты — открытый океан, никакого фона.
+       ✅ v0.5.26: карта снова КОМПАКТНАЯ (72% меньшей стороны экрана),
+       вид можно ТАЩИТЬ мышью/пальцем и ЗУМИТЬ ползунком ( mapView ) */
     var bg = ctx.createLinearGradient(0, 0, 0, vh);
-    bg.addColorStop(0, '#0d1a20');
-    bg.addColorStop(0.5, '#0a1418');
-    bg.addColorStop(1, '#071013');
+    bg.addColorStop(0, '#185063');
+    bg.addColorStop(0.5, '#123a4c');
+    bg.addColorStop(1, '#0d2836');
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, vw, vh);
 
-    /* квадрат карты: вписан почти вплотную, по центру экрана */
-    var M2 = 14;
-    var mapS = Math.max(200, Math.min(vw, vh) - M2 * 2);
-    var mx = Math.round((vw - mapS) / 2);
-    var my = Math.round((vh - mapS) / 2);
-
-    // мягкая тень под картой — «лист» лежит на столе
-    ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.7)';
-    ctx.shadowBlur = 30;
+    /* квадрат мира: компактный, по центру вида (mapView.cx/cz) */
+    var T2 = window.BrixTerrain;
+    var WORLD = HALF * 2;
+    var mapS = Math.max(200, Math.min(vw, vh) * 0.72 * (mapView.zoom / 100));
+    var k2 = mapS / WORLD;                    // мировые метры → экранные px
+    var mx = Math.round(vw / 2 - (mapView.cx + HALF) * k2);
+    var my = Math.round(vh / 2 - (mapView.cz + HALF) * k2);
     ctx.drawImage(mapImage, mx, my, mapS, mapS);
-    ctx.restore();
     var M = mx, SIZE = mapS;   // совместимость: M — левый край карты
 
     /* ✅ v0.4.65 ПВП-АРЕНА: ЛОКАЦИЯ «ПОЛИГОН» рисуется поверх рельефа —
@@ -552,35 +632,46 @@ window.BrixMiniMenu = (function () {
       BrixArena.drawMap(ctx, toX, toZ);
     }
 
-    // границы карты и клетки
-    ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+    /* ✅ v0.5.25: сетка 11×11 (A1–K11); ✅ v0.5.26: линии продолжаются
+       по воде до краёв экрана, подписи — только видимых клеток мира */
+    var cellS = mapS / GRID;
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
     ctx.lineWidth = 1;
-    for (var i = 1; i < GRID; i++) {
-      var p = mx + (mapS / GRID) * i;
-      var q = my + (mapS / GRID) * i;
-      ctx.beginPath(); ctx.moveTo(p, my); ctx.lineTo(p, my + mapS); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(mx, q); ctx.lineTo(mx + mapS, q); ctx.stroke();
+    var gx0 = mx - Math.ceil(mx / cellS) * cellS;
+    var gy0 = my - Math.ceil(my / cellS) * cellS;
+    for (var p = gx0; p <= mx + mapS + cellS; p += cellS) {
+      ctx.beginPath(); ctx.moveTo(p, 0); ctx.lineTo(p, vh); ctx.stroke();
     }
-    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+    for (var q = gy0; q <= my + mapS + cellS; q += cellS) {
+      ctx.beginPath(); ctx.moveTo(0, q); ctx.lineTo(vw, q); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
     ctx.strokeRect(mx, my, mapS, mapS);
 
-    /* подписи: буквы сверху (A–F), цифры слева (1–6) — НА краю карты,
-       полупрозрачной плашкой, чтобы не выходить за экран */
-    var cellS = mapS / GRID;
-    ctx.fillStyle = 'rgba(6,8,7,0.55)';
-    ctx.fillRect(mx, my, mapS, Math.max(16, cellS * 0.22));
-    ctx.fillRect(mx, my, Math.max(16, cellS * 0.22), mapS);
-    ctx.fillStyle = 'rgba(214,217,212,0.9)';
+    /* подписи: буквы сверху (A–K), цифры слева (1–11) — плашкой только
+       над ВИДИМОЙ частью квадратa мира (при перетаскивании едет с ним) */
+    var capH = Math.max(18, cellS * 0.2);
+    ctx.fillStyle = 'rgba(6,14,18,0.5)';
+    ctx.fillRect(Math.max(0, mx), Math.max(0, my),
+      Math.min(vw, mapS), Math.min(capH, Math.max(0, vh - my)));
+    ctx.fillRect(Math.max(0, mx), Math.max(0, my),
+      Math.min(capH, Math.max(0, vw - mx)), Math.min(vh, mapS));
+    ctx.fillStyle = 'rgba(214,217,212,0.92)';
     ctx.font = '600 12px Oswald, Arial Narrow, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    var LETTERS = 'ABCDEF';
-    var lh = Math.max(16, cellS * 0.22) / 2;
+    var LETTERS = 'ABCDEFGHIJK';
+    var lh = capH / 2;
     for (var c = 0; c < GRID; c++) {
-      ctx.fillText(LETTERS[c], mx + cellS * (c + 0.5), my + lh);
+      var sx = mx + cellS * (c + 0.5);
+      if (sx < capH || sx > vw - 4 || my > capH || my < -cellS * GRID) continue;
+      if (my + capH > vh) continue;
+      ctx.fillText(LETTERS[c], sx, Math.max(0, my) + lh);
     }
     for (var r = 0; r < GRID; r++) {
-      ctx.fillText(String(r + 1), mx + lh, my + cellS * (r + 0.5));
+      var sy = my + cellS * (r + 0.5);
+      if (sy < capH || sy > vh - 4 || mx > capH) continue;
+      ctx.fillText(String(r + 1), Math.max(0, mx) + lh, sy);
     }
 
     /* компас (север) в углу и штамп BRIX — поля читаются как «морской

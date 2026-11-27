@@ -64,7 +64,11 @@ window.BrixRoad = (function () {
       return a / 4294967296;
     }
     var wps = [];
-    var x = -40 + nxt() * 40, z = -40 + nxt() * 40;   // старт у спавна
+    /* ✅ v0.5.26: дорога начинается У ТОЧКИ СПАВНА (плато на побережье),
+       не в центре карты: спавн теперь у берега (layoutInfo().spawn) */
+    var SPR = (T.layoutInfo && T.layoutInfo() && T.layoutInfo().spawn) ||
+      { x: 0, z: 0 };
+    var x = SPR.x - 20 + nxt() * 40, z = SPR.z - 20 + nxt() * 40;
     var ang = nxt() * Math.PI * 2;
     var steps = 30 + Math.floor(nxt() * 10);          // 30..39 сегментов
     for (var s = 0; s < steps; s++) {
@@ -75,7 +79,9 @@ window.BrixRoad = (function () {
         var na = ang + (t ? (nxt() - 0.5) * 1.6 : 0); // отклонить курс
         var nx = x + Math.cos(na) * len, nz = z + Math.sin(na) * len;
         var rr = Math.sqrt(nx * nx + nz * nz);
-        if (rr > 385) continue;                      // не уходим в море
+        if (rr > 930) continue;                      /* ✅ v0.5.26: мир 2000 м — не уходим за край */
+        var dc = Math.sqrt(nx * nx + nz * nz);
+        if (dc < 330) continue;                      /* ✅ v0.5.26: не запирать дорогу в центре большого острова */
         var h = T.heightAt(nx, nz);
         if (h < 3.2 || h > 42) continue;             // ни воды, ни снежников
         var sl = Math.max(

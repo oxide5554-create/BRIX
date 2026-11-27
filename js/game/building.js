@@ -1498,8 +1498,9 @@ window.BrixBuilding = (function () {
   function lsKey() {
     var r = String(window.BRIX_REALM || '');
     if (!r) {
-      var p = 8787;
-      try { p = Number((window.BrixNet && BrixNet.port) || 8787) || 8787; } catch (eP) {}
+      /* ✅ FIX: запасной порт — BrixData.mainPort() (8789), не мёртвый 8787 */
+      var p = (window.BrixData && BrixData.mainPort) ? BrixData.mainPort() : 8787;
+      try { p = Number((window.BrixNet && BrixNet.port) || p) || p; } catch (eP) {}
       r = 'port' + p;
     }
     return 'brix-builds-v1-' + r;
@@ -1655,6 +1656,21 @@ window.BrixBuilding = (function () {
     }
     // ✅ v0.4.9: бэкап в localStorage — во ВСЕХ режимах (страхование)
     saveLocal();
+  }
+
+  /* ✅ v0.5.26 ПОЛНАЯ ЗАЧИСТКА БЭКАПА (вызывается при вайпе мира):
+     сервер стёр ВСЁ (wipenow) — клиент обязан забыть свои постройки:
+     убирает их из мира, стирает localStorage и сдвигает backupEp к
+     serverEp. Финальная страховка против «домов-призраков» после
+     вайпа — даже если серверная проверка badopt не сработала */
+  function purgeLocalBackup() {
+    var recs = allRecords();
+    recs.forEach(function (r) { removeRecord(r); });
+    try { localStorage.removeItem(lsKey()); } catch (eL) {}
+    backupEp = serverEp;
+    saveLocal();
+    console.log('[BrixBuilding] вайп: локальный бэкап построек очищен (' +
+      recs.length + ' шт.)');
   }
 
   /* ✅ v0.4.13: сервер отклонил бэкап (bwipe) — постройки были ОЧИЩЕНЫ
@@ -3642,6 +3658,7 @@ window.BrixBuilding = (function () {
         interact: interact, onBdeny: onBdeny,
         /* ✅ v0.4.18: тесты очистки построек (bwipe/nofound-страховка) */
         onBwipe: onBwipe, removeGhostCell: removeGhostCell,
+        purgeLocalBackup: purgeLocalBackup,   /* ✅ v0.5.26: зачистка при вайпе */
         /* ✅ v0.4.22: тесты сундука */
         chestRecs: chestRecs, applyChest: applyChest, planChest: planChest,
         chestAim: chestAim, chestCont: chestCont, setChestCont: setChestCont,

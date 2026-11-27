@@ -80,82 +80,172 @@ window.BrixScreens = (function () {
 
   function renderServers(layer) {
     var servers = BrixData.SERVERS || [];
+    var t = function (k) { return BrixState.t(k); };
+    /* ✅ v0.5.25 СЕРВЕРНЫЕ КАРТОЧКИ КАК В РЕФЕРЕНСЕ (RUST://SERVERS):
+       СПИСОК строк с обложкой-миниатюрой, живым пингом, полоской
+       игроков и таймером вайпа + СОРТИРОВКА (по пингу/игрокам/вайпу/
+       имени) + БОЛЬШАЯ КАРТОЧКА-ОБЛОЖКА сервера по клику (кнопка
+       «В ПУТЬ!»). Прежние широкие карточки заменены списком */
+    var sortMode = (BrixState.data.settings && BrixState.data.settings.srvSort) || 'ping';
+    var openId = null;          // какой сервер открыт в большой карточке
 
-    var cards = servers.map(function (srv) {
-      var isPvp = srv.mode === 'pvp';
+    /* ---------- ОБЛОЖКА СЕРВЕРА — PNG-АРТ (просьба владельца:
+       «вот PNG обложки — поставь их вместо SVG») ---------- */
+    var COVER_URL = 'assets/servers/cover.jpg';
+    function srvScene() {
+      return '<img class="srvb-coverimg" src="' + COVER_URL + '" alt="" ' +
+        'draggable="false" onerror="this.style.visibility=\'hidden\'">';
+    }
+
+    /* ---------- строки списка ---------- */
+    var CHEV = '<svg class="srvb-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+
+    function rowHTML(srv) {
       var isWipe = srv.realm === 'brixwipe';
-      var icon = isPvp ? BrixIcon('swords', 24) : BrixIcon('trees', 24);
-      var iconStyle = isPvp
-        ? 'display:grid;place-items:center;width:48px;height:48px;flex-shrink:0;border:1px solid rgba(205,65,47,.6);background:rgba(205,65,47,.15);color:var(--rust-bright)'
-        : 'display:grid;place-items:center;width:48px;height:48px;flex-shrink:0;border:1px solid rgba(94,151,71,.6);background:rgba(94,151,71,.15);color:#8fce6c';
-      return (
-        '<div class="rust-card server-card" data-server-card="' + srv.id + '">' +
-          '<div class="srv-top">' +
-            '<div style="display:flex;align-items:center;gap:16px">' +
-              '<div style="' + iconStyle + '">' + icon + '</div>' +
-              '<div>' +
-                '<div class="srv-title-row">' +
-                  '<span class="mini-badge">' + BrixState.t(srv.modeKey || 'srv.mode.vanilla') + '</span>' +
-                  '<h3 class="srv-name font-h">' + srv.name + '</h3>' +
-                '</div>' +
-                '<div class="srv-meta">' +
-                  '<span><span class="ic">' + BrixIcon('globe', 13) + '</span>' + srv.map + '</span>' +
-                  '<span><span class="ic">' + BrixIcon('map', 13) + '</span>' + srv.size + '</span>' +
-                  '<span><span class="ic">' + BrixIcon('users', 13) + '</span><span data-srv-online="' + srv.id + '">…</span></span>' +
-                  /* ✅ v0.5.11: пинг карточки — РЕАЛЬНЫЙ (RTT /status),
-                     фейковые 12 ms из servers.js больше не показываются */
-                  '<span class="good"><span>' + BrixIcon('signal', 13) + '</span><span data-srv-ping="' + srv.id + '">—</span></span>' +
-                  /* ✅ v0.5.23: ВАЙП-МИР — таймер «ВАЙП ЧЕРЕЗ …» (пользователь:
-                     «чтобы было написано когда будет вайп, через сколько часов —
-                     чтобы не гадать») */
-                  (isWipe
-                    ? '<span class="good"><span>' + BrixIcon('clock', 13) + '</span><span data-srv-wipe="' + srv.id + '">—</span></span>'
-                    : '') +
-                '</div>' +
-              '</div>' +
+      return '<div class="srvb-row" data-srv-row="' + srv.id + '" data-server-card="' + srv.id + '" role="button" tabindex="0">' +
+        '<div class="srvb-thumb">' + srvScene() + '</div>' +
+        '<div class="srvb-info">' +
+          '<div class="srvb-name font-h">' + srv.name + '</div>' +
+          '<div class="srvb-sub">' + srv.map + ' · ' + srv.size + '×' + srv.size + ' м</div>' +
+          '<div class="srvb-tags"><span class="mini-badge">' + t(srv.modeKey || 'srv.mode.vanilla') + '</span>' +
+            '<span class="srvb-tag">' + (isWipe ? 'ВАЙП РАЗ В СУТКИ' : 'ВСЁ ОРУЖИЕ СРАЗУ') + '</span></div>' +
+        '</div>' +
+        '<div class="srvb-players">' +
+          '<span class="pv"><b data-srv-online="' + srv.id + '">…</b><i>/' + (srv.max || 25) + '</i></span>' +
+          '<div class="srvb-pbar"><i data-srv-pbar="' + srv.id + '" style="width:0%"></i></div>' +
+          '<span class="srvb-st" data-srv-state="' + srv.id + '">' + t('srv.online') + '</span>' +
+        '</div>' +
+        '<div class="srvb-ping" data-srv-ping="' + srv.id + '">—</div>' +
+        '<div class="srvb-wipe" data-srv-wipe="' + srv.id + '">' + (isWipe ? '—' : '—') + '</div>' +
+        CHEV +
+      '</div>';
+    }
+
+    /* ---------- большая карточка (обложка) ---------- */
+    function modalHTML(srv) {
+      var isWipe = srv.realm === 'brixwipe';
+      function stat(cap, val) {
+        return '<div class="srvb-stat"><span class="cap">' + cap + '</span><span class="val">' + val + '</span></div>';
+      }
+      return '<div class="srvb-modal hidden" data-srv-modal="' + srv.id + '">' +
+        '<div class="srvb-scrim" data-srv-scrim="' + srv.id + '"></div>' +
+        '<div class="srvb-card">' +
+          '<div class="srvb-cover">' + srvScene() +
+            '<div class="srvb-cover-cap">' +
+              '<div class="srvb-cover-name font-h">' + srv.name + '</div>' +
+              '<div class="srvb-cover-tags"><span class="mini-badge">' + t(srv.modeKey || 'srv.mode.vanilla') + '</span>' +
+                '<span class="srvb-tag">' + srv.map + '</span></div>' +
             '</div>' +
-            '<div class="srv-status">' +
-              '<span class="ping-dot"></span>' +
-              '<span class="st" data-srv-state="' + srv.id + '">' + BrixState.t('srv.online') + '</span>' +
-              '<button class="btn-rust-primary" data-connect="' + srv.id + '">' + BrixState.t('srv.connect') + '</button>' +
-            '</div>' +
+            /* ✅ v0.5.26: кнопка «В ПУТЬ!» ПРЯМО НА ОБЛОЖКЕ — правый
+               нижний угол, поверх арта (не внизу карточки) */
+            '<button class="btn-rust-primary srvb-enter font-h" data-connect="' + srv.id + '">' +
+              t('srv.enter') + BrixIcon('signal', 15) + '</button>' +
+            '<button class="srvb-close" data-srv-close="' + srv.id + '" aria-label="Закрыть">' + BrixIcon('x', 16) + '</button>' +
           '</div>' +
-          /* ✅ v0.5.12: подсказки в вкладке СЕРВЕРА УБРАНЫ вовсе —
-             «фичи»-галочки, описание и строка «выберите сервер…»
-             (подсказки остались только на экране загрузки игры) */
-          '<div class="srv-roster" data-roster="' + srv.id + '"></div>' +
-        '</div>');
-    }).join('');
+          '<div class="srvb-card-body">' +
+            '<div class="srvb-stats">' +
+              stat(t('srv.colPlayers'), '<b data-cv-players="' + srv.id + '">—</b><i>/' + (srv.max || 25) + '</i>') +
+              stat(t('srv.colPing'), '<b data-cv-ping="' + srv.id + '">—</b>') +
+              stat(isWipe ? t('srv.colWipe') : t('srv.colMode'), '<b data-cv-extra="' + srv.id + '">—</b>') +
+            '</div>' +
+            '<div class="srv-roster" data-roster="' + srv.id + '"></div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }
+
+    var SORTS = [
+      ['ping', t('srv.sort.ping')],
+      ['players', t('srv.sort.players')],
+      ['wipe', t('srv.sort.wipe')],
+      ['name', t('srv.sort.name')]
+    ];
+    var options = '';
+    SORTS.forEach(function (s) {
+      options += '<option value="' + s[0] + '"' + (s[0] === sortMode ? ' selected' : '') + '>' + s[1] + '</option>';
+    });
 
     layer.innerHTML =
       '<div class="screen-panel">' +
         '<div class="panel-head">' +
           '<div>' +
-            '<h2 class="font-h">' + BrixState.t('srv.title') + '</h2>' +
-            '<p class="subtitle">' + BrixState.t('srv.subtitle') + '</p>' +
+            '<h2 class="font-h">' + t('srv.title') + '</h2>' +
+            '<p class="subtitle">' + t('srv.subtitle') + '</p>' +
           '</div>' +
           '<div class="head-right">' +
             '<button class="close-btn" data-close>' + BrixIcon('x', 17) + '</button>' +
           '</div>' +
         '</div>' +
         '<div class="panel-body rust-scroll">' +
-          '<div class="srv-wrap">' + cards + '</div>' +
+          '<div class="srvb-toolbar">' +
+            '<span class="srvb-count font-h" data-srv-count>' + servers.length + ' ' + t('srv.ofN') + ' ' + servers.length + '</span>' +
+            '<span class="srvb-online" data-srv-online-sum>0 ' + t('srv.onlineWord') + '</span>' +
+            '<label class="srvb-sortwrap"><span>' + t('srv.sort') + '</span>' +
+              '<select class="srvb-sort" data-srv-sort>' + options + '</select></label>' +
+          '</div>' +
+          '<div class="srvb-headrow">' +
+            '<span></span><span class="srvb-cap">' + t('srv.colServer') + '</span>' +
+            '<span class="srvb-cap">' + t('srv.colPlayers') + '</span>' +
+            '<span class="srvb-cap">' + t('srv.colPing') + '</span>' +
+            '<span class="srvb-cap">' + t('srv.colWipe') + '</span><span></span>' +
+          '</div>' +
+          '<div class="srvb-list" data-srv-list>' +
+            servers.map(rowHTML).join('') +
+          '</div>' +
+          '<div class="srv-nobody" style="margin-top:14px">' + t('srv.pick') + '</div>' +
         '</div>' +
+        servers.map(modalHTML).join('') +
       '</div>';
 
     bindClose(layer);
 
-    /* ✅ v0.5.9: опрос НЕ-основных серверов (PvP 8788) стартует ТОЛЬКО
-       когда игрок сам открыл экран «СЕРВЕРА» — из главного меню 8788
-       не долбится каждые 3 с (Dev Tunnels без куки давал сотни
-       CORS-ошибок в консоли) */
-    if (window.BrixFriends && BrixFriends.watchPort) {
-      servers.forEach(function (srv) {
-        if (Number(srv.port) !== 8787) BrixFriends.watchPort(srv.port);
-      });
+    /* ---------- сортировка ---------- */
+    var sortSel = layer.querySelector('[data-srv-sort]');
+    if (sortSel) {
+      sortSel.onchange = function () {
+        sortMode = sortSel.value;
+        try {
+          BrixState.data.settings.srvSort = sortMode;
+          BrixState.save();
+        } catch (eS) {}
+        if (window.menuAudio) menuAudio.click();
+        resort();
+      };
     }
 
-    /* ПОДКЛЮЧИТЬСЯ: lastServer + connect (сервер сам выберет порт) */
+    /* ---------- открытие большой карточки ---------- */
+    servers.forEach(function (srv) {
+      var row = layer.querySelector('[data-srv-row="' + srv.id + '"]');
+      if (!row) return;
+      var open = function () {
+        if (window.menuAudio) menuAudio.click();
+        openId = srv.id;
+        var m = layer.querySelector('[data-srv-modal="' + srv.id + '"]');
+        if (m) m.classList.remove('hidden');
+        drawAll();
+      };
+      row.onclick = open;
+      row.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } };
+      var closeBtn = layer.querySelector('[data-srv-close="' + srv.id + '"]');
+      var scrim = layer.querySelector('[data-srv-scrim="' + srv.id + '"]');
+      var closeFn = function () {
+        openId = null;
+        var m = layer.querySelector('[data-srv-modal="' + srv.id + '"]');
+        if (m) m.classList.add('hidden');
+      };
+      if (closeBtn) closeBtn.onclick = function (e) { e.stopPropagation(); closeFn(); };
+      if (scrim) scrim.onclick = closeFn;
+    });
+    document.addEventListener('keydown', function onEsc(e) {
+      if (e.key === 'Escape' && openId) {
+        openId = null;
+        layer.querySelectorAll('.srvb-modal').forEach(function (m) { m.classList.add('hidden'); });
+      }
+      if (!document.body.contains(layer)) document.removeEventListener('keydown', onEsc);
+    });
+
+    /* ---------- ПОДКЛЮЧИТЬСЯ (кнопка «В ПУТЬ!» в карточке) ---------- */
     servers.forEach(function (srv) {
       var btn = layer.querySelector('[data-connect="' + srv.id + '"]');
       if (!btn) return;
@@ -167,63 +257,132 @@ window.BrixScreens = (function () {
       };
     });
 
-    /* ЖИВЫЕ счётчики ОБОИХ серверов: опрос /status каждого реалма
-       каждые 4 секунды. Счётчик свой у каждого сервера. */
-    var pp = function (n) { return window.BrixFriends ? BrixFriends.pluralPeople(n, BrixState.data.lang) : '?'; };
-    function drawAll() {
+    /* ✅ v0.5.9: опрос НЕ-основных серверов (PvP 8788) стартует ТОЛЬКО
+       когда игрок сам открыл экран «СЕРВЕРА» */
+    if (window.BrixFriends && BrixFriends.watchPort) {
+      var mainP = (window.BrixData && BrixData.mainPort) ? BrixData.mainPort() : 8787;
       servers.forEach(function (srv) {
-        var info = window.BrixFriends ? BrixFriends.serverInfo(srv.port) : { ok: false };
+        if (Number(srv.port) !== mainP) BrixFriends.watchPort(srv.port);
+      });
+    }
+
+    /* ---------- ЖИВЫЕ данные: пинг/игроки/вайп + СОРТИРОВКА ---------- */
+    var pp = function (n) { return window.BrixFriends ? BrixFriends.pluralPeople(n, BrixState.data.lang) : '?'; };
+    function pingColor(ms) {
+      if (ms === null || ms === undefined) return 'var(--muted, #9aa096)';
+      if (ms < 60) return '#8fce6c';
+      if (ms < 130) return '#e0a33c';
+      return '#d96b55';
+    }
+    function drawAll() {
+      var infos = {};           // id -> info
+      servers.forEach(function (srv) { infos[srv.id] = window.BrixFriends ? BrixFriends.serverInfo(srv.port) : { ok: false }; });
+
+      servers.forEach(function (srv) {
+        var info = infos[srv.id];
+        var down = !info.ok;
+        var row = layer.querySelector('[data-srv-row="' + srv.id + '"]');
         var onlineEl = layer.querySelector('[data-srv-online="' + srv.id + '"]');
+        var pbarEl = layer.querySelector('[data-srv-pbar="' + srv.id + '"]');
         var stateEl = layer.querySelector('[data-srv-state="' + srv.id + '"]');
         var pingEl = layer.querySelector('[data-srv-ping="' + srv.id + '"]');
-        var cardEl = layer.querySelector('[data-server-card="' + srv.id + '"]');
+        var wipeEl = layer.querySelector('[data-srv-wipe="' + srv.id + '"]');
         var connectBtn = layer.querySelector('[data-connect="' + srv.id + '"]');
-        var rosterEl = layer.querySelector('[data-roster="' + srv.id + '"]');
-        if (!onlineEl || !rosterEl) return;
-        /* ✅ v0.5.11: УМНАЯ ПРОВЕРКА СЕРВЕРОВ. Порт не запущен →
-           карточка серая, статус «НА ОБСЛУЖИВАНИИ», кнопка входа
-           ЗАБЛОКИРОВАНА (проб запустили при загрузке меню — probeAll) */
-        var down = !info.ok;
-        if (cardEl) cardEl.classList.toggle('srv-down', down);
+        if (row) row.classList.toggle('srvb-down', down);
         if (connectBtn) connectBtn.disabled = down;
-        if (down) {
-          onlineEl.textContent = BrixState.t('srv.offline');
-          if (stateEl) stateEl.textContent = BrixState.t('srv.maintenance');
-          if (pingEl) pingEl.textContent = '—';
+        if (onlineEl) onlineEl.textContent = down ? '—' : String(info.players);
+        if (pbarEl) pbarEl.style.width = down ? '0%' :
+          Math.min(100, (info.players / (info.max || srv.max || 25)) * 100).toFixed(1) + '%';
+        if (stateEl) stateEl.textContent = down ? t('srv.maintenance') : t('srv.online');
+        if (pingEl) {
+          var ms = (!down && info.ms !== undefined && info.ms !== null) ? info.ms : null;
+          pingEl.textContent = ms === null ? '—' : ms + ' ms';
+          pingEl.style.color = ms === null ? '' : pingColor(ms);
+        }
+        if (wipeEl) {
+          wipeEl.textContent = (srv.realm === 'brixwipe')
+            ? (down ? '—' : (typeof info.wipeIn === 'number' ? fmtWipe(info.wipeIn) : '—'))
+            : '—';
+        }
+        /* большая карточка: живые цифры */
+        var cvP = layer.querySelector('[data-cv-players="' + srv.id + '"]');
+        if (cvP) cvP.textContent = down ? '—' : String(info.players);
+        var cvPing = layer.querySelector('[data-cv-ping="' + srv.id + '"]');
+        if (cvPing) {
+          var cvMs = (!down && info.ms !== undefined && info.ms !== null) ? info.ms : null;
+          cvPing.textContent = cvMs === null ? '—' : cvMs + ' ms';
+          cvPing.style.color = cvMs === null ? '' : pingColor(cvMs);
+        }
+        var cvX = layer.querySelector('[data-cv-extra="' + srv.id + '"]');
+        if (cvX) {
+          cvX.textContent = (srv.realm === 'brixwipe')
+            ? (down ? '—' : (typeof info.wipeIn === 'number' ? fmtWipe(info.wipeIn) : '—'))
+            : t(srv.modeKey || 'srv.mode.vanilla');
+        }
+      });
+
+      /* сортировка строк (переставляем DOM) */
+      resort();
+
+      /* счётчики в шапке списка */
+      var listEl = layer.querySelector('[data-srv-list]');
+      var countEl = layer.querySelector('[data-srv-count]');
+      if (countEl && listEl) {
+        countEl.textContent = listEl.children.length + ' ' + t('srv.ofN') + ' ' + servers.length;
+      }
+      var sumEl = layer.querySelector('[data-srv-online-sum]');
+      if (sumEl) {
+        var sum = 0;
+        servers.forEach(function (srv) { if (infos[srv.id].ok) sum += infos[srv.id].players || 0; });
+        sumEl.textContent = sum + ' ' + t('srv.onlineWord');
+      }
+
+      /* ростер — в большой карточке */
+      servers.forEach(function (srv) {
+        var info = infos[srv.id];
+        var rosterEl = layer.querySelector('[data-roster="' + srv.id + '"]');
+        if (!rosterEl) return;
+        if (!info.ok) {
           rosterEl.innerHTML = '<div class="srv-roster-cap font-h">' + BrixIcon('users', 13) +
-            ' ' + BrixState.t('srv.roster') + '</div><div class="srv-nobody">' +
-            BrixState.t('srv.maintenance') + '</div>';
+            ' ' + t('srv.roster') + '</div><div class="srv-nobody">' + t('srv.maintenance') + '</div>';
           return;
         }
-        /* ✅ v0.5.11: живой сервер — РЕАЛЬНЫЙ пинг (RTT последнего
-           /status), вместо фиксированных 12 ms */
-        if (pingEl) {
-          pingEl.textContent = (info.ms !== undefined && info.ms !== null)
-            ? info.ms + ' ms' : '—';
-        }
-        /* ✅ v0.5.23: ТАЙМЕР ВАЙПА на карточке BrixWipe — сколько
-           часов/минут осталось, обновляется с каждым /status */
-        var wipeEl = layer.querySelector('[data-srv-wipe="' + srv.id + '"]');
-        if (wipeEl) {
-          wipeEl.textContent = (typeof info.wipeIn === 'number')
-            ? fmtWipe(info.wipeIn) : '—';
-        }
-        if (stateEl) stateEl.textContent = BrixState.t('srv.online');
-        onlineEl.textContent = info.players + '/' + (info.max || srv.max || 64) + ' — ' +
-          info.players + ' ' + pp(info.players) + ' ' + BrixState.t('srv.onlineWord');
         var names = info.names || [];
         var html = '<div class="srv-roster-cap font-h">' + BrixIcon('users', 13) +
-          ' ' + BrixState.t('srv.roster') + ' — ' + names.length + ' ' + pp(names.length) + '</div>';
+          ' ' + t('srv.roster') + ' — ' + names.length + ' ' + pp(names.length) + '</div>';
         if (names.length) {
           html += '<div class="srv-roster-list">' + names.map(function (n) {
             return '<span class="srv-player"><span class="sp-dot"></span>' + n + '</span>';
           }).join('') + '</div>';
         } else {
-          html += '<div class="srv-nobody">' + BrixState.t('srv.nobody') + '</div>';
+          html += '<div class="srv-nobody">' + t('srv.nobody') + '</div>';
         }
         rosterEl.innerHTML = html;
       });
     }
+
+    function resort() {
+      var listEl = layer.querySelector('[data-srv-list]');
+      if (!listEl) return;
+      var rows = Array.prototype.slice.call(listEl.querySelectorAll('[data-srv-row]'));
+      var key = function (row) {
+        var srv = servers.filter(function (s) { return s.id === row.getAttribute('data-srv-row'); })[0];
+        if (!srv) return [0, '', ''];
+        var info = window.BrixFriends ? BrixFriends.serverInfo(srv.port) : { ok: false };
+        var ping = (info.ok && info.ms !== undefined && info.ms !== null) ? info.ms : 99999;
+        return { srv: srv, ping: ping, players: info.ok ? (info.players || 0) : -1,
+          wipe: (info.ok && typeof info.wipeIn === 'number') ? info.wipeIn : Infinity };
+      };
+      rows.sort(function (a, b) {
+        var A = key(a), B = key(b);
+        if (sortMode === 'ping') return A.ping - B.ping;
+        if (sortMode === 'players') return B.players - A.players;
+        if (sortMode === 'wipe') return A.wipe - B.wipe;
+        return A.srv.name.localeCompare(B.srv.name, 'ru');
+      });
+      rows.forEach(function (row) { listEl.appendChild(row); });
+    }
+
     drawAll();
     var srvTimer = setInterval(function () {
       if (!document.body.contains(layer)) { clearInterval(srvTimer); return; }

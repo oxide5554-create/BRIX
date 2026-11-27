@@ -18,13 +18,16 @@ window.BrixData.SERVERS = [
     realm: 'brixwipe',
     name: 'BRIX • Генерация',
     port: 8789,
-    map: 'Процедурная карта (архипелаг, вайп раз в сутки)',
+    map: 'Архипелаг: 1 большой + 3 острова',
     mode: 'vanilla',        // выживание с регулярным вайпом
     modeKey: 'srv.mode.wipe',
-    size: 3000,
+    size: 2000,             /* ✅ v0.5.25: мир 2000x2000 м (было 900) */
     ping: 12,
     max: 25,
-    biomes: 1               // пустыня + арктика + кактусы
+    biomes: 1,              // пустыня + арктика + кактусы
+    /* ✅ v0.5.25: обложка карточки сервера (список/карточка) */
+    biome: 'snow',          // зимний архипелаг — снежные ели на обложке
+    time: 'day'
   },
   {
     id: 'brixpvp',
@@ -34,9 +37,11 @@ window.BrixData.SERVERS = [
     map: 'Полигон (СЕКТОР-9)',
     mode: 'pvp',            // пвп: только оружие, E — список оружия
     modeKey: 'srv.mode.pvp',
-    size: 3000,
+    size: 2000,
     ping: 12,
-    max: 10                 // лимит арены 10
+    max: 10,                // лимит арены 10
+    biome: 'desert',        // пепельный полигон — пустынная обложка
+    time: 'dusk'
   }
 ];
 
@@ -52,6 +57,18 @@ window.BrixData.serverByRealm = function (realm) {
   var list = window.BrixData.SERVERS || [];
   for (var i = 0; i < list.length; i++) if (list[i].realm === realm) return list[i];
   return list[0] || null;
+};
+
+/* ✅ FIX «СЕРВЕР СЛОМАЛСЯ»: ГЛАВНЫЙ ПОРТ больше не хардкод 8787.
+   Когда-то главный сервер жил на 8787, теперь это «Генерация» (8789),
+   а 8787 НИКТО не слушает. А клиент ещё долго опрашивал и подключался
+   к мёртвому 8787: меню показывало «сервер недоступен», приглашения
+   и подсказки вели на несуществующий адрес. Все «главные» обращения
+   теперь через BrixData.mainPort() — порт берётся из списка серверов */
+window.BrixData.mainPort = function () {
+  var s = window.BrixData.ADMIN_SERVER ||
+    (window.BrixData.SERVERS && window.BrixData.SERVERS[0]);
+  return (s && Number(s.port)) || 8787;
 };
 
 /* совместимость со старым кодом (мини-меню, ИГРАТЬ) — основной

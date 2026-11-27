@@ -133,7 +133,7 @@
 }
 .bx-slot {
   position: relative;
-  width: 56px; height: 56px;
+  width: 56px; height: 56px;   /* ✅ v0.5.26: 6 слотов — прежний размер */
   background: rgba(58, 58, 55, 0.92);
   cursor: pointer;
 }

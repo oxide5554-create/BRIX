@@ -345,7 +345,10 @@ window.BrixWorld = (function () {
   /* ---------------- Вода ---------------- */
 
   function createWater(scene) {
-    var geo = new THREE.PlaneGeometry(T.WORLD_SIZE * 2.6, T.WORLD_SIZE * 2.6);
+    /* ✅ v0.5.25: вода ДО ГОРИЗОНТА (просьба владельца «пустое место —
+       не фон, а вода»): было 2.6 размера мира — за краем виден фон.
+       Теперь 9 размеров мира: во все стороны океан без «пустоты» */
+    var geo = new THREE.PlaneGeometry(T.WORLD_SIZE * 9, T.WORLD_SIZE * 9);
     var mat = new THREE.MeshStandardMaterial({
       color: 0x3f6d66,
       transparent: true,
@@ -545,8 +548,9 @@ window.BrixWorld = (function () {
     var trees = [];
     /* ✅ v0.5.24: попыток больше — архипелаг даёт ~26% суши (было ~45%):
        цель 340 деревьев достигается и на карте из островов */
-    var treeTries = window.BRIX_PVP ? 1600 : 6500;   // арена: «не лес»
-    for (i = 0; i < treeTries && trees.length < (window.BRIX_PVP ? 150 : 340); i++) {
+    /* ✅ v0.5.25: мир 2000 м (было 900) — деревьев ~2.5x больше */
+    var treeTries = window.BRIX_PVP ? 1600 : 15000;  // арена: «не лес»
+    for (i = 0; i < treeTries && trees.length < (window.BRIX_PVP ? 150 : 850); i++) {
       var x = (rng() - 0.5) * T.WORLD_SIZE * 0.94;
       var z = (rng() - 0.5) * T.WORLD_SIZE * 0.94;
       /* ✅ v0.4.64: на ПВП-арене деревьев нет вообще */
@@ -667,7 +671,8 @@ window.BrixWorld = (function () {
       var cactusRecs = [];
       /* ✅ v0.5.22a: 4000 попыток и мягче фильтры — зона пустыни может
          быть небольшой, кактусы должны заполнить её весь */
-      for (var ci = 0; ci < 4000 && cactusRecs.length < 30; ci++) {
+      /* ✅ v0.5.25: мир больше — кактусов вдвое больше */
+      for (var ci = 0; ci < 8000 && cactusRecs.length < 60; ci++) {
         var cx2 = (rng() - 0.5) * T.WORLD_SIZE * 0.9;
         var cz2 = (rng() - 0.5) * T.WORLD_SIZE * 0.9;
         if (!T.climateAt || T.climateAt(cx2, cz2) !== 'desert') continue;
@@ -721,9 +726,10 @@ window.BrixWorld = (function () {
     var oreCfg = [
       /* ✅ v0.5.24: попыток больше — суша архипелага ~26%, цель по
          числу руд должна достигаться и на островах */
-      { type: 'stone',  count: 110, tries: 4200, hMin: 2.6,  hMax: 46, slope: 0.55, base: 0.62 },
-      { type: 'iron',   count: 60,  tries: 3800, hMin: 10,   hMax: 46, slope: 0.30, base: 0.74 },
-      { type: 'sulfur', count: 60,  tries: 3800, hMin: 16,   hMax: 48, slope: 0.30, base: 0.86 }
+      /* ✅ v0.5.25: мир 2000 м — руды ~2.5x больше, иначе пусто */
+      { type: 'stone',  count: 270, tries: 10000, hMin: 2.6,  hMax: 46, slope: 0.55, base: 0.62 },
+      { type: 'iron',   count: 150, tries: 9000, hMin: 10,   hMax: 46, slope: 0.30, base: 0.74 },
+      { type: 'sulfur', count: 150, tries: 9000, hMin: 16,   hMax: 48, slope: 0.30, base: 0.86 }
     ];
     var oreNodes = {};    // type → records[]
     var oreTargets = [];  // [{mesh, type}] для raycast в gameworld
@@ -870,7 +876,7 @@ window.BrixWorld = (function () {
     /* ---- 3. ✅ ТРАВА (v0.2.8): иконка grass.png → билборды по миру ----
        Текстуру делаем из иконки пользователя (assets/textures/grass.png),
        каждый кустик = 2 скрещенные плоскости, инстансы, качание ветром. */
-    var GRASS_COUNT = 4200;
+    var GRASS_COUNT = 7000;   /* ✅ v0.5.25: мир больше — травы больше */
     var grassTime = { value: 0 };
     var grassMesh = null;
     try {
@@ -936,7 +942,7 @@ window.BrixWorld = (function () {
 
       // расстановка: пологие низины и луга, кустами (шум плотности)
       var grassList = [];
-      var gTries = 26000;
+      var gTries = 40000;   /* ✅ v0.5.25: под новый GRASS_COUNT 7000 */
       for (i = 0; i < gTries && grassList.length < GRASS_COUNT; i++) {
         var gx = (rng() - 0.5) * T.WORLD_SIZE * 0.93;
         var gz = (rng() - 0.5) * T.WORLD_SIZE * 0.93;
@@ -1181,13 +1187,17 @@ window.BrixWorld = (function () {
 
   /** Ищет ровное место недалеко от центра карты */
   async function findSpawn() {
+    /* ✅ v0.5.26 СПАВН У БЕРЕГА: спираль поиска идёт от ТОЧКИ СПАВНА
+       из плана архипелага (плато на побережье), а не от центра карты */
+    var SP = (T.layoutInfo && T.layoutInfo() && T.layoutInfo().spawn) ||
+      { x: 0, z: 0 };
     for (var ring = 0; ring < 14; ring++) {
       var rad = ring * 7;
       var steps = Math.max(8, ring * 10);
       for (var i = 0; i < steps; i++) {
         var a = (i / steps) * Math.PI * 2;
-        var x = Math.cos(a) * rad;
-        var z = Math.sin(a) * rad;
+        var x = SP.x + Math.cos(a) * rad;
+        var z = SP.z + Math.sin(a) * rad;
         var h = T.heightAt(x, z);
         if (h > T.WATER_LEVEL + 1.2 && slopeAt(x, z, 1.5) < 0.14) {
           await nextFrame();
@@ -1196,7 +1206,7 @@ window.BrixWorld = (function () {
       }
       await nextFrame();
     }
-    return new THREE.Vector3(0, T.heightAt(0, 0), 0);
+    return new THREE.Vector3(SP.x, T.heightAt(SP.x, SP.z), SP.z);
   }
 
   return {

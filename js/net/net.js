@@ -70,7 +70,8 @@ window.BrixNet = (function () {
     b.id = 'brixVerBanner';
     var folder = serverFolder
       ? 'Папка РЕАЛЬНО работающего сервера: <b>' + escHtml(serverFolder) + '</b>'
-      : 'Проверить версию и папку сервера: <b>http://localhost:8787/status</b>';
+      : 'Проверить версию и папку сервера: <b>http://' +
+        (location.hostname || 'localhost') + ':' + mainPort() + '/status</b>';
     b.innerHTML =
       '<div class="vbt"><b>СЕРВЕР СТАРЫЙ:</b> на сервере v' + escHtml(sv) + ', клиент v' + escHtml(cl) + '</div>' +
       '<div class="vbs">Урон по постройкам, сундук и бессмертие НЕ работают, пока сервер не обновят.</div>' +
@@ -139,6 +140,14 @@ window.BrixNet = (function () {
       }
       return (window.BrixState && BrixState.data.profileId) || '';
     } catch (e) { return ''; }
+  }
+
+  /* ✅ FIX: главный порт — из списка серверов (js/data/servers.js);
+     8787 остался только запасным значением, если data ещё нет */
+  function mainPort() {
+    try {
+      return (window.BrixData && BrixData.mainPort && BrixData.mainPort()) || 8787;
+    } catch (e) { return 8787; }
   }
 
   function peersCount() {
@@ -426,9 +435,13 @@ window.BrixNet = (function () {
 
   /* ---------- подключение ---------- */
 
-  /* ✅ v0.4.64: порт задаётся ВЫБРАННЫМ СЕРВЕРОМ (BrixLand 8787,
-     BrixPvP 8788) — BrixNet.useServer(srv) перед connect */
-  var targetPort = 8787;
+  /* ✅ v0.4.64: порт задаётся ВЫБРАННЫМ СЕРВЕРОМ (useServer(srv)
+     перед connect). ✅ FIX: по умолчанию — ГЛАВНЫЙ порт из списка
+     серверов (BrixData.mainPort() → «Генерация», 8789). Раньше тут
+     был хардкод 8787 — порт старого BrixLand, который теперь НИКТО
+     не слушает, из-за чего «ИГРАТЬ» без выбранного сервера падала
+     в «БЕЗ СЕРВЕРА», а меню показывало сервер недоступным */
+  var targetPort = mainPort();
 
   /* ✅ v0.5.10 RECONNECT. Симптом в туннеле: «WebSocket is closed
      before the connection is established» и «БЕЗ сервера». Причины:
@@ -630,7 +643,7 @@ window.BrixNet = (function () {
   function checkServer(port, timeoutMs) {
     return new Promise(function (ok) {
       var url = (window.BrixWsUrl ? BrixWsUrl.http(port)
-        : 'http://' + (location.hostname || 'localhost') + ':' + (Number(port) || 8787)) + '/status';
+        : 'http://' + (location.hostname || 'localhost') + ':' + (Number(port) || mainPort())) + '/status';
       var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
       var t = setTimeout(function () {
         if (ctrl) { try { ctrl.abort(); } catch (e0) {} }
@@ -650,7 +663,7 @@ window.BrixNet = (function () {
   function checkServerInfo(port, timeoutMs) {
     return new Promise(function (ok) {
       var url = (window.BrixWsUrl ? BrixWsUrl.http(port)
-        : 'http://' + (location.hostname || 'localhost') + ':' + (Number(port) || 8787)) + '/status';
+        : 'http://' + (location.hostname || 'localhost') + ':' + (Number(port) || mainPort())) + '/status';
       var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
       var t = setTimeout(function () {
         if (ctrl) { try { ctrl.abort(); } catch (e0) {} }
@@ -903,11 +916,11 @@ window.BrixNet = (function () {
     /* ✅ v0.5.8: универсальные адреса для других модулей (BrixWsUrl) */
     wsUrl: function (port) {
       return window.BrixWsUrl ? BrixWsUrl.ws(port)
-        : 'ws://' + (location.hostname || 'localhost') + ':' + (Number(port) || 8787);
+        : 'ws://' + (location.hostname || 'localhost') + ':' + (Number(port) || mainPort());
     },
     httpUrl: function (port) {
       return window.BrixWsUrl ? BrixWsUrl.http(port)
-        : 'http://' + (location.hostname || 'localhost') + ':' + (Number(port) || 8787);
+        : 'http://' + (location.hostname || 'localhost') + ':' + (Number(port) || mainPort());
     },
     connect: connect,
     /* ✅ v0.5.11: красный баннер (текст/подсказка/автоскрытие) для
@@ -918,7 +931,7 @@ window.BrixNet = (function () {
     checkServerInfo: checkServerInfo,
     /* ✅ v0.4.64: выбрать сервер — WS пойдёт на его порт */
     useServer: function (srv) {
-      targetPort = (srv && Number(srv.port)) || 8787;
+      targetPort = (srv && Number(srv.port)) || mainPort();
     },
     get port() { return targetPort; },
     disconnect: disconnect,

@@ -215,7 +215,8 @@ window.BrixGameWorld = (function () {
     scene.background = new THREE.Color(0xa8b8c6);
     scene.fog = new THREE.FogExp2(0xc0c4b4, 0.00092);
 
-    var camera = new THREE.PerspectiveCamera(72, mount.clientWidth / mount.clientHeight, 0.05, 2000);
+    /* ✅ v0.5.25: мир 2000 м — дальняя плоскость камеры 3000 (было 2000) */
+    var camera = new THREE.PerspectiveCamera(72, mount.clientWidth / mount.clientHeight, 0.05, 3000);
     // камера в графе сцены — иначе дети (рука с топором) не рендерятся
     scene.add(camera);
 
@@ -1117,12 +1118,21 @@ window.BrixGameWorld = (function () {
           //    Теперь enabled выставляет сам открытый лут-меню, а
           //    каждый кадр анимации самовосстанавливает его (см. tick)
           BrixNet.sendCbOpen(pick.id);
-          // ✅ v0.4.0 СТРАХОВКА: если сервер молчит 1.5 с (старая версия
-          //    server.js не знает 'cbopen') — открываем ящик локально из
-          //    снимка мира. Ящик работает при ЛЮБОЙ версии сервера
+          /* ✅ v0.4.0 СТРАХОВКА: если сервер молчит 1.5 с (старая версия
+             server.js не знает 'cbopen') — открываем ящик локально из
+             снимка мира. Ящик работает при ЛЮБОЙ версии сервера.
+             ✅ v0.5.26 ФИКС «ЛУТБОКС САМ ОТКРЫВАЕТСЯ ОБРАТНО»: таймер
+             НЕ отменялся, когда сервер уже ответил и игрок успел
+             закрыть меню — на 1.5-й секунде страховка видела меню
+             закрытым и переоткрывала ящик + пугала тостом «старый
+             server.js». Теперь: ответ сервера СНИМАЕТ таймер, и если
+             игрок сам закрыл этот ящик за последние 5 с — страховка
+             молчит */
           (function (cbId) {
-            setTimeout(function () {
+            crateOpenTimers[cbId] = setTimeout(function () {
+              delete crateOpenTimers[cbId];
               if (cancelled || BrixGame.state.phase !== 'playing') return;
+              if (lastLootClose.id === cbId && Date.now() - lastLootClose.at < 5000) return;
               if (!BrixLootMenu.isOpen() && BrixLootMenu.openId() !== cbId) {
                 openCrateLocal(cbId);
                 BrixHud.toast(BrixState.t('diag.openFallback'), 6);
@@ -1208,6 +1218,10 @@ window.BrixGameWorld = (function () {
       }
     });
 
+    /* ✅ v0.5.26: страховочные таймеры открытия ящиков (cbid → timer)
+       и последний ЗАКРЫТЫЙ игроком лутбокс — чтобы не переоткрывать */
+    var crateOpenTimers = {};
+    var lastLootClose = { id: null, at: 0 };
     /* ✅ v0.3.8: лут-меню — клик по предмету = заявка серверу */
     if (window.BrixLootMenu) {
       BrixLootMenu.init({
@@ -1240,6 +1254,13 @@ window.BrixGameWorld = (function () {
           putCrateLocal(cbId, item, amt, fromIndex);
         },
         close: function (closingId) {
+          /* ✅ v0.5.26: игрок закрыл лутбокс сам — запомнили; страховка
+             открытия 5 с молчит и не переоткрывает этот ящик */
+          lastLootClose = { id: closingId, at: Date.now() };
+          if (closingId && crateOpenTimers[closingId]) {
+            clearTimeout(crateOpenTimers[closingId]);
+            delete crateOpenTimers[closingId];
+          }
           /* ✅ v0.4.22: крышка сундука закрывается — и у других игроков тоже */
           if (closingId && isChestId(closingId)) {
             if (window.BrixBuilding) BrixBuilding.chestLid(closingId, 0);
@@ -1267,6 +1288,14 @@ window.BrixGameWorld = (function () {
       BrixNet.on('cbdeny', denyCrateTake);
       /* ✅ v0.3.8: сервер ответил на открытие ящика текущим лутом */
       BrixNet.on('cbopen', function (msg) {
+        /* ✅ v0.5.26: сервер ответил — страховочный таймер больше не нужен */
+        if (crateOpenTimers[msg.id]) { clearTimeout(crateOpenTimers[msg.id]); delete crateOpenTimers[msg.id]; }
+        /* игрок УЖЕ закрыл этот ящик сам (быстро взял лут) — не дёргаем
+           меню заново */
+        if (lastLootClose.id === msg.id && Date.now() - lastLootClose.at < 5000 &&
+            !BrixLootMenu.isOpen()) {
+          return;
+        }
         BrixLootMenu.open(msg.id, msg.loot, msg.mil ? 1 : 0);
       });
       /* ✅ v0.4.22 СУНДУК: сервер/другая вкладка прислала содержимое —
@@ -2059,9 +2088,11 @@ window.BrixGameWorld = (function () {
           '</div>' +
         '</div>' +
         '<canvas id="brixDthMap" width="900" height="560"></canvas>' +
+        /* ✅ v0.5.26 (просьба владельца): ОДНА кнопка возрождения —
+           «СЛУЧАЙНОЕ ВОЗРОЖДЕНИЕ» (раньше было две: «ВОЗРОДИТЬСЯ» +
+           «СЛУЧАЙНОЕ МЕСТО») */
         '<div class="brix-death-btns">' +
-          '<button class="respawn font-h" id="brixRespawnBtn">' + BrixState.t('death.btn') + '</button>' +
-          '<button class="rnd font-h" id="brixRespawnRnd">' + BrixState.t('death.random') + '</button>' +
+          '<button class="respawn font-h" id="brixRespawnRnd">' + BrixState.t('death.randomRespawn') + '</button>' +
         '</div>';
       document.body.appendChild(ds);
       /* одно окно сверху: тёмная плашка во всю ширину сверху */
@@ -2102,15 +2133,9 @@ window.BrixGameWorld = (function () {
       combatHud.aliveEl = ds.querySelector('#brixDthAlive');
       combatHud.wepEl = ds.querySelector('#brixDthWep');
       combatHud.distEl = ds.querySelector('#brixDthDist');
-      ds.querySelector('#brixRespawnBtn').onclick = function () {
-        if (window.menuAudio) menuAudio.click();
-        if (BrixNet.mode === 'server') {
-          BrixNet.sendRespawn();   // сервер оживит меня ДЛЯ ОСТАЛЬНЫХ
-          doRespawn();             // ✅ себя оживляем сразу: сервер не шлёт
-        }                          // prespawn обратно отправителю
-        else doRespawn();          // вкладки/соло — сами себя оживляем
-      };
-      /* ✅ v0.4.28: СЛУЧАЙНОЕ МЕСТО — как RANDOM RESPAWN на фото */
+      /* ✅ v0.5.26: ЕДИНСТВЕННАЯ кнопка — СЛУЧАЙНОЕ ВОЗРОЖДЕНИЕ
+         (старая кнопка «ВОЗРОДИТЬСЯ» на плато убрана по просьбе
+         владельца: одна кнопка — случайное возрождение) */
       ds.querySelector('#brixRespawnRnd').onclick = function () {
         if (window.menuAudio) menuAudio.click();
         var pt = randomSpawnPt();
@@ -2164,15 +2189,17 @@ window.BrixGameWorld = (function () {
         попыток, и страховочный возврат на спавн */
     function randomSpawnPt() {
       var T = window.BrixTerrain;
-      var HALF = T ? T.WORLD_HALF : 450;
+      var HALF = T ? T.WORLD_HALF : 1000;   /* ✅ v0.5.25: мир 2000 м */
       for (var i = 0; i < 60; i++) {
         var x = (Math.random() * 2 - 1) * HALF * 0.92;
         var z = (Math.random() * 2 - 1) * HALF * 0.92;
         var h = controls._getHeight(x, z, 0);
         if (h > 3.0) return { x: x, z: z, yaw: Math.random() * Math.PI * 2 };
       }
-      /* суша не нашлась (не бывает на архипелаге) — плато спавна */
-      return { x: 0, z: 0, yaw: Math.random() * Math.PI * 2 };
+      /* суша не нашлась (не бывает на архипелаге) — плато спавна у берега */
+      var SP3 = (BrixTerrain.layoutInfo && BrixTerrain.layoutInfo() &&
+        BrixTerrain.layoutInfo().spawn) || { x: 0, z: 0 };
+      return { x: SP3.x, z: SP3.z, yaw: Math.random() * Math.PI * 2 };
     }
 
     /* ============================================================
@@ -2185,7 +2212,7 @@ window.BrixGameWorld = (function () {
        игроки). Кэш — рисование дорогое, делаем один раз */
     var deathPos = null;        // {x, z} — где я умер (для черепа)
     var dthMapCache = null;     // canvas с рельефом
-    var MAP_EXT = 450;          // ✅ v0.4.44: половина стороны мира = WORLD_HALF (карта как в мини-меню)
+    var MAP_EXT = (window.BrixTerrain && BrixTerrain.WORLD_HALF) || 1000;   /* ✅ v0.4.44: половина стороны мира = WORLD_HALF (✅ v0.5.25: мир 2000 м) */
     var killCountLocal = 0;     // ✅ v0.5.0: мои килы ботов (серверный фид)
     var pvpRespawnTimer = null; // ✅ v0.5.0: автореспавн арены через 2 с
 
@@ -2486,7 +2513,11 @@ window.BrixGameWorld = (function () {
         controls.spawnAt(spawnPoint.x, spawnPoint.z, spawnPoint.yaw);
         controls.enabled = true;
       } else {
-        controls.spawnAt(0, 0, 0);
+        /* ✅ v0.5.26: плато спавна У БЕРЕГА (точка из плана архипелага) */
+        var SP4 = (window.BrixTerrain && BrixTerrain.layoutInfo &&
+          BrixTerrain.layoutInfo() && BrixTerrain.layoutInfo().spawn) ||
+          { x: 0, z: 0 };
+        controls.spawnAt(SP4.x, SP4.z, 0);
         controls.enabled = true;
       }
       aliveSince = Date.now();   // время выживания — заново
@@ -2528,13 +2559,23 @@ window.BrixGameWorld = (function () {
       }
     }
 
-    /** «зимность» места 0..1: та же снеговая линия, что в цвете рельефа */
+    /** «зимность» места 0..1: та же снеговая линия, что в цвете рельефа.
+        ✅ FIX «ПО ЗИМЕ ХОЛОДА НЕ БЫЛО, ТОЛЬКО НА ГОРАХ»: раньше холод
+        шёл ТОЛЬКО от высоты (снеговая линия 44..58 м). Арктический
+        биом (вечный снег на низменности) не учитывался. Теперь в
+        арктике холод тоже идёт — climateAt terrain.js (та же формула,
+        что у сервера brixColdZoneAt). Менять синхронно с server.js! */
     function coldZoneAt(x, z) {
       try {
         if (!window.BrixTerrain || !BrixTerrain.heightAt) return 0;
         var h = BrixTerrain.heightAt(x, z);
         var t = Math.min(1, Math.max(0, (h - 44) / (58 - 44)));   // как server.js
-        return t * t * (3 - 2 * t);
+        var zk = t * t * (3 - 2 * t);
+        if (BrixTerrain.climateAt && BrixTerrain.climateAt(x, z) === 'arctic') {
+          /* внутри арктики — почти полная зима (0.9), как у сервера */
+          zk = Math.max(zk, 0.9);
+        }
+        return zk;
       } catch (e) { return 0; }
     }
 
@@ -4061,7 +4102,8 @@ window.BrixGameWorld = (function () {
          туннель» и возврат в меню (этап на экране загрузки —
          «Подключение к серверу…») */
       setStage('load.step.connect', 0);
-      var gatePort = pvpSrv ? pvpSrv.port : 8787;
+      var gatePort = pvpSrv ? pvpSrv.port :
+        ((window.BrixData && BrixData.mainPort) ? BrixData.mainPort() : 8787);
       /* ✅ v0.5.22: гейт возвращает ОБЪЕКТ /status — из него сразу
          берём сид и флаг биомов вайп-мира (ДО сборки рельефа) */
       var gateInfo = await BrixNet.checkServerInfo(gatePort, 2500);
@@ -4737,6 +4779,9 @@ window.BrixGameWorld = (function () {
            перезайти (локальный мир уже не совпадает с сервером) */
         BrixNet.on('wipenow', function () {
           try { if (window.BrixHud) BrixHud.toast(BrixState.t('wipe.now'), 8); } catch (eW) {}
+          /* ✅ v0.5.26: вайп = ВСЁ стёрто — клиент сам чистит свой бэкап
+             построек (страховка от «домов-призраков» после перезахода) */
+          try { if (window.BrixBuilding && BrixBuilding.purgeLocalBackup) BrixBuilding.purgeLocalBackup(); } catch (eP) {}
           setTimeout(function () {
             location.reload();   // полная перезагрузка: новый сид, чистый мир
           }, 1800);

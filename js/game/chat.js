@@ -39,8 +39,13 @@ window.BrixChat = (function () {
     'font-family:Oswald,Roboto Condensed,sans-serif;display:none;',
     '-webkit-user-select:none;user-select:none}',
     '#brixChat.bxc-on{display:block}',
-    /* лента сообщений */
-    '#bxcList{max-height:34vh;overflow:hidden;display:flex;flex-direction:column;',
+    /* лента сообщений (✅ FIX: id был «bxcList» — НАШ КРАФТ-ПАНЕЛЬ
+       строит список чертежей с тем же id «bxcList» (js/game/craft.js).
+       Из-за дубликата id правило «#bxcList{overflow:hidden;
+       pointer-events:none}» действовало И НА СПИСОК ЧЕРТЕЖЕЙ:
+       крамп paneл не листался и рецепты не выбирались. Список чата
+       теперь «#bxcChatList» — уникальный id) */
+    '#bxcChatList{max-height:34vh;overflow:hidden;display:flex;flex-direction:column;',
     'justify-content:flex-end;gap:3px;margin-bottom:6px;pointer-events:none}',
     '.bxc-msg{background:rgba(18,20,19,.72);border-left:3px solid rgba(224,163,60,.8);',
     'padding:4px 9px;border-radius:3px;color:#f2ead6;font:13px/1.4 Roboto Condensed,sans-serif;',
@@ -83,7 +88,7 @@ window.BrixChat = (function () {
     root = document.createElement('div');
     root.id = 'brixChat';
     root.innerHTML =
-      '<div id="bxcList"></div>' +
+      '<div id="bxcChatList"></div>' +
       '<div id="bxcCap"></div>' +
       '<div id="bxcRow">' +
         '<input id="bxcInput" maxlength="120" autocomplete="off" ' +
@@ -91,7 +96,7 @@ window.BrixChat = (function () {
         '<button id="bxcSend">' + esc(t('chat.send')) + '</button>' +
       '</div>';
     document.body.appendChild(root);
-    listEl = root.querySelector('#bxcList');
+    listEl = root.querySelector('#bxcChatList');
     inputEl = root.querySelector('#bxcInput');
     capEl = root.querySelector('#bxcCap');
     sendBtn = root.querySelector('#bxcSend');
@@ -175,6 +180,14 @@ window.BrixChat = (function () {
     addMessage(myName(), myColor(), v, 'me');
     if (window.BrixNet) BrixNet.send({ t: 'chat', m: v.slice(0, 120) });
     capEl.textContent = '';
+    /* ✅ FIX «вайп от админа не работает, если в чате писали»: раньше
+       после отправки чат ОСТАВАЛСЯ открытым с фокусом в поле ввода,
+       а capture-guard чата гасил ВСЕ клавиши до игровых слушателей —
+       клавиша 9 (панель разработчика/вайп) и другие просто не доходили
+       до игры, пока чат не закроешь вручную. Теперь отправка = Enter
+       отправил И закрыл ввод (как в Rust): клавиатура сразу
+       возвращается игре */
+    show(false);
   }
 
   function myName() {

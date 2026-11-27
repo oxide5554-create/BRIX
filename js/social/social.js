@@ -106,8 +106,8 @@ window.BrixFriends = (function () {
     /* ✅ v0.5.8: адрес через BrixWsUrl — на https-туннеле заявка
        уходит на https://<id>-8787.<регион>.devtunnels.ms/invite,
        а не на заблокированный Mixed Content http://localhost:8787 */
-    var base = (window.BrixNet && BrixNet.httpUrl) ? BrixNet.httpUrl(8787)
-      : ((location.port === '8787') ? location.origin : 'http://localhost:8787');
+    var base = (window.BrixNet && BrixNet.httpUrl) ? BrixNet.httpUrl(mainPort())
+      : (('http://' + (location.hostname || 'localhost') + ':' + mainPort()));
     fetch(base + '/invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -400,11 +400,22 @@ window.BrixFriends = (function () {
 
   /* ================= ОНЛАЙН СЕРВЕРА (/status) ================= */
 
+  /* ✅ FIX: ГЛАВНЫЙ порт — из списка серверов (BrixData.mainPort(),
+     сейчас 8789 «Генерация»). Раньше везде стоял хардкод 8787 —
+     старый порт BrixLand, который больше НИКТО не слушает: меню
+     постоянно получало ERR_CONNECTION_REFUSED и показывало
+     «сервер недоступен», хотя сервер работал */
+  function mainPort() {
+    try {
+      return (window.BrixData && BrixData.mainPort && BrixData.mainPort()) || 8787;
+    } catch (e) { return 8787; }
+  }
+
   /* ✅ v0.4.64: /status ОБОИХ серверов (BrixLand 8787, BrixPvP 8788) —
      у вкладки «СЕРВЕРА» свой живой счётчик у каждого. Опрос всех портов
      из BrixData.SERVERS одним таймером; serverInfo(port) отдаёт кэш. */
   function statusUrl(port) {
-    var p = Number(port) || 8787;
+    var p = Number(port) || mainPort();
     /* ✅ v0.5.8: через BrixWsUrl — https-туннели дают каждому порту
        свой поддомен (https://<id>-8788.<регион>.devtunnels.ms/status);
        на http://localhost поведение прежнее */
@@ -422,18 +433,19 @@ window.BrixFriends = (function () {
      меню каждые 3 c: через туннель ссылка 8788 без куки Dev Tunnels
      падала с CORS-ошибкой, и консоль засорялась сотнями сообщений.
      Правила:
-     · в меню опрашивается ТОЛЬКО главный (8787);
+     · в меню опрашивается ТОЛЬКО главный (BrixData.mainPort());
      · watchPort(port) включают клик «ПОДКЛЮЧИТЬСЯ» по PvP и экран
        «СЕРВЕРА» (там живые счётчики нужны);
      · 2 подряд неудачи → порт на паузу 5 минут: пара ошибок в
        консоли вместо сотен, кэш (ok:false) не перетирается;
      · повторный watchPort снимает паузу (игрок сам попросил). */
-  var statusWanted = { 8787: true };  // port -> опрашивать
+  var statusWanted = {};              // port -> опрашивать
+                                      /* главный добавляется в pollStatus() */
   var statusFails = {};               // port -> подряд неудач
   var statusPaused = {};              // port -> ts, до которого пауза
 
   function watchPort(port) {
-    port = Number(port) || 8787;
+    port = Number(port) || mainPort();
     statusWanted[port] = true;
     statusPaused[port] = 0;           // явное действие снимает паузу
     statusFails[port] = 0;
@@ -445,7 +457,7 @@ window.BrixFriends = (function () {
     var prev = statusCache[port];
     if (prev && prev.ok) {
       statusCache[port] = { ok: false, players: 0, names: [], ts: Date.now() };
-      if (port === 8787) { serverInfo = statusCache[port]; emitChange(); }
+      if (port === mainPort()) { serverInfo = statusCache[port]; emitChange(); }
     }
     if (statusFails[port] >= 2) {
       statusPaused[port] = Date.now() + 5 * 60 * 1000;
@@ -454,7 +466,8 @@ window.BrixFriends = (function () {
   }
 
   function pollStatus() {
-    var ports = [8787];
+    statusWanted[mainPort()] = true;    // главный порт опрашивается ВСЕГДА
+    var ports = [mainPort()];
     Object.keys(statusWanted).forEach(function (p) {
       p = Number(p);
       if (ports.indexOf(p) === -1) ports.push(p);
@@ -490,7 +503,7 @@ window.BrixFriends = (function () {
               /* ✅ v0.5.12: реестр ВСЕХ игроков из /status.reg — вкладка
                  «ВСЕ ИГРОКИ» полная уже в меню */
               if (j.reg) mergeRegistry(j.reg);
-              if (port === 8787) {
+              if (port === mainPort()) {
                 serverInfo = statusCache[port];   // старые потребители (дом, друзья)
                 if (changed) emitChange();
               }
@@ -509,7 +522,7 @@ window.BrixFriends = (function () {
   var lastProbe = {};    // port -> ts последнего проба
 
   function probePort(port, force) {
-    port = Number(port) || 8787;
+    port = Number(port) || mainPort();
     var now = Date.now();
     if (!force && lastProbe[port] && now - lastProbe[port] < 10000) {
       return Promise.resolve(statusCache[port] || { ok: false, ms: null });
@@ -544,7 +557,7 @@ window.BrixFriends = (function () {
       } else {
         statusCache[port] = { ok: false, players: 0, names: [], ts: Date.now(), ms: null };
       }
-      if (port === 8787) { serverInfo = statusCache[port]; emitChange(); }
+      if (port === mainPort()) { serverInfo = statusCache[port]; emitChange(); }
       return res;
     });
   }
@@ -554,7 +567,7 @@ window.BrixFriends = (function () {
       запущенный — серый «НА ОБСЛУЖИВАНИИ» без кнопки входа */
   function probeAll() {
     var srvs = (window.BrixData && BrixData.SERVERS) ? BrixData.SERVERS : [];
-    srvs.forEach(function (s) { probePort(Number(s.port) || 8787, true); });
+    srvs.forEach(function (s) { probePort(Number(s.port) || mainPort(), true); });
   }
 
   /* ================= ИНИЦИАЛИЗАЦИЯ ================= */
@@ -617,7 +630,7 @@ window.BrixFriends = (function () {
     /* ✅ v0.4.64: online КОНКРЕТНОГО сервера — serverInfo(порт) без
        аргумента = BrixLand 8787 (как раньше) */
     serverInfo: function (port) {
-      if (port === undefined || port === null || Number(port) === 8787) return serverInfo;
+      if (port === undefined || port === null || Number(port) === mainPort()) return serverInfo;
       return statusCache[Number(port)] || { ok: false, players: 0, names: [] };
     },
     /* ✅ v0.4.64: ЭТОТ аккаунт — админ? (по adminIds из /status; до

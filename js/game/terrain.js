@@ -16,10 +16,12 @@ window.BrixTerrain = (function () {
 
   var N = window.BrixNoise;
 
-  var WORLD_SIZE = 900;   // размер карты, условных метров
+  /* ✅ v0.5.25: мир увеличен 900 → 2000 м (просьба владельца «карты
+     маленькие») — большой остров + 3 малых далеко в океане */
+  var WORLD_SIZE = 2000;   // размер карты, условных метров
   var WORLD_HALF = WORLD_SIZE / 2;
   var WATER_LEVEL = 2.2;
-  var TERRAIN_SEG = 256;
+  var TERRAIN_SEG = 400;   // ✅ v0.5.25: больше сегментов под большой мир (шаг ~5 м)
 
   // сиды слоёв шума
   var S_HILLS = 1013;
@@ -54,21 +56,23 @@ window.BrixTerrain = (function () {
   function layoutAt() {
     var seed = (window.BRIX_TERRAIN_SEED || 0) | 0;
     if (_layoutSeed === seed && _layout) return _layout;
-    var islands, lake = null, hillAmp;
+    var islands, lake = null, hillAmp, spawn;
     if (!seed) {
       /* соло/режим вкладок без сервера: красивый фиксированный архипелаг */
+      /* ✅ v0.5.25 БОЛЬШАЯ КАРТА: мир 2000x2000 м — ОДИН большой остров
+         (спавн, озеро, 2 горы) + 3 малых ДАЛЕКО в океане. Копия 1:1 в terrain.js! */
       islands = [
-        { x: 0, z: 0, r: 235, peaks: [
-          { x: 40, z: -95, r: 80, a: 62 },
-          { x: -95, z: 60, r: 62, a: 36 }
+        { x: 0, z: 0, r: 430, peaks: [
+          { x: 80, z: -160, r: 120, a: 70 },
+          { x: -170, z: 110, r: 80, a: 40 }
         ] },
-        { x: -280, z: -265, r: 130, peaks: [{ x: -270, z: -255, r: 52, a: 46 }] },
-        { x: 285, z: -235, r: 110, peaks: [{ x: 285, z: -235, r: 46, a: 36 }] },
-        { x: 250, z: 290, r: 140, peaks: [{ x: 240, z: 300, r: 58, a: 54 }] },
-        { x: -285, z: 255, r: 95, peaks: [{ x: -285, z: 255, r: 42, a: 30 }] }
+        { x: -750, z: -330, r: 140, peaks: [{ x: -730, z: -300, r: 60, a: 48 }] },
+        { x: 730, z: -420, r: 120, peaks: [{ x: 700, z: -390, r: 52, a: 40 }] },
+        { x: 640, z: 640, r: 150, peaks: [{ x: 610, z: 610, r: 64, a: 52 }] }
       ];
-      lake = { x: 150, z: 135, r: 70 };
+      lake = { x: 180, z: -160, r: 90 };
       hillAmp = 20;
+      spawn = { x: 365, z: -30 };   /* ✅ v0.5.26: спавн у берега */
     } else {
       /* новая карта: детерминированный ПСЧ от сида (одинаковый у сервера) */
       var a = (seed ^ 0x9E3779B9) >>> 0;
@@ -76,61 +80,77 @@ window.BrixTerrain = (function () {
         a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
         return a / 4294967296;
       }
-      /* главный остров: у центра (±45 м), радиус 195..250 */
-      var mx = Math.round((nxt() - 0.5) * 90);
-      var mz = Math.round((nxt() - 0.5) * 90);
-      var mr = Math.round(195 + nxt() * 55);
+      /* ✅ v0.5.25 БОЛЬШАЯ КАРТА (просьба владельца «карты маленькие,
+         сделай большую»): мир 2000x2000 м. Ровно 4 острова: ОДИН большой
+         (спавн, озеро, 2 горы) + 3 малых — ДАЛЕКО в океане (680-800 м от
+         центра), между ними и большим островом всегда открытое море.
+         Копия 1:1 в terrain.js layoutAt — МЕНЯТЬ В ОБОИХ ФАЙЛАХ СРАЗУ! */
+      /* главный остров: БОЛЬШОЙ, у центра (±90 м), радиус 400..470 */
+      const mx = Math.round((nxt() - 0.5) * 180);
+      const mz = Math.round((nxt() - 0.5) * 180);
+      const mr = Math.round(400 + nxt() * 70);
       hillAmp = 12 + Math.round(nxt() * 14);      // амплитуда холмов 12..26
-      var mPeaks = [];
-      /* большая гора (50..74 м) — подальше от плато спавна */
-      var pa = nxt() * Math.PI * 2, pd = mr * (0.55 + nxt() * 0.2);
-      mPeaks.push({
-        x: Math.round(mx + Math.cos(pa) * pd),
-        z: Math.round(mz + Math.sin(pa) * pd),
-        r: Math.round(mr * (0.26 + nxt() * 0.12)), a: Math.round(50 + nxt() * 24)
-      });
+      const mPeaks = [];
+      /* большая гора (55..85 м) — подальше от плато спавна */
+      {
+        const pa = nxt() * Math.PI * 2, pd = mr * (0.5 + nxt() * 0.25);
+        mPeaks.push({
+          x: Math.round(mx + Math.cos(pa) * pd),
+          z: Math.round(mz + Math.sin(pa) * pd),
+          r: Math.round(mr * (0.20 + nxt() * 0.10)), a: Math.round(55 + nxt() * 30)
+        });
+      }
       /* вторая гора поменьше (26..46 м) */
-      var pa2 = nxt() * Math.PI * 2, pd2 = mr * (0.5 + nxt() * 0.2);
-      mPeaks.push({
-        x: Math.round(mx + Math.cos(pa2) * pd2),
-        z: Math.round(mz + Math.sin(pa2) * pd2),
-        r: Math.round(mr * (0.18 + nxt() * 0.1)), a: Math.round(26 + nxt() * 20)
-      });
+      {
+        const pa2 = nxt() * Math.PI * 2, pd2 = mr * (0.45 + nxt() * 0.25);
+        mPeaks.push({
+          x: Math.round(mx + Math.cos(pa2) * pd2),
+          z: Math.round(mz + Math.sin(pa2) * pd2),
+          r: Math.round(mr * (0.15 + nxt() * 0.08)), a: Math.round(26 + nxt() * 20)
+        });
+      }
       islands = [{ x: mx, z: mz, r: mr, peaks: mPeaks }];
-      /* 3-5 островов-спутников: равномерно по кругу с разбросом,
-         радиус ограничен, чтобы берег не вылезал за край мира */
-      var nIsl = 3 + Math.floor(nxt() * 3);
-      var baseA = nxt() * Math.PI * 2;
-      for (var i = 0; i < nIsl; i++) {
-        var ang = baseA + i * (Math.PI * 2 / nIsl) + (nxt() - 0.5) * 0.7;
-        var dist = 240 + nxt() * 90;              // 240..330 от центра
-        var r = Math.round(90 + nxt() * 65);      // 90..155
-        var lim = 430 - dist;
-        if (r * 1.25 > lim) r = Math.max(70, Math.round(lim / 1.25));
-        var cx = Math.round(Math.cos(ang) * dist);
-        var cz = Math.round(Math.sin(ang) * dist);
-        var pa3 = nxt() * Math.PI * 2, pd3 = r * 0.3 * nxt();
+      /* ровно 3 малых острова-спутника — ДАЛЕКО в океане (680..800 м от
+         центра, прежняя «кучка у центра» убрана) */
+      const baseA = nxt() * Math.PI * 2;
+      for (let i = 0; i < 3; i++) {
+        const ang = baseA + i * (Math.PI * 2 / 3) + (nxt() - 0.5) * 0.5;
+        const dist = 680 + nxt() * 120;           // 680..800 от центра
+        let r = Math.round(100 + nxt() * 60);     // 100..160
+        const lim = 930 - dist;                   // не вылезать за край мира
+        if (r > lim) r = Math.max(80, Math.round(lim));
+        const cx = Math.round(Math.cos(ang) * dist);
+        const cz = Math.round(Math.sin(ang) * dist);
+        const pa3 = nxt() * Math.PI * 2, pd3 = r * 0.3 * nxt();
         islands.push({
           x: cx, z: cz, r: r,
           peaks: [{
             x: Math.round(cx + Math.cos(pa3) * pd3),
             z: Math.round(cz + Math.sin(pa3) * pd3),
             r: Math.round(r * (0.3 + nxt() * 0.15)),
-            a: Math.round(28 + nxt() * 30)       // 28..58 м
+            a: Math.round(28 + nxt() * 27)        // 28..55 м
           }]
         });
       }
       /* озеро на главном острове (70% карт), вне плато спавна */
       if (nxt() < 0.7) {
-        var la = nxt() * Math.PI * 2, ld = 150 + nxt() * 40;
+        const la = nxt() * Math.PI * 2, ld = 260 + nxt() * 90;
         lake = {
           x: Math.round(mx + Math.cos(la) * ld),
           z: Math.round(mz + Math.sin(la) * ld),
-          r: Math.round(55 + nxt() * 30)          // сигма 55..85
+          r: Math.round(60 + nxt() * 35)          // сигма 60..95
         };
       }
+      /* ✅ v0.5.26 СПАВН У БЕРЕГА: плато на побережье главного острова
+         (~1.15 сигмы от центра, у кромки воды). Копия 1:1 с server.js! */
+      var sa = nxt() * Math.PI * 2;
+      var sd = Math.round(mr * 1.15);
+      spawn = {
+        x: Math.round(mx + Math.cos(sa) * sd),
+        z: Math.round(mz + Math.sin(sa) * sd)
+      };
     }
-    _layout = { islands: islands, lake: lake, hillAmp: hillAmp };
+    _layout = { islands: islands, lake: lake, hillAmp: hillAmp, spawn: spawn };
     _layoutSeed = seed;
     return _layout;
   }
@@ -181,10 +201,11 @@ window.BrixTerrain = (function () {
       var kh = -7 + (base + pk + 7) * k;
       if (kh > h) h = kh;                          // острова складываются максимумом
     }
-    /* плато спавна — ровная площадка в точке (0,0) — центр главного
-       острова всегда накрывает её (радиус ≥ 195 при смещении ±45) */
-    var dm = Math.sqrt(x * x + z * z);
-    if (dm < 95) h = N.lerp(5.4, h, N.smoothstep(30, 58, dm));
+    /* плато спавна — ровная площадка У БЕРЕГА (✅ v0.5.26: центр —
+       LY.spawn из плана архипелага, раньше был центр карты (0,0)) */
+    var sx = LY.spawn ? LY.spawn.x : 0, sz = LY.spawn ? LY.spawn.z : 0;
+    var dm = Math.sqrt((x - sx) * (x - sx) + (z - sz) * (z - sz));
+    if (dm < 95) h = N.lerp(5.4, h, N.smoothstep(45, 95, dm));   /* ✅ v0.5.26: площадка шире — гарантированная суша у берега */
     /* котловина озера — только вне плато спавна */
     if (LY.lake) {
       var lakeG = N.gauss(x, z, LY.lake.x, LY.lake.z, LY.lake.r);

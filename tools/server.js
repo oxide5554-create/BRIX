@@ -655,7 +655,12 @@ if (!fs.existsSync(ADMINS_FILE)) {
 }
 try {
   const rawA = fs.readFileSync(ADMINS_FILE, 'utf8');
-  const jA = JSON.parse(rawA.charCodeAt(0) === 0xFEFF ? rawA.slice(1) : rawA);
+  /* ✅ FIX: файл правится ВРУЧНУЮ — терпим висячую запятую
+     «["id",]» (JSON.parse на ней падал, и админ молча не
+     подтверждался — «не могу открыть админ панель») */
+  const cleanA = (rawA.charCodeAt(0) === 0xFEFF ? rawA.slice(1) : rawA)
+    .replace(/,\s*([\]}])/g, '$1');
+  const jA = JSON.parse(cleanA);
   if (Array.isArray(jA)) jA.forEach((id) => {
     const s = String(id || '').trim();
     if (s) ADMIN_AIDS.add(s.slice(0, 16));
@@ -678,7 +683,11 @@ const BANS_FILE = path.join(ROOT, 'bans.json');
 let bans = [];
 try {
   const rawB = fs.readFileSync(BANS_FILE, 'utf8');
-  const jB = JSON.parse(rawB.charCodeAt(0) === 0xFEFF ? rawB.slice(1) : rawB);
+  /* ✅ FIX: bans.json тоже правится вручную — та же терпимость к
+     висячей запятой, что и у admins.json */
+  const cleanB = (rawB.charCodeAt(0) === 0xFEFF ? rawB.slice(1) : rawB)
+    .replace(/,\s*([\]}])/g, '$1');
+  const jB = JSON.parse(cleanB);
   if (Array.isArray(jB)) bans = jB.filter((b) => b && b.key);
 } catch (e) { bans = []; }
 

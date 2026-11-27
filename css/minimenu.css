@@ -271,3 +271,34 @@
   opacity: .45;
   cursor: not-allowed;
 }
+
+/* ✅ v0.5.26: контролы карты — ползунок зума + кнопка ЦЕНТР */
+.brix-map-ctrl {
+  position: absolute;
+  left: 50%; bottom: 18px;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(10,16,14,0.82);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 8px;
+  padding: 8px 14px;
+  z-index: 5;
+}
+.brix-map-ctrl:active { pointer-events: auto; }
+.brix-map-ctrbtn {
+  background: rgba(224,163,60,0.16);
+  color: #e8ddc4; border: 1px solid rgba(224,163,60,0.5);
+  border-radius: 4px; padding: 5px 10px;
+  font-size: 11px; letter-spacing: .12em; cursor: pointer;
+}
+.brix-map-ctrbtn:hover { background: rgba(224,163,60,0.3); }
+.brix-map-ctrlabel { color: #b9c0b6; font: 700 14px Oswald, sans-serif; user-select: none; }
+.brix-map-ctrl input[type="range"] {
+  width: clamp(140px, 30vw, 260px);
+  accent-color: #e0a33c;
+  cursor: pointer;
+}
+@media (max-width: 640px) {
+  .brix-map-ctrl { bottom: 10px; padding: 6px 10px; }
+  .brix-map-ctrbtn { padding: 4px 8px; font-size: 10px; }
+}

@@ -676,7 +676,8 @@ const OBJ_SEED = REALM === 'brixpvp' ? 77702 : 20261114;
 /* ✅ v0.5.23: константы рельефа и кэш плана ландшафта — НАВЕРХУ, потому
    что чекблоки (buildCheckblockLayout → brixHeightAt) считаются на
    старте, раньше нижней секции рельефа */
-const COLD_WORLD_HALF = 450;         // WORLD_SIZE 900 / 2 (terrain.js)
+const COLD_WORLD_HALF = 1000;        /* WORLD_SIZE 2000 / 2 (terrain.js).
+   ✅ v0.5.25: мир увеличен 900 → 2000 м по просьбе владельца */
 /* ✅ v0.5.24: сиды слоёв шума — как в terrain.js (S_COAST — рваный
    берег архипелага). S_MOUNT_MASK/S_MOUNT больше не нужны: горного
    «кольца» нет — у каждого острова СВОИ пики по сиду */
@@ -725,7 +726,8 @@ function makeObjRng(seed) {
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
 }
-const CHECKBLOCK_COUNT = 40;   // ✅ v0.3.8: 40 кандидатов — клиент отсеет
+const CHECKBLOCK_COUNT = 85;   /* ✅ v0.3.8: кандидаты — клиент отсеет.
+   ✅ мир стал 2000 м (было 900) — чекблоков вдвое больше, иначе пусто */
                                // воду/склоны (детерминированно), останется ~15-20
 
 /* ✅ v0.3.7: ОДНА формула раскладки чекблоков — и у сервера, и в режиме
@@ -756,7 +758,9 @@ function buildCheckblockLayout(seed) {
       const ca = rnd() * Math.PI * 2;
       const cd = Math.sqrt(rnd()) * I.r * 0.85;
       x = I.x + Math.cos(ca) * cd; z = I.z + Math.sin(ca) * cd;
-      if (ii === 0 && Math.sqrt(x * x + z * z) < 55) continue;   // не на спавне
+      /* ✅ v0.5.26: спавн у берега — исключение вокруг ТОЧКИ СПАВНА */
+      const SPB = brixLayout().spawn || { x: 0, z: 0 };
+      if (ii === 0 && Math.sqrt((x - SPB.x) * (x - SPB.x) + (z - SPB.z) * (z - SPB.z)) < 55) continue;
       const h = (REALM === 'brixpvp') ? 5 : brixHeightAt(x, z);
       if (h < 2.8 || h > 44) continue;             // не в воде/на пиках
       ok = true;
@@ -910,7 +914,12 @@ if (!fs.existsSync(ADMINS_FILE)) {
 }
 try {
   const rawA = fs.readFileSync(ADMINS_FILE, 'utf8');
-  const jA = JSON.parse(rawA.charCodeAt(0) === 0xFEFF ? rawA.slice(1) : rawA);
+  /* ✅ FIX: файл правится ВРУЧНУЮ — терпим висячую запятую
+     «["id",]» (JSON.parse на ней падал, и админ молча не
+     подтверждался — «не могу открыть админ панель») */
+  const cleanA = (rawA.charCodeAt(0) === 0xFEFF ? rawA.slice(1) : rawA)
+    .replace(/,\s*([\]}])/g, '$1');
+  const jA = JSON.parse(cleanA);
   if (Array.isArray(jA)) jA.forEach((id) => {
     const s = String(id || '').trim();
     if (s) ADMIN_AIDS.add(s.slice(0, 16));
@@ -933,7 +942,11 @@ const BANS_FILE = path.join(ROOT, 'bans.json');
 let bans = [];
 try {
   const rawB = fs.readFileSync(BANS_FILE, 'utf8');
-  const jB = JSON.parse(rawB.charCodeAt(0) === 0xFEFF ? rawB.slice(1) : rawB);
+  /* ✅ FIX: bans.json тоже правится вручную — та же терпимость к
+     висячей запятой, что и у admins.json */
+  const cleanB = (rawB.charCodeAt(0) === 0xFEFF ? rawB.slice(1) : rawB)
+    .replace(/,\s*([\]}])/g, '$1');
+  const jB = JSON.parse(cleanB);
   if (Array.isArray(jB)) bans = jB.filter((b) => b && b.key);
 } catch (e) { bans = []; }
 
@@ -2317,8 +2330,10 @@ function adminOp(p, msg) {
       p.dead = false;
       p.hp = 100;
       p.cold = 0;
-      if (p.state) { p.state.x = 0; p.state.z = 0; p.state.a = 'idle'; }
-      p.send({ t: 'spawnme', x: 0, z: 0 });
+      /* ✅ v0.5.26: спавн теперь У БЕРЕГА (точка из плана архипелага) */
+      const SP = brixLayout().spawn || { x: 0, z: 0 };
+      if (p.state) { p.state.x = SP.x; p.state.z = SP.z; p.state.a = 'idle'; }
+      p.send({ t: 'spawnme', x: SP.x, z: SP.z });
       broadcast({ t: 'prespawn', tid: p.id }, p.id);
       p.send({ t: 'aok', op, info: 'Ты на спавне (плато в центре главного острова)' });
       console.log('[admin] ' + p.name + ' вернулся на спавн');
@@ -4022,21 +4037,23 @@ function srvSeedOff() { return TERRAIN_SEED * SEED_MULT; }
 function brixLayout() {
   if (_layoutFor === (TERRAIN_SEED | 0) && _layout) return _layout;
   const seed = TERRAIN_SEED | 0;
-  let islands, lake = null, hillAmp;
+  let islands, lake = null, hillAmp, spawn;
   if (!seed) {
     /* соло/режим вкладок (клиент без сервера): фиксированный архипелаг */
+    /* ✅ v0.5.25 БОЛЬШАЯ КАРТА: мир 2000x2000 м — ОДИН большой остров
+       (спавн, озеро, 2 горы) + 3 малых ДАЛЕКО в океане. Копия 1:1 в terrain.js! */
     islands = [
-      { x: 0, z: 0, r: 235, peaks: [
-        { x: 40, z: -95, r: 80, a: 62 },
-        { x: -95, z: 60, r: 62, a: 36 }
+      { x: 0, z: 0, r: 430, peaks: [
+        { x: 80, z: -160, r: 120, a: 70 },
+        { x: -170, z: 110, r: 80, a: 40 }
       ] },
-      { x: -280, z: -265, r: 130, peaks: [{ x: -270, z: -255, r: 52, a: 46 }] },
-      { x: 285, z: -235, r: 110, peaks: [{ x: 285, z: -235, r: 46, a: 36 }] },
-      { x: 250, z: 290, r: 140, peaks: [{ x: 240, z: 300, r: 58, a: 54 }] },
-      { x: -285, z: 255, r: 95, peaks: [{ x: -285, z: 255, r: 42, a: 30 }] }
+      { x: -750, z: -330, r: 140, peaks: [{ x: -730, z: -300, r: 60, a: 48 }] },
+      { x: 730, z: -420, r: 120, peaks: [{ x: 700, z: -390, r: 52, a: 40 }] },
+      { x: 640, z: 640, r: 150, peaks: [{ x: 610, z: 610, r: 64, a: 52 }] }
     ];
-    lake = { x: 150, z: 135, r: 70 };
+    lake = { x: 180, z: -160, r: 90 };
     hillAmp = 20;
+    spawn = { x: 365, z: -30 };   /* ✅ v0.5.26: спавн у берега */
   } else {
     /* новая карта: детерминированный ПСЧ от сида (одинаковый у клиента) */
     let a = (seed ^ 0x9E3779B9) >>> 0;
@@ -4044,40 +4061,45 @@ function brixLayout() {
       a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
       return a / 4294967296;
     };
-    /* главный остров: у центра (±45 м), радиус 195..250 */
-    const mx = Math.round((nxt() - 0.5) * 90);
-    const mz = Math.round((nxt() - 0.5) * 90);
-    const mr = Math.round(195 + nxt() * 55);
+    /* ✅ v0.5.25 БОЛЬШАЯ КАРТА (просьба владельца «карты маленькие,
+       сделай большую»): мир 2000x2000 м. Ровно 4 острова: ОДИН большой
+       (спавн, озеро, 2 горы) + 3 малых — ДАЛЕКО в океане (680-800 м от
+       центра), между ними и большим островом всегда открытое море.
+       Копия 1:1 в terrain.js layoutAt — МЕНЯТЬ В ОБОИХ ФАЙЛАХ СРАЗУ! */
+    /* главный остров: БОЛЬШОЙ, у центра (±90 м), радиус 400..470 */
+    const mx = Math.round((nxt() - 0.5) * 180);
+    const mz = Math.round((nxt() - 0.5) * 180);
+    const mr = Math.round(400 + nxt() * 70);
     hillAmp = 12 + Math.round(nxt() * 14);      // амплитуда холмов 12..26
     const mPeaks = [];
-    /* большая гора (50..74 м) — подальше от плато спавна */
+    /* большая гора (55..85 м) — подальше от плато спавна */
     {
-      const pa = nxt() * Math.PI * 2, pd = mr * (0.55 + nxt() * 0.2);
+      const pa = nxt() * Math.PI * 2, pd = mr * (0.5 + nxt() * 0.25);
       mPeaks.push({
         x: Math.round(mx + Math.cos(pa) * pd),
         z: Math.round(mz + Math.sin(pa) * pd),
-        r: Math.round(mr * (0.26 + nxt() * 0.12)), a: Math.round(50 + nxt() * 24)
+        r: Math.round(mr * (0.20 + nxt() * 0.10)), a: Math.round(55 + nxt() * 30)
       });
     }
     /* вторая гора поменьше (26..46 м) */
     {
-      const pa2 = nxt() * Math.PI * 2, pd2 = mr * (0.5 + nxt() * 0.2);
+      const pa2 = nxt() * Math.PI * 2, pd2 = mr * (0.45 + nxt() * 0.25);
       mPeaks.push({
         x: Math.round(mx + Math.cos(pa2) * pd2),
         z: Math.round(mz + Math.sin(pa2) * pd2),
-        r: Math.round(mr * (0.18 + nxt() * 0.1)), a: Math.round(26 + nxt() * 20)
+        r: Math.round(mr * (0.15 + nxt() * 0.08)), a: Math.round(26 + nxt() * 20)
       });
     }
     islands = [{ x: mx, z: mz, r: mr, peaks: mPeaks }];
-    /* 3-5 островов-спутников: равномерно по кругу с разбросом */
-    const nIsl = 3 + Math.floor(nxt() * 3);
+    /* ровно 3 малых острова-спутника — ДАЛЕКО в океане (680..800 м от
+       центра, прежняя «кучка у центра» убрана) */
     const baseA = nxt() * Math.PI * 2;
-    for (let i = 0; i < nIsl; i++) {
-      const ang = baseA + i * (Math.PI * 2 / nIsl) + (nxt() - 0.5) * 0.7;
-      const dist = 240 + nxt() * 90;            // 240..330 от центра
-      let r = Math.round(90 + nxt() * 65);      // 90..155
-      const lim = 430 - dist;
-      if (r * 1.25 > lim) r = Math.max(70, Math.round(lim / 1.25));
+    for (let i = 0; i < 3; i++) {
+      const ang = baseA + i * (Math.PI * 2 / 3) + (nxt() - 0.5) * 0.5;
+      const dist = 680 + nxt() * 120;           // 680..800 от центра
+      let r = Math.round(100 + nxt() * 60);     // 100..160
+      const lim = 930 - dist;                   // не вылезать за край мира
+      if (r > lim) r = Math.max(80, Math.round(lim));
       const cx = Math.round(Math.cos(ang) * dist);
       const cz = Math.round(Math.sin(ang) * dist);
       const pa3 = nxt() * Math.PI * 2, pd3 = r * 0.3 * nxt();
@@ -4087,21 +4109,30 @@ function brixLayout() {
           x: Math.round(cx + Math.cos(pa3) * pd3),
           z: Math.round(cz + Math.sin(pa3) * pd3),
           r: Math.round(r * (0.3 + nxt() * 0.15)),
-          a: Math.round(28 + nxt() * 30)        // 28..58 м
+          a: Math.round(28 + nxt() * 27)        // 28..55 м
         }]
       });
     }
     /* озеро на главном острове (70% карт), вне плато спавна */
     if (nxt() < 0.7) {
-      const la = nxt() * Math.PI * 2, ld = 150 + nxt() * 40;
+      const la = nxt() * Math.PI * 2, ld = 260 + nxt() * 90;
       lake = {
         x: Math.round(mx + Math.cos(la) * ld),
         z: Math.round(mz + Math.sin(la) * ld),
-        r: Math.round(55 + nxt() * 30)          // сигма 55..85
+        r: Math.round(60 + nxt() * 35)          // сигма 60..95
       };
     }
+    /* ✅ v0.5.26 СПАВН У БЕРЕГА (просьба владельца «генерация будет
+       только у берега»): плато ставится на ПОБЕРЕЖЬЕ главного острова,
+       в ~1.15 сигмы от центра — прямо у кромки воды. Копия 1:1 в terrain.js! */
+    const sa = nxt() * Math.PI * 2;
+    const sd = Math.round(mr * 1.15);
+    spawn = {
+      x: Math.round(mx + Math.cos(sa) * sd),
+      z: Math.round(mz + Math.sin(sa) * sd)
+    };
   }
-  _layout = { islands, lake, hillAmp };
+  _layout = { islands, lake, hillAmp, spawn };
   _layoutFor = TERRAIN_SEED | 0;
   return _layout;
 }
@@ -4136,10 +4167,11 @@ function brixHeightAt(x, z) {
     const kh = -7 + (base + pk + 7) * k;
     if (kh > h) h = kh;                         // острова складываются максимумом
   }
-  /* плато спавна — ровная площадка в точке (0,0): центр главного
-     острова всегда накрывает её (радиус ≥ 195 при смещении ±45) */
-  const dm = Math.sqrt(x * x + z * z);
-  if (dm < 95) h = brixLerp(5.4, h, brixSmoothstep(30, 58, dm));
+  /* плато спавна — ровная площадка У БЕРЕГА (✅ v0.5.26: центр плато —
+     LY.spawn из плана архипелага, раньше был центр карты (0,0)) */
+  const sx = LY.spawn ? LY.spawn.x : 0, sz = LY.spawn ? LY.spawn.z : 0;
+  const dm = Math.sqrt((x - sx) * (x - sx) + (z - sz) * (z - sz));
+  if (dm < 95) h = brixLerp(5.4, h, brixSmoothstep(45, 95, dm));   /* ✅ v0.5.26: площадка шире — гарантированная суша у берега */
   /* котловина озера — только вне плато спавна */
   if (LY.lake) {
     const lakeG = brixGauss(x, z, LY.lake.x, LY.lake.z, LY.lake.r);
@@ -4266,11 +4298,26 @@ function wipeNow() {
   /* ✅ v0.5.23: раскладка чекблоков теперь под НОВЫЙ сид (fresh.cb уже
      сгенерирован с ним — TERRAIN_SEED обновлён выше) */
   worldObjs.cseed = OBJ_SEED + srvSeedOff();
-  worldObjs.epoch = (worldObjs.epoch || 0) + 1;   // старые бэкапы — мимо
+  /* ✅ v0.5.26 ФИКС «ПОСТРОЙКИ ВОЗВРАЩАЮТСЯ ПОСЛЕ ВАЙПА»: эпоха после
+     вайпа обязана быть >= 1 — раньше, если epoch был 0 (свежий мир),
+     вайп оставлял его нулём, а серверная проверка бэкапа построек
+     (badopt) пропускает ВСЁ при svEp === 0 — дома воскресали из
+     localStorage клиентов. Теперь после вайпа svEp >= 1 и любой
+     бэкап с ep < svEp отвергается */
+  worldObjs.epoch = Math.max(1, (worldObjs.epoch | 0) + 1);   // старые бэкапы — мимо
   worldObjs.vines = [];                            // лозы пересчитаются с новым сидом
   worldObjs.adrops = [];                           // ✅ v0.5.24: падающие аирдропы — в новый мир
   worldObjs.adropSeq = 0;
   world = null;                                    // ресурсы задаст первый зашедший клиент
+  /* ✅ FIX «ПОСЛЕ ВАЙПА ВСЁ СОХРАНЯЕТСЯ»: раньше игрок оставался со
+     СВОИМ рюкзаком (инвентарь/хотбар/позиция/ХП живут в players.json
+     и не стирались) — вайп стирал только мир. Теперь игрокам при
+     вайпе стирается ВСЁ: инвентарь, рюкзак, позиция, ХП и уровень —
+     «прям всё», как просил владелец. Реестр имён (social.json) не
+     трогаем — там только ники для вкладки «ВСЕ ИГРОКИ» */
+  playerSaves.clear();
+  markPlayersDirty();
+  try { writePlayersNow(); } catch (ePW) {}
   writeEpochSidecar(worldObjs.epoch);
   markDirty();
   writeWorldNow();
@@ -4329,13 +4376,39 @@ const COLD_DPS_MAX = 1.2;       // ХП/сек при шкале 100 (при 30 
 const COLD_ZONE_FROM = 44;      // снеговая линия — как snowK в terrain.js
 const COLD_ZONE_TO = 58;        // выше — полная зима
 const COLD_ZONE_MIN = 0.15;     // слабее — считается теплом (шкала тает)
+/* ✅ FIX «ПО ЗИМЕ ХОЛОДА НЕ БЫЛО, ТОЛЬКО НА ГОРАХ»: раньше зона холода
+   считалась ТОЛЬКО по высоте (выше снеговой линии 44..58 м — горы).
+   Арктический биом (вечный снег на НИЗМЕННОСТИ, tempAt <= 0.36) в
+   расчёт не входил — гуляешь по зиме без холода. Теперь холод идёт и
+   в арктике: та же формула температуры, что рисует снег (terrain.js
+   tempAt — 1:1 brixFbm). Менять синхронно с gameworld.js coldZoneAt! */
+const COLD_ARCTIC_T = 0.36;     // порог арктики — как climateAt в terrain.js
+const COLD_ARCTIC_K = 0.9;      // зима в арктике почти полная (горы «злее»)
+
+/** температура точки 0..1 — КОПИЯ tempAt из js/game/terrain.js */
+function brixTempAt(x, z) {
+  return brixFbm(x * 0.0012 + 31.7, z * 0.0012 + 11.3,
+    9099 + srvSeedOff(), 3);
+}
+
+/** «зимность» точки 0..1: горы (высота) ИЛИ арктический биом */
+function brixColdZoneAt(x, z) {
+  const altK = brixSmoothstep(COLD_ZONE_FROM, COLD_ZONE_TO, brixHeightAt(x, z));
+  let arcticK = 0;
+  if (REALM === 'brixwipe') {
+    const t = brixTempAt(x, z);
+    /* внутри арктики (t <= 0.30) — полная зима, к кромке (0.36) тает */
+    arcticK = COLD_ARCTIC_K * (1 - brixSmoothstep(0.30, COLD_ARCTIC_T, t));
+  }
+  return Math.max(altK, arcticK);
+}
 
 setInterval(() => {
   players.forEach((p) => {
     if (!p.state || p.dead) return;
     const st = p.state;
-    const zoneK = brixSmoothstep(COLD_ZONE_FROM, COLD_ZONE_TO,
-      brixHeightAt(Number(st.x) || 0, Number(st.z) || 0));
+    /* ✅ FIX: зона холода — горы ИЛИ арктический биом (brixColdZoneAt) */
+    const zoneK = brixColdZoneAt(Number(st.x) || 0, Number(st.z) || 0);
     if (zoneK > COLD_ZONE_MIN) {
       /* ✅ v0.4.51: НОЧЬЮ В ЗИМЕ мороз усиливается ×2 — фаза суток
          тикает на сервере (envState), у всех игроков одинаково;
