@@ -169,24 +169,26 @@
 .brix-map {
   position: fixed; inset: 0;
   z-index: 140;                 /* над мини-меню */
-  display: grid; place-items: center;
-  background: rgba(5, 6, 5, 0.9);
+  display: block;
+  background: #0a1418;          /* тёмный океан за картой */
   animation: fade-in .18s ease-out;
 }
 .brix-map.hidden { display: none; }
-.brix-map-inner { position: relative; }
+/* ✅ v0.5.24: карта НА ВЕСЬ ЭКРАН — внутренний слой растянут на окно,
+   canvas рисует и «морские» поля, и квадрат мира (см. drawMap) */
+.brix-map-inner { position: fixed; inset: 0; }
 
 .brix-map-inner canvas {
   display: block;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, .8);
   cursor: default;
 }
 
 /* крестик в углу — закрыть карту → возврат в мини-меню */
 .brix-map-close {
   position: absolute;
-  top: -14px; right: -14px;
-  width: 38px; height: 38px;
+  top: 14px; right: 14px;
+  z-index: 5;
+  width: 42px; height: 42px;
   display: grid; place-items: center;
   background: rgba(13, 15, 14, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -201,9 +203,9 @@
 /* текущий квадрат (C4) и координаты — как в Rust */
 .brix-map-sector {
   position: absolute;
-  left: 0; bottom: -30px;
-  font-size: 13px; font-weight: 500; letter-spacing: .14em;
-  color: rgba(214, 217, 212, .9);
+  left: 18px; bottom: 16px;
+  font-size: 14px; font-weight: 500; letter-spacing: .14em;
+  color: rgba(214, 217, 212, .95);
   text-shadow: 0 1px 6px rgba(0, 0, 0, .8);
 }
 

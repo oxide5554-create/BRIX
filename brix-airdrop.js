@@ -61,11 +61,11 @@ let planeTick = 0;
 
 function log(s) { console.log('[air] ' + s); }
 
-/* ---------- ЛУТ v0.5.19: БЕЗ СЕРЫ + «И ХОРОШИЙ, И ПЛОХОЙ».
-   База — всегда, а дальше РОЗЫГРЫШ: повезёт (50%) — военная часть
+/* ---------- ЛУТ v0.5.24: ГАРАНТИРОВАННАЯ C4 В ПЕРВОМ ЯЩИКЕ.
+   База — всегда, дальше РОЗЫГРЫШ: повезёт (50%) — военная часть
    (корпус АК/С4/шприц), не повезёт — скромный добор (труба/пружина).
    Ствол максимум один (50%), обойма НЕ ПОЛНАЯ — 10 патронов ---------- */
-function rollAirdropLoot() {
+function rollAirdropLoot(forceC4) {
   const r = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
   const loot = { scrap: r(6, 16), metal: r(4, 10), gunpowder: r(5, 14),
     ammo: r(4, 12) };
@@ -81,6 +81,9 @@ function rollAirdropLoot() {
     if (Math.random() < 0.4) loot.spring = r(1, 2);
     if (Math.random() < 0.15) loot.berdanaBody = 1;
   }
+  /* ✅ v0.5.24 (просьба игрока): в первом ящике ОБЯЗАТЕЛЬНО есть C4 —
+     объявление в чат честно пишет «АИРДРОП ВЫЛЕТЕЛ С C4» */
+  if (forceC4) loot.c4 = 1;
   /* СТВОЛ: максимум один из пула; обойма частичная — «чуть-чуть» */
   const guns = ['rifleAk', 'thompson', 'shotgun', 'rev3x', 'mace'];
   const MAGS = { rifleAk: 10, thompson: 10, shotgun: 2, rev3x: 2, mace: 0 };
@@ -101,17 +104,18 @@ function hAt(x, z) { return api ? api.heightAt(x, z) : 0; }
 /* ---------- ВЫЛЕТ САМОЛЁТА ---------- */
 function spawnPlane() {
   if (!api) return null;
-  /* хорда: 14 попыток, берём ту, где вдоль пути БОЛЬШЕ СУШИ */
+  /* хорда: 14 попыток, берём ту, где вдоль пути БОЛЬШЕ СУШИ
+     (✅ v0.5.24: коридор шире и центр смещается сильнее — архипелаг
+     из нескольких островов, суша не только у центра карты) */
   let best = null, bestLand = -1;
   for (let i = 0; i < 14; i++) {
     const th = Math.random() * Math.PI * 2;
     const dx = Math.cos(th), dz = Math.sin(th);
-    const a2 = Math.random() * Math.PI * 2, rr = Math.random() * 260;
+    const a2 = Math.random() * Math.PI * 2, rr = Math.random() * 320;
     const ox = Math.cos(a2) * rr, oz = Math.sin(a2) * rr;
     let land = 0, total = 0, maxH = -1e9;
-    /* остров пересекает путь возле d≈0 (ближайшая точка хорды к центру) —
-       суши-семплы берём в коридоре ±560 м вокруг него */
-    for (let d = -560; d <= 560; d += 40) {
+    /* острова пересекают путь в коридоре ±640 м — семплы суши там */
+    for (let d = -640; d <= 640; d += 40) {
       const h = hAt(ox + dx * d, oz + dz * d);
       total++;
       if (h > WATER_MIN) land++;
@@ -122,7 +126,7 @@ function spawnPlane() {
       best = { dx: dx, dz: dz, ox: ox, oz: oz, maxH: maxH };
     }
   }
-  if (!best || bestLand < 0.35) {
+  if (!best || bestLand < 0.20) {
     log('вылет отменён: путь над морем (' + Math.round(bestLand * 100) + '% суши)');
     return null;
   }
@@ -134,8 +138,8 @@ function spawnPlane() {
   const drops = [];
   let guard = 0;
   while (drops.length < n && guard++ < 80) {
-    /* сброс ВОКРУГ пересечения с островом (d≈0): ±330 м, только суша */
-    const d = -330 + Math.random() * 660;
+    /* сброс ВОКРУГ пересечения с островами (d≈0): ±430 м, только суша */
+    const d = -430 + Math.random() * 860;
     const x = best.ox + best.dx * d, z = best.oz + best.dz * d;
     if (hAt(x, z) <= WATER_MIN) continue;                // не в воду
     if (drops.some((p) => Math.hypot(p.x - x, p.z - z) < 90)) continue;
@@ -143,6 +147,14 @@ function spawnPlane() {
   }
   if (!drops.length) { log('вылет отменён: не нашёл сухих точек сброса'); return null; }
   drops.sort((a, b) => a.d - b.d);
+  /* ✅ v0.5.24 ЛУТ РОЛЛИТСЯ ЗДЕСЬ (в первом ящике — ГАРАНТИРОВАННАЯ
+     C4): список груза идёт в объявление в чат, createAirdrop берёт
+     готовый лут — «ящик на земле» и «анонс» совпадают */
+  drops.forEach((p, idx) => {
+    const rl = rollAirdropLoot(idx === 0);
+    p.loot = rl.loot;
+    p.mags = rl.mags;
+  });
   plane = {
     sx: best.ox - best.dx * CHORD_START,
     sz: best.oz - best.dz * CHORD_START,
@@ -153,13 +165,30 @@ function spawnPlane() {
     dx: plane.dx, dz: plane.dz, sp: plane.sp, age: 0, nd: drops.length }, null);
   api.broadcast({ t: 'atoast', m: '✈ САМОЛЁТ С ГРУЗОМ идёт к острову — ' +
     drops.length + ' аирдроп' + (drops.length > 1 ? 'а' : '') + '!' }, null);
+  /* ✅ v0.5.24 (просьба игрока): объявление в ЧАТ от имени SERVER —
+     «SERVER: АИРДРОП ВЫЛЕТЕЛ С C4 — ПОЗИЦИЯ: сетка (x : z)».
+     Позиция — точка ПЕРВОГО ящика (в нём гарантированная C4) */
+  const c4drop = drops[0];
+  api.broadcast({
+    t: 'chat', id: 'srv', n: 'SERVER', c: '#e0a33c',
+    m: '✈ АИРДРОП ВЫЛЕТЕЛ С C4 — ПОЗИЦИЯ: ' + gridOf(c4drop.x, c4drop.z) +
+      ' (' + Math.round(c4drop.x) + ' : ' + Math.round(c4drop.z) + ')'
+  }, null);
   log('самолёт вылетел: курс ' + Math.round(Math.atan2(plane.dz, plane.dx) * 180 / Math.PI) +
     '°, высота ' + y + ' м, сбросов ' + drops.length +
     ' (суша ' + Math.round(bestLand * 100) + '%)');
   return { n: drops.length, y: y };
 }
 
-function createAirdrop(x, z, y) {
+/* ✅ v0.5.24: квадрат сетки A1..F6 по мировым координатам (как карта на M) */
+function gridOf(x, z) {
+  const L = 'ABCDEF';
+  const cx = Math.max(0, Math.min(5, Math.floor((x + 450) / 150)));
+  const cz = Math.max(0, Math.min(5, Math.floor((z + 450) / 150)));
+  return L[cx] + (cz + 1);
+}
+
+function createAirdrop(x, z, y, preLoot, preMags) {
   if (!api) return;
   const wo = api.worldObjs;
   wo.adropSeq = (wo.adropSeq | 0) + 1;
@@ -167,7 +196,7 @@ function createAirdrop(x, z, y) {
     const gone = wo.adrops.shift();
     api.broadcast({ t: 'adGone', id: gone.id }, null);
   }
-  const rl = rollAirdropLoot();
+  const rl = preLoot ? { loot: preLoot, mags: preMags || {} } : rollAirdropLoot(false);
   const rec = {
     id: 'ad' + wo.adropSeq,
     x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10,
@@ -199,7 +228,9 @@ function tick(dt) {
     while (plane.di < plane.drops.length &&
         plane.dist >= CHORD_START + plane.drops[plane.di].d) {
       const p = plane.drops[plane.di++];
-      createAirdrop(p.x, p.z, plane.y - 3);
+      /* ✅ v0.5.24: лут уже ПРОКАТАН при вылете (первый ящик — с C4,
+         как было объявлено в чате) — берём готовый */
+      createAirdrop(p.x, p.z, plane.y - 3, p.loot, p.mags);
     }
     /* якорь синхронизации раз в 2 с (клиент сам докручивает между) */
     if (plane.syncT >= 2 && api.players.size) {

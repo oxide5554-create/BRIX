@@ -29,21 +29,22 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');   /* ✅ v0.5.14: gzip статики за туннелем */
 
-/* ✅ v0.5.16 ЧЕТЫРЕ РЕАЛМА ОДНИМ КОДОМ: BRIX_REALM решает, КТО этот процесс.
-   Запуск (см. START-ALL.bat):
-     node server.js                                   → BrixLand (порт 8787, выживание)
-     BRIX_REALM=brixpvp  BRIX_PORT=8788 node server.js → BrixPvP  (порт 8788, пвп-арена)
-     BRIX_REALM=brixwipe BRIX_PORT=8789 node server.js → BrixWipe (порт 8789, вайп раз в сутки,
-                                                          карта генерируется заново: пустыня/арктика/кактусы)
+/* ✅ v0.5.24 ТРИ РЕАЛМА ОДНИМ КОДОМ (карта BrixLand УДАЛЕНА по просьбе
+   игрока — остались только 2 игровых сервера): BRIX_REALM решает, КТО
+   этот процесс. Запуск (см. START-ALL.bat):
+     node server.js                                   → Генерация (порт 8789, процедурная карта:
+                                                        архипелаг, вайп раз в сутки, аирдропы)
+     BRIX_REALM=brixpvp  BRIX_PORT=8788 node server.js → BrixPvP  (порт 8788, пвп-арена «Полигон»)
+     BRIX_REALM=brixwipe BRIX_PORT=8789 node server.js → Генерация (порт 8789, то же, что по умолчанию)
      BRIX_REALM=menu    BRIX_PORT=8780 node server.js → МЕНЮ      (порт 8780, только раздача
                                                           интерфейса — меню отделено от сервера)
    У каждого игрового реалма СВОЯ папка data/<realm>/ — свои миры, свои сохранения
    игроков (и СВОЙ инвентарь), свои регистры соцсети и свой счётчик онлайна (/status).
    admins.json и bans.json — ОБЩИЕ (в корне): админ/бан — на весь BRIX */
-const REALM_ENV = (process.env.BRIX_REALM || 'brixland').toLowerCase();
-const REALM = ['brixpvp', 'brixwipe', 'menu'].indexOf(REALM_ENV) !== -1 ? REALM_ENV : 'brixland';
+const REALM_ENV = (process.env.BRIX_REALM || 'brixwipe').toLowerCase();
+const REALM = ['brixpvp', 'brixwipe', 'menu'].indexOf(REALM_ENV) !== -1 ? REALM_ENV : 'brixwipe';
 const PORT = Number(process.env.BRIX_PORT) ||
-  (REALM === 'brixpvp' ? 8788 : REALM === 'brixwipe' ? 8789 : REALM === 'menu' ? 8780 : 8787);
+  (REALM === 'brixpvp' ? 8788 : REALM === 'menu' ? 8780 : 8789);
 const ROOT = __dirname;
 
 /* ✅ v0.5.16 ЛИМИТ ОНЛАЙНА: ПВП-арена — 10, выживание — 25 (было общее 64).
@@ -54,9 +55,8 @@ const MAX_PLAYERS = REALM === 'brixpvp' ? 10 : 25;
 /* ✅ v0.4.64 метаданные реалма: имя и режим едут в /status и welcome —
    по ним клиент включает вкладку серверов и ПВП-режим интерфейса */
 const SRV_NAME = REALM === 'brixpvp' ? 'BRIX • BrixPvP'
-  : REALM === 'brixwipe' ? 'BRIX • BrixWipe'
   : REALM === 'menu' ? 'BRIX • Меню'
-  : 'BRIX • BrixLand';
+  : 'BRIX • Генерация';
 const SRV_MODE = REALM === 'brixpvp' ? 'pvp' : 'vanilla';
 
 /* ✅ v0.5.22 СИД РЕЛЬЕФА: у вайп-мира СВОЙ (берётся из wipe.json и
@@ -101,37 +101,29 @@ if (REALM === 'brixwipe') {
     ', до вайпа ' + Math.max(0, Math.round((WIPE.next - Date.now()) / 60000)) + ' мин');
 }
 fs.mkdirSync(DATA_DIR, { recursive: true });
-if (REALM === 'brixland') {
-  ['world-objs.json', 'world-epoch.json', 'players.json', 'social.json']
-    .forEach(function (f) {
-      var from = path.join(ROOT, f), to = path.join(DATA_DIR, f);
-      try {
-        if (fs.existsSync(from) && !fs.existsSync(to)) {
-          fs.renameSync(from, to);
-          console.log('[data] миграция ' + f + ' → data/brixland/');
-        }
-      } catch (eMig) { console.log('[data] миграция ' + f + ' не удалась: ' + eMig.message); }
-    });
-}
+/* ✅ v0.5.24: блок миграции старых файлов BrixLand удалён вместе с самим
+   реалмом brixland (карта BrixLand полностью убрана из игры) */
 
 /* ✅ v0.4.17: версия СЕРВЕРА — едет в welcome.sv и /status. Клиент по ней
    видит: подключился ли он вообще к НОВОМУ серверу (старый server.js
    версии не присылает — и панель на 9 молчит). В консоли при старте
    печатается ПОЛНЫЙ ПУТЬ папки сервера — чтобы admins.json правился
    именно там, где сервер РЕАЛЬНО запущен */
-const SRV_VER = '0.5.23';   /* ✅ v0.5.16 — ЧЕТЫРЕ РЕАЛМА + УРОВНИ/ЧАТ/ВАЙП:
-   1) РЕАЛМ menu (порт 8780): меню ОТДЕЛЕНО от сервера — только раздача
-      интерфейса, без мира; BrixWipe (порт 8789) — вайп раз в сутки;
-   2) УРОВНИ И ОПЫТ НА СЕРВЕРЕ (анти-чит): полное ломание ресурса даёт
-      опыт (дерево 25, камень 30, железо/сера 15), 300*n до следующего
-      уровня (макс 250); xp/lvl хранятся в players.json КАЖДОГО реалма;
-   3) ЧАТ: {t:'chat'} → всем {t:'chat', id, n, c, m} (антиспам 0.4 с);
-   4) ВАЙП-СИСТЕМА: wipe.json {next,last,seed}; в момент вайпа сервер
-      сам стирает мир, берёт НОВЫЙ сид, рассылает 'wipenow'; /status
-      несёт seed/biomes/wipeIn — клиент строит карту ПО СИДУ СЕРВЕРА;
-   5) /ping — быстрый эндпоинт для утилит диагностики задержки (rust/);
-   6) HTTP-сокеты тоже TCP_NODELAY + keep-alive — минимальный пинг.
-   —— История v0.5.15 — чинят старый кэш игрока:
+const SRV_VER = '0.5.24';   /* ✅ v0.5.24 — АРХИПЕЛАГ + ВАЙП-ОТСЧЁТ + ФИКСЫ:
+   1) карта «Генерация» — АРХИПЕЛАГ по сиду (4-6 островов, вода вместо
+      пустот, горы/рельеф/размер меняются полностью; край мира квадратный);
+   2) ВАЙП: за 60 с сервер пишет в чат «SERVER: WIPE SERVER N», потом
+      КИКАЕТ всех, вайпит мир, 10 с тех. перерыва — карта генерируется
+      у всех заново; админ запускает то же кнопкой (op 'serverwipe');
+   3) АИРДРОПЫ — и на «Генерации»: самолёт с ГАРАНТИРОВАННОЙ C4,
+      объявление в чат с позицией груза (сетка + координаты);
+   4) ФИКС БОЧЕК: поиск бочки при ударе идёт по ТЕКУЩЕМУ миру (после
+      вайпа индекс ссылался на старые записи — «сервер не принял удар»
+      и дроп по старым координатам);
+   5) ФИКС ОПЫТА: смерть не стирает xp/уровень; опыт пишется upsert'ом;
+   6) АДМИН: кнопки «НА СПАВН» (op 'spawn') и «ВАЙП СЕРВЕРА»;
+   7) BrixLand УДАЛЁН: серверы «Генерация» (8789) + BrixPvP (8788). */
+/* —— История v0.5.15 — чинят старый кэш игрока:
    1) 404 теперь с Content-Type: text/plain — в консоли честное
       «Not found» вместо пугающего «MIME type ('') is not executable»;
    2) алиасы старых путей: js/X.js (старая раскладка без подпапок,
@@ -685,8 +677,10 @@ const OBJ_SEED = REALM === 'brixpvp' ? 77702 : 20261114;
    что чекблоки (buildCheckblockLayout → brixHeightAt) считаются на
    старте, раньше нижней секции рельефа */
 const COLD_WORLD_HALF = 450;         // WORLD_SIZE 900 / 2 (terrain.js)
-const S_HILLS = 1013, S_DETAIL = 2027, S_MOUNT_MASK = 3041,
-  S_MOUNT = 4051;                    // сиды слоёв шума — как в terrain.js
+/* ✅ v0.5.24: сиды слоёв шума — как в terrain.js (S_COAST — рваный
+   берег архипелага). S_MOUNT_MASK/S_MOUNT больше не нужны: горного
+   «кольца» нет — у каждого острова СВОИ пики по сиду */
+const S_HILLS = 1013, S_DETAIL = 2027, S_COAST = 10101;
 let _layoutFor = -1, _layout = null; // кэш brixLayout() для текущего сида
 
 /* ============================================================
@@ -708,15 +702,17 @@ if (Bots) {
 }
 
 /* ============================================================
-   ✅ v0.5.17 АИРДРОП (только реалм brixland): самолёт раз в 30 мин
-   (или по команде админа op:'airdrop') сбрасывает 1–3 ящика с
-   парашютами. Лут живёт НА СЕРВЕРЕ (worldObjs.adrops) и переживает
-   рестарт. Сим в brix-airdrop.js: поверхность приземления —
-   adSurfaceAt ниже (рельеф + постройки + чекблоки). Сеть: 'plane' на
-   вылет + 'planeS' раз в 2 с — клиенты докручивают полёт сами,
-   без пинга каждый кадр.
+   ✅ v0.5.24 АИРДРОП (реалмы выживания — brixland И вайп-мир):
+   самолёт раз в 30 мин (или по команде админа op:'airdrop')
+   сбрасывает 1–3 ящика с парашютами — с гарантированной C4 и
+   объявлением в чат с позицией груза. Лут живёт НА СЕРВЕРЕ
+   (worldObjs.adrops) и переживает рестарт. Сим в brix-airdrop.js:
+   поверхность приземления — adSurfaceAt ниже (рельеф + постройки +
+   чекблоки). Сеть: 'plane' на вылет + 'planeS' раз в 2 с — клиенты
+   докручивают полёт сами, без пинга каждый кадр.
    ============================================================ */
-const Airdrops = REALM === 'brixland' ? require('./brix-airdrop.js') : null;/* ✅ v0.5.21 ТЫКВЕННЫЕ ЛОЗЫ: рост тыквы тикает на сервере (8 мин),
+const Airdrops = (REALM === 'brixland' || REALM === 'brixwipe')
+  ? require('./brix-airdrop.js') : null;/* ✅ v0.5.21 ТЫКВЕННЫЕ ЛОЗЫ: рост тыквы тикает на сервере (8 мин),
    синхронизируется и сохраняется как у аирдропов — см. brix-vines.js */
 /* ✅ v0.5.22: лозы с тыквами — и в вайп-мире (выживание как в BrixLand) */
 const Vines = (REALM === 'brixland' || REALM === 'brixwipe') ? require('./brix-vines.js') : null;
@@ -739,23 +735,38 @@ const CHECKBLOCK_COUNT = 40;   // ✅ v0.3.8: 40 кандидатов — кли
    на каждой карте) + ПОДЪЁМ ИЗ ВОДЫ: точка обязана быть на суше
    (brixHeightAt > 2.8 — море/озеро ниже), не в горах (> 44) и не у
    спавна (< 55 м). Формула 1:1 с раскладкой вкладок НЕ нужна:
-   серверные позиции едут клиенту в welcome.cb по id */
+   серверные позиции едут клиенту в welcome.cb по id
+   ✅ v0.5.24: точки выбираются ВОКРУГ ОСТРОВОВ архипелага (пропор-
+   ционально площади) — раньше равномерный разброс ±340 м оставлял
+   дальние острова без лута, а точки могли попадать в океан */
 function buildCheckblockLayout(seed) {
   const rnd = makeObjRng(seed);
   const ITEMS = ['washer', 'fridge', 'tv'];
+  const ISLES = brixLayout().islands;
+  const ISW = ISLES.map((I) => I.r * I.r);
+  const ISW_SUM = ISW.reduce((s, v) => s + v, 0);
   const cb = [];
   for (let i = 0; i < CHECKBLOCK_COUNT; i++) {
     let x = 0, z = 0, ok = false;
     for (let t = 0; t < 40; t++) {
-      x = (rnd() - 0.5) * 680; z = (rnd() - 0.5) * 680;
-      const rr = Math.sqrt(x * x + z * z);
-      if (rr < 55) continue;                       // не на спавне
+      /* остров — пропорционально площади; точка — внутри 0.85 радиуса */
+      let pick = rnd() * ISW_SUM, ii = 0;
+      while (ii < ISLES.length - 1 && pick > ISW[ii]) { pick -= ISW[ii]; ii++; }
+      const I = ISLES[ii];
+      const ca = rnd() * Math.PI * 2;
+      const cd = Math.sqrt(rnd()) * I.r * 0.85;
+      x = I.x + Math.cos(ca) * cd; z = I.z + Math.sin(ca) * cd;
+      if (ii === 0 && Math.sqrt(x * x + z * z) < 55) continue;   // не на спавне
       const h = (REALM === 'brixpvp') ? 5 : brixHeightAt(x, z);
       if (h < 2.8 || h > 44) continue;             // не в воде/на пиках
       ok = true;
       break;
     }
-    if (!ok) { x = 120 + i * 9; z = -90 - i * 7; } // страховка (не бывает)
+    if (!ok) {
+      /* страховка: ближний пик главного острова — суша гарантирована */
+      const I0 = ISLES[0];
+      x = I0.x + 90 + i * 2.5; z = I0.z + 60 - i * 1.5;
+    }
     const rec = {
       id: 'c' + i,
       x: Math.round(x * 10) / 10, z: Math.round(z * 10) / 10,
@@ -1598,9 +1609,26 @@ worldObjs.cb.forEach((c) => {
   c.barrels.forEach((b) => { if (b.brk) scheduleBarrelRespawn(b, BARREL_RESPAWN_MS); });
 });
 
-/* плоский индекс бочек: id -> {cb, bar} — быстрый поиск при ударе */
-const barrelIndex = new Map();
-worldObjs.cb.forEach((c) => c.barrels.forEach((b) => barrelIndex.set(b.id, { cb: c, bar: b })));
+/* ✅ v0.5.24 ЖИВОЙ ПОИСК БОЧКИ ПРИ УДАРЕ: раньше здесь строился
+   плоский индекс (Map) ОДИН РАЗ при старте сервера — после вайпа
+   wipeNow() заменял worldObjs.cb НОВЫМИ бочками, а индекс продолжал
+   ссылаться на СТАРЫЕ записи (карта прошлого поколения): удар по
+   бочке находил «старую» запись — если она была разбита, сервер
+   молча игнорировал удар («сервер не принял удар»), а дроп
+   выпадал по СТАРЫМ координатам — у бочки «ничего не падало».
+   Теперь поиск идёт по ТЕКУЩЕМУ миру при каждом ударе — бочек
+   ~120, удары ограничены 4/с, стоимости это не добавляет */
+function findBarrelRec(id) {
+  const list = worldObjs.cb;
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i];
+    if (!c.barrels) continue;
+    for (let j = 0; j < c.barrels.length; j++) {
+      if (c.barrels[j].id === id) return { cb: c, bar: c.barrels[j] };
+    }
+  }
+  return null;
+}
 
 /* ============================================================
    ✅ v0.4.44: ЭТАЖНОСТЬ. lv — уровень детали: 0 (земля/1 этаж,
@@ -2255,12 +2283,45 @@ function adminOp(p, msg) {
       break;
     }
     /* ✅ v0.5.17 ПРИЗЫВ АИРДРОПА: самолёт вылетает СЕЙЧАС (1-3 ящика
-       с парашютами, лут на сервере). Кнопка в админ-панели */
+       с парашютами, лут на сервере). Кнопка в админ-панели.
+       ✅ v0.5.24: работает и на вайп-мире (реалмы выживания) */
     case 'airdrop': {
-      if (!Airdrops) { p.send({ t: 'aok', op, info: 'Аирдропы только на BrixLand' }); break; }
+      if (!Airdrops) { p.send({ t: 'aok', op, info: 'Аирдропы — только на серверах выживания' }); break; }
       const res = Airdrops.callPlane(p.name);
       p.send({ t: 'aok', op, info: res });
       console.log('[admin] ' + p.name + ' призвал самолёт с грузом');
+      break;
+    }
+    /* ✅ v0.5.24 ВАЙП ПО КНОПКЕ (просьба игрока): админ жмёт «ВАЙП
+       СЕРВЕРА» — не сразу, а через 60 СЕКУНД: сервер сам пишет в чат
+       «SERVER: WIPE SERVER 60…», потом кикает всех, перегенерирует
+       карту и через тех. перерыв снова пускает игроков */
+    case 'serverwipe': {
+      if (REALM !== 'brixwipe') {
+        p.send({ t: 'aok', op, info: 'Вайп мира есть только на сервере «Генерация» (вайп-мир)' });
+        break;
+      }
+      if (wipeCounting || wipeLock) {
+        p.send({ t: 'aok', op, info: 'Вайп уже запущен — отсчёт идёт' });
+        break;
+      }
+      startWipeCountdown(60, 'вайп по команде администратора ' + p.name);
+      p.send({ t: 'aok', op, info: 'ВАЙП ЗАПУЩЕН: через 60 секунд (отсчёт в чате, потом всех выбросит)' });
+      console.log('[admin] ' + p.name + ' запустил ВАЙП сервера (60 с)');
+      break;
+    }
+    /* ✅ v0.5.24 «НА СПАВН» (просьба: даже админ не мог заспавниться):
+       сервер оживляет админа и ставит на ровное плато спавна (0,0),
+       клиент по 'spawnme' поднимает камеру и включает управление */
+    case 'spawn': {
+      p.dead = false;
+      p.hp = 100;
+      p.cold = 0;
+      if (p.state) { p.state.x = 0; p.state.z = 0; p.state.a = 'idle'; }
+      p.send({ t: 'spawnme', x: 0, z: 0 });
+      broadcast({ t: 'prespawn', tid: p.id }, p.id);
+      p.send({ t: 'aok', op, info: 'Ты на спавне (плато в центре главного острова)' });
+      console.log('[admin] ' + p.name + ' вернулся на спавн');
       break;
     }
     /* телепорт ИГРОКА к себе */
@@ -2492,6 +2553,18 @@ server.on('upgrade', (req, sock) => {
       if (msg.t === 'hello') {
         const aidCand = String(msg.aid || '').slice(0, 16);
         const nameCand = String(msg.n || '').slice(0, 16);
+        /* ✅ v0.5.24 ТЕХ. ПЕРЕРЫВ ПОСЛЕ ВАЙПА: сервер 10 секунд
+           «генерирует карту» — новых игроков не пускаем, чтобы карта
+           гарантированно построилась нормальной у ВСЕХ */
+        if (wipeLock) {
+          try {
+            sock.write(wsEncodeText(JSON.stringify(
+              { t: 'adeny', op: 'wipe', why: 'wiperestart' })));
+          } catch (e) {}
+          try { sock.destroy(); } catch (e) {}
+          console.log('[wipe] вход отложен (тех. перерыв): ' + nameCand);
+          return;
+        }
         /* ✅ v0.4.15: бан-лист ПЕРЕД регистрацией — забаненный не войдёт */
         if (isBanned(aidCand, nameCand)) {
           try {
@@ -2660,8 +2733,14 @@ server.on('upgrade', (req, sock) => {
               }
               if ((p.lvl || 1) >= 250) p.xp = 0;
               if (p.aid) {   // xp/lvl — в сохранение игрока (переживает выход)
-                const ps2 = playerSaves.get(p.aid);
-                if (ps2) { ps2.xp = p.xp; ps2.lvl = p.lvl || 1; markPlayersDirty(); }
+                /* ✅ v0.5.24: upsert — если записи ещё нет (игрок ещё ни
+                   разу не посылал 'psave'), СОЗДАЁМ её: иначе опыт жил
+                   только в памяти и терялся при первом падении соединения */
+                let ps2 = playerSaves.get(p.aid);
+                if (!ps2) { ps2 = { at: Date.now() }; playerSaves.set(p.aid, ps2); }
+                ps2.xp = p.xp;
+                ps2.lvl = p.lvl || 1;
+                markPlayersDirty();
               }
               p.send({ t: 'xp', xp: p.xp, lvl: p.lvl || 1,
                 gained: gain,
@@ -2710,7 +2789,7 @@ server.on('upgrade', (req, sock) => {
            мёртвым кодом: сервер молча проглатывал удар по фундаменту/стене
            — хп не снималось, 'bhp'/'brem' не уходили, хп-панель не
            появлялась. Теперь оба обработчика живут в ОДНОМ case: id нашли
-           в barrelIndex — бочка, иначе — постройка */
+           в findBarrelRec — бочка, иначе — постройка */
         case 'bhit': {
           /* ✅ v0.5.0 ПВП-АРЕНА: выстрел/удар игрока по БОТУ «ПОЛИГОНА».
              Сервер авторитетен: свои (синие) неуязвимы, дистанция ≤ 90 м,
@@ -2720,7 +2799,7 @@ server.on('upgrade', (req, sock) => {
             if (bres) p.send(bres);
             break;
           }
-          const rec = barrelIndex.get(String(msg.id || ''));
+          const rec = findBarrelRec(String(msg.id || ''));
           if (rec && !rec.bar.brk) {
             if (!p.lastBHit) p.lastBHit = {};
             // защита от спама: не чаще 4 ударов/с на бочку
@@ -3490,10 +3569,19 @@ server.on('upgrade', (req, sock) => {
           if (msg.tid === p.id) {
             p.dead = true;
             p.hp = 0;
-            if (p.aid && playerSaves.has(p.aid)) {
-              playerSaves.delete(p.aid);
+            /* ✅ v0.5.24 ФИКС «ОПЫТ ПРОПАДАЕТ ПОСЛЕ СМЕРТИ»: раньше
+               сохранение стиралось ЦЕЛИКОМ — вместе с xp/уровнем. Теперь
+               из сохранения уходит только позиция/инвентарь (вещи в трупе),
+               а ОПЫТ И УРОВЕНЬ остаются — прогресс переживает смерть */
+            if (p.aid) {
+              playerSaves.set(p.aid, {
+                xp: Math.max(0, Math.floor(Number(p.xp) || 0)),
+                lvl: Math.max(1, Math.min(250, Math.floor(Number(p.lvl) || 1))),
+                at: Date.now()
+              });
               markPlayersDirty();
-              console.log('[players] ' + p.name + ' умер — сохранение стёрто (вещи в трупе)');
+              console.log('[players] ' + p.name + ' умер — вещи в трупе, опыт сохранён (' +
+                (p.xp || 0) + ' xp, ур. ' + (p.lvl || 1) + ')');
             }
           }
           broadcast({ t: 'pdeath', tid: String(msg.tid || p.id),
@@ -3925,24 +4013,30 @@ function srvSeedOff() { return TERRAIN_SEED * SEED_MULT; }
    OBJ_SEED): buildCheckblockLayout вызывает brixHeightAt на старте,
    до выполнения этой секции (const «до инициализации» = крах) */
 
-/* ✅ v0.5.23 ПЛАН ЛАНДШАФТА ПО СИДУ: ОЗЕРО и ТРИ ПИКА больше не прибиты
-   к одним координатам — каждая вайп-карта получает СВОИ (пользователь:
-   «генерация случайная — свой ландшафт, озера»). Сид 0 (BrixLand/BrixPvP)
-   = прежняя карта без изменений. Формула 1:1 скопирована в
-   js/game/terrain.js (layoutAt) — МЕНЯТЬ ТОЛЬКО В ОБОИХ ФАЙЛАХ СРАЗУ! */
+/* ✅ v0.5.24 ПЛАН АРХИПЕЛАГА ПО СИДУ (1:1 с js/game/terrain.js layoutAt —
+   МЕНЯТЬ ТОЛЬКО В ОБОИХ ФАЙЛАХ СРАЗУ!): острова {x, z, r, peaks[]},
+   озеро на главном острове, амплитуда холмов. Главный остров (спавн)
+   у центра, 3-5 спутников по квадрату карты — у каждой вайп-карты
+   СВОЙ архипелаг: число/размер/разброс островов, высота гор, рельеф.
+   Всё вне островов — океан: пустых мест на карте нет */
 function brixLayout() {
   if (_layoutFor === (TERRAIN_SEED | 0) && _layout) return _layout;
   const seed = TERRAIN_SEED | 0;
+  let islands, lake = null, hillAmp;
   if (!seed) {
-    /* прежняя карта BrixLand: озеро и пики как были всегда */
-    _layout = {
-      lake: { x: 170, z: 150, r: 110 },
-      peaks: [
-        { x: -230, z: -150, r: 95, a: 56 },
-        { x: 255, z: -230, r: 105, a: 64 },
-        { x: -130, z: 255, r: 85, a: 42 }
-      ]
-    };
+    /* соло/режим вкладок (клиент без сервера): фиксированный архипелаг */
+    islands = [
+      { x: 0, z: 0, r: 235, peaks: [
+        { x: 40, z: -95, r: 80, a: 62 },
+        { x: -95, z: 60, r: 62, a: 36 }
+      ] },
+      { x: -280, z: -265, r: 130, peaks: [{ x: -270, z: -255, r: 52, a: 46 }] },
+      { x: 285, z: -235, r: 110, peaks: [{ x: 285, z: -235, r: 46, a: 36 }] },
+      { x: 250, z: 290, r: 140, peaks: [{ x: 240, z: 300, r: 58, a: 54 }] },
+      { x: -285, z: 255, r: 95, peaks: [{ x: -285, z: 255, r: 42, a: 30 }] }
+    ];
+    lake = { x: 150, z: 135, r: 70 };
+    hillAmp = 20;
   } else {
     /* новая карта: детерминированный ПСЧ от сида (одинаковый у клиента) */
     let a = (seed ^ 0x9E3779B9) >>> 0;
@@ -3950,66 +4044,111 @@ function brixLayout() {
       a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
       return a / 4294967296;
     };
-    const la = nxt() * Math.PI * 2, ld = 250 + nxt() * 100;
-    const lake = {
-      x: Math.round(Math.cos(la) * ld),
-      z: Math.round(Math.sin(la) * ld),
-      r: Math.round(88 + nxt() * 42)          // сигма озера 88..130
-    };
-    const peaks = [];
-    for (let i = 0; i < 3; i++) {
-      let px = 0, pz = 0, pr = 0;
-      /* пик не должен стоять В ОЗЕРЕ — до трёх попыток сдвига */
-      for (let t = 0; t < 3; t++) {
-        const pa = nxt() * Math.PI * 2, pd = 250 + nxt() * 130;
-        px = Math.round(Math.cos(pa) * pd);
-        pz = Math.round(Math.sin(pa) * pd);
-        pr = Math.round(85 + nxt() * 28);
-        const dlx = px - lake.x, dlz = pz - lake.z;
-        if (Math.sqrt(dlx * dlx + dlz * dlz) > lake.r + pr) break;
-      }
-      peaks.push({
-        x: px, z: pz, r: pr,
-        a: Math.round(44 + nxt() * 22)        // высота пика 44..66
+    /* главный остров: у центра (±45 м), радиус 195..250 */
+    const mx = Math.round((nxt() - 0.5) * 90);
+    const mz = Math.round((nxt() - 0.5) * 90);
+    const mr = Math.round(195 + nxt() * 55);
+    hillAmp = 12 + Math.round(nxt() * 14);      // амплитуда холмов 12..26
+    const mPeaks = [];
+    /* большая гора (50..74 м) — подальше от плато спавна */
+    {
+      const pa = nxt() * Math.PI * 2, pd = mr * (0.55 + nxt() * 0.2);
+      mPeaks.push({
+        x: Math.round(mx + Math.cos(pa) * pd),
+        z: Math.round(mz + Math.sin(pa) * pd),
+        r: Math.round(mr * (0.26 + nxt() * 0.12)), a: Math.round(50 + nxt() * 24)
       });
     }
-    _layout = { lake, peaks };
+    /* вторая гора поменьше (26..46 м) */
+    {
+      const pa2 = nxt() * Math.PI * 2, pd2 = mr * (0.5 + nxt() * 0.2);
+      mPeaks.push({
+        x: Math.round(mx + Math.cos(pa2) * pd2),
+        z: Math.round(mz + Math.sin(pa2) * pd2),
+        r: Math.round(mr * (0.18 + nxt() * 0.1)), a: Math.round(26 + nxt() * 20)
+      });
+    }
+    islands = [{ x: mx, z: mz, r: mr, peaks: mPeaks }];
+    /* 3-5 островов-спутников: равномерно по кругу с разбросом */
+    const nIsl = 3 + Math.floor(nxt() * 3);
+    const baseA = nxt() * Math.PI * 2;
+    for (let i = 0; i < nIsl; i++) {
+      const ang = baseA + i * (Math.PI * 2 / nIsl) + (nxt() - 0.5) * 0.7;
+      const dist = 240 + nxt() * 90;            // 240..330 от центра
+      let r = Math.round(90 + nxt() * 65);      // 90..155
+      const lim = 430 - dist;
+      if (r * 1.25 > lim) r = Math.max(70, Math.round(lim / 1.25));
+      const cx = Math.round(Math.cos(ang) * dist);
+      const cz = Math.round(Math.sin(ang) * dist);
+      const pa3 = nxt() * Math.PI * 2, pd3 = r * 0.3 * nxt();
+      islands.push({
+        x: cx, z: cz, r: r,
+        peaks: [{
+          x: Math.round(cx + Math.cos(pa3) * pd3),
+          z: Math.round(cz + Math.sin(pa3) * pd3),
+          r: Math.round(r * (0.3 + nxt() * 0.15)),
+          a: Math.round(28 + nxt() * 30)        // 28..58 м
+        }]
+      });
+    }
+    /* озеро на главном острове (70% карт), вне плато спавна */
+    if (nxt() < 0.7) {
+      const la = nxt() * Math.PI * 2, ld = 150 + nxt() * 40;
+      lake = {
+        x: Math.round(mx + Math.cos(la) * ld),
+        z: Math.round(mz + Math.sin(la) * ld),
+        r: Math.round(55 + nxt() * 30)          // сигма 55..85
+      };
+    }
   }
+  _layout = { islands, lake, hillAmp };
   _layoutFor = TERRAIN_SEED | 0;
   return _layout;
 }
 
+/* ✅ v0.5.24 АРХИПЕЛАГ (копия heightAt из js/game/terrain.js, 1:1):
+   океан (-7) + острова гауссовыми масками с рваным берегом (S_COAST),
+   внутри — холмы по сиду + свои пики. Плато спавна в (0,0), озеро
+   тонет в рельефе, край мира ПО КВАДРАТУ уходит в океан */
 function brixHeightAt(x, z) {
-  const r = Math.sqrt(x * x + z * z) / COLD_WORLD_HALF;
-
-  const spawnBlend = brixSmoothstep(0.14, 0.3, r);
-
-  const hills = (brixFbm(x * 0.012, z * 0.012, S_HILLS + srvSeedOff(), 4) - 0.45) * 30;
-  const detail = (brixFbm(x * 0.05, z * 0.05, S_DETAIL + srvSeedOff(), 3) - 0.5) * 3.5;
-
-  const mountMask = brixSmoothstep(0.55, 0.82,
-    r + (brixFbm(x * 0.005 + 7.3, z * 0.005 + 2.9, S_MOUNT_MASK + srvSeedOff(), 3) - 0.5) * 0.55);
-  const ridge = Math.pow(brixRidged(x * 0.006, z * 0.006, S_MOUNT + srvSeedOff(), 4), 1.3) * 72;
-
-  /* ✅ v0.5.23: пики и озеро — ПО СИДУ (см. brixLayout) */
-  const L = brixLayout();
-  let peaks = 0;
-  for (let i = 0; i < L.peaks.length; i++) {
-    const p = L.peaks[i];
-    peaks += p.a * brixGauss(x, z, p.x, p.z, p.r);
+  const LY = brixLayout();
+  let h = -7;                                   // океанское дно
+  for (let i = 0; i < LY.islands.length; i++) {
+    const I = LY.islands[i];
+    const dx = x - I.x, dz = z - I.z;
+    const d = Math.sqrt(dx * dx + dz * dz);
+    if (d > I.r * 1.5) continue;                // далеко — маска 0
+    /* рваная береговая линия: радиус острова «гуляет» шумом */
+    const wob = (brixFbm(x * 0.02 + 7.7, z * 0.02 + 3.3, S_COAST + srvSeedOff(), 3) - 0.5) * 0.4;
+    const rn = d / I.r + wob;
+    const k = 1 - brixSmoothstep(0.6, 1.1, rn); // 1 в центре, 0 за берегом
+    if (k <= 0) continue;
+    /* локальный рельеф острова: холмы (амплитуда по сиду) + деталь */
+    const base = 4.2
+      + (brixFbm(x * 0.012, z * 0.012, S_HILLS + srvSeedOff() + i * 17, 4) - 0.45) * LY.hillAmp
+      + (brixFbm(x * 0.05, z * 0.05, S_DETAIL + srvSeedOff(), 3) - 0.5) * 3.5;
+    /* свои горы-пики (гауссовы шапки) */
+    let pk = 0;
+    for (let pi = 0; pi < I.peaks.length; pi++) {
+      const P = I.peaks[pi];
+      pk += P.a * brixGauss(x, z, P.x, P.z, P.r);
+    }
+    const kh = -7 + (base + pk + 7) * k;
+    if (kh > h) h = kh;                         // острова складываются максимумом
   }
-
-  const lakeG = brixGauss(x, z, L.lake.x, L.lake.z, L.lake.r);
-  const lakeMask = brixSmoothstep(0.15, 0.7, lakeG);
-
-  let h = 5 + spawnBlend * (hills + detail) * (1 - lakeMask * 0.85);
-  h += ridge * mountMask;
-  h += peaks * brixSmoothstep(0.25, 0.45, r);
-  h -= 18 * lakeG;
-
-  const edge = brixSmoothstep(0.88, 1.02, r);
+  /* плато спавна — ровная площадка в точке (0,0): центр главного
+     острова всегда накрывает её (радиус ≥ 195 при смещении ±45) */
+  const dm = Math.sqrt(x * x + z * z);
+  if (dm < 95) h = brixLerp(5.4, h, brixSmoothstep(30, 58, dm));
+  /* котловина озера — только вне плато спавна */
+  if (LY.lake) {
+    const lakeG = brixGauss(x, z, LY.lake.x, LY.lake.z, LY.lake.r);
+    if (lakeG > 0.01) h -= 16 * lakeG * brixSmoothstep(70, 105, dm);
+  }
+  /* край мира — ПО КВАДРАТУ (не по кругу) */
+  const edge = brixSmoothstep(0.94, 1.04,
+    Math.max(Math.abs(x), Math.abs(z)) / COLD_WORLD_HALF);
   h = brixLerp(h, -7, edge);
-
   return h;
 }
 
@@ -4041,9 +4180,73 @@ if (Vines) {
         перезагружаются на новую карту;
      4) сохраняет wipe.json {next, last, seed} — вайп переживает
         рестарт сервера (тикает даже когда игроков 0).
+   ✅ v0.5.24 ВАЙП С ОТСЧЁТОМ И КИКОМ (просьба игрока): за 60 секунд
+   до вайпа СЕРВЕР САМ пишет в ЧАТ «SERVER: WIPE SERVER 60/50/40/…»,
+   в последнюю секунду кидает ВСЕХ с сервера ('wipekick'), делает
+   ТЕХНИЧЕСКИЙ ПЕРЕРЫВ (вход закрыт 10 с — карта «генерируется»),
+   вайпит мир и снова пускает игроков: новая карта генерируется
+   нормально, никто не «зависает» на старой.
+   Админ может запустить такой же отсчёт КНОПКОЙ в панели (op
+   'serverwipe') — вайп будет через 60 секунд.
    Погода/время (world-env.json) и сохранения игроков (players.json)
    НЕ трогаются: вайп — это про КАРТУ.
    ============================================================ */
+
+/* ✅ v0.5.24 сообщение в чат от имени SERVER (жёлтый, виден всем) */
+function srvChat(m) {
+  broadcast({ t: 'chat', id: 'srv', n: 'SERVER', c: '#e0a33c',
+    m: String(m).slice(0, 120) }, null);
+}
+
+let wipeCounting = false;    // отсчёт 60 с уже запущен
+let wipeLock = false;        // тех. перерыв: новых игроков не пускаем
+
+/* ✅ v0.5.24 ОТСЧЁТ ВАЙПА: delaySec секунд в чате («SERVER: WIPE
+   SERVER 60… 10 9 8…1»), затем кик всех + вайп + тех. перерыв */
+function startWipeCountdown(delaySec, reason) {
+  if (wipeCounting) return false;
+  wipeCounting = true;
+  const target = Date.now() + delaySec * 1000;
+  srvChat('WIPE SERVER ' + delaySec + ' — ' + reason);
+  const marks = [50, 40, 30, 20, 15, 10, 5, 4, 3, 2, 1];
+  let mi = 0;
+  const iv = setInterval(() => {
+    const left = Math.max(0, Math.ceil((target - Date.now()) / 1000));
+    while (mi < marks.length && marks[mi] >= left && left > 0) {
+      srvChat('WIPE SERVER ' + marks[mi]);
+      mi++;
+    }
+    if (left <= 0) {
+      clearInterval(iv);
+      doWipeAndKick();
+    }
+  }, 1000);
+  console.log('[wipe] отсчёт ' + delaySec + ' с запущен: ' + reason);
+  return true;
+}
+
+/* ✅ v0.5.24 КИК ВСЕХ → ВАЙП → ТЕХ. ПЕРЕРЫВ 10 с → вход открыт */
+function doWipeAndKick() {
+  if (wipeLock) return;                 // уже идёт
+  wipeLock = true;
+  /* 1) всех — с сервера (каждому — объяснение, затем disconnect) */
+  const why = 'вайп сервера — карта перегенерируется';
+  Array.from(players.values()).forEach((p) => {
+    try {
+      p.send({ t: 'wipekick',
+        m: 'ВАЙП! Сервер перезапускается — генерируется НОВАЯ КАРТА. Зайди через несколько секунд.' });
+    } catch (eK) {}
+    dropPlayer(p, why);
+  });
+  /* 2) сам вайп (новый сид, мир стёрт, 'wipenow' уже некому — все вышли) */
+  wipeNow();
+  console.log('[wipe] все игроки кикнуты, тех. перерыв 10 с (генерация карты)');
+  /* 3) тех. перерыв: сервер «генерирует карту», вход закрыт */
+  setTimeout(() => {
+    wipeLock = false;
+    console.log('[wipe] тех. перерыв закончен — сервер снова открыт');
+  }, 10000);
+}
 
 /* ✅ v0.5.23 ВАЙП: функция и тик — только у реалма brixwipe.
    Сама функция объявлена здесь (все зависимости ниже по файлу —
@@ -4065,6 +4268,8 @@ function wipeNow() {
   worldObjs.cseed = OBJ_SEED + srvSeedOff();
   worldObjs.epoch = (worldObjs.epoch || 0) + 1;   // старые бэкапы — мимо
   worldObjs.vines = [];                            // лозы пересчитаются с новым сидом
+  worldObjs.adrops = [];                           // ✅ v0.5.24: падающие аирдропы — в новый мир
+  worldObjs.adropSeq = 0;
   world = null;                                    // ресурсы задаст первый зашедший клиент
   writeEpochSidecar(worldObjs.epoch);
   markDirty();
@@ -4078,9 +4283,17 @@ function wipeNow() {
 }
 
 if (REALM === 'brixwipe') {
-  /* тик раз в 30 с: время вышло — вайп (проверка и при 0 игроков) */
+  /* ✅ v0.5.24 тик раз в 30 с: осталось ≤ 60 с — ЗАПУСКАЕМ ОТСЧЁТ
+     (чат сам тикает «SERVER: WIPE SERVER …», в конце — кик и вайп);
+     время ВЫШЛО, а отсчёта не было (сервер спал) — вайп сразу */
   setInterval(() => {
-    if (Date.now() >= WIPE.next) wipeNow();
+    if (wipeCounting || wipeLock) return;
+    const left = WIPE.next - Date.now();
+    if (left <= 0) { doWipeAndKick(); return; }
+    if (left <= 61000) {
+      startWipeCountdown(Math.max(1, Math.ceil(left / 1000)),
+        'регулярный вайп (раз в сутки)');
+    }
   }, 30000);
 }
 

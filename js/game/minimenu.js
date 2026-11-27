@@ -503,36 +503,52 @@ window.BrixMiniMenu = (function () {
     // Сам пин красный с тёмным кружком — не задеваем
     if (!markerImg) loadMarker();
 
-    // вписать квадрат карты в экран с полями под подписи сетки
+    /* ✅ v0.5.24 КАРТА НА ВЕСЬ ЭКРАН (просьба игрока): canvas занимает
+       ВСЁ окно (не квадрат с полями), квадрат мира вписан почти вплотную,
+       остальное — «морской» фон с виньеткой и компасом. Мир квадратный
+       900×900 — растягивать его на прямоугольник нельзя (соврёт
+       расстояния), поэтому карты занимает всю высоту/ширину меньшей
+       стороны, а поля — стилизованный океан */
     var dpr = window.devicePixelRatio || 1;
-    var vw = mapRoot.clientWidth, vh = mapRoot.clientHeight;
-    var MARGIN = 34;
-    var size = Math.max(200, Math.min(vw, vh) - MARGIN * 2);
-    cv.width = Math.round(size * dpr);
-    cv.height = Math.round(size * dpr);
-    cv.style.width = size + 'px';
-    cv.style.height = size + 'px';
+    var vw = mapRoot.clientWidth || window.innerWidth;
+    var vh = mapRoot.clientHeight || window.innerHeight;
+    cv.width = Math.round(vw * dpr);
+    cv.height = Math.round(vh * dpr);
+    cv.style.width = vw + 'px';
+    cv.style.height = vh + 'px';
     var ctx = cv.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, size, size);
 
     var T = window.BrixTerrain;
     var HALF = T ? T.WORLD_HALF : 450;
 
-    // сетка сначала — подложка с полем под буквы/цифры
-    var M = 30;   // отступ карты внутри canvas под подписи
-    var mapS = size - M;
-    ctx.fillStyle = 'rgba(10,12,11,0.92)';
-    ctx.fillRect(0, 0, size, size);
+    /* фон — тёмный океан с виньеткой (поля экрана = открытое море) */
+    var bg = ctx.createLinearGradient(0, 0, 0, vh);
+    bg.addColorStop(0, '#0d1a20');
+    bg.addColorStop(0.5, '#0a1418');
+    bg.addColorStop(1, '#071013');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, vw, vh);
 
-    // сама карта
-    ctx.drawImage(mapImage, M, M, mapS, mapS);
+    /* квадрат карты: вписан почти вплотную, по центру экрана */
+    var M2 = 14;
+    var mapS = Math.max(200, Math.min(vw, vh) - M2 * 2);
+    var mx = Math.round((vw - mapS) / 2);
+    var my = Math.round((vh - mapS) / 2);
+
+    // мягкая тень под картой — «лист» лежит на столе
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.7)';
+    ctx.shadowBlur = 30;
+    ctx.drawImage(mapImage, mx, my, mapS, mapS);
+    ctx.restore();
+    var M = mx, SIZE = mapS;   // совместимость: M — левый край карты
 
     /* ✅ v0.4.65 ПВП-АРЕНА: ЛОКАЦИЯ «ПОЛИГОН» рисуется поверх рельефа —
        стены, бункеры, платформа, ящики + КРАСНЫЕ ТОЧКИ ботов */
     if (window.BRIX_PVP && window.BrixArena && BrixArena.isBuilt()) {
-      var toX = function (wx) { return M + ((wx + HALF) / (HALF * 2)) * mapS; };
-      var toZ = function (wz) { return M + ((wz + HALF) / (HALF * 2)) * mapS; };
+      var toX = function (wx) { return mx + ((wx + HALF) / (HALF * 2)) * mapS; };
+      var toZ = function (wz) { return my + ((wz + HALF) / (HALF * 2)) * mapS; };
       BrixArena.drawMap(ctx, toX, toZ);
     }
 
@@ -540,36 +556,62 @@ window.BrixMiniMenu = (function () {
     ctx.strokeStyle = 'rgba(255,255,255,0.16)';
     ctx.lineWidth = 1;
     for (var i = 1; i < GRID; i++) {
-      var p = M + (mapS / GRID) * i;
-      ctx.beginPath(); ctx.moveTo(p, M); ctx.lineTo(p, M + mapS); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(M, p); ctx.lineTo(M + mapS, p); ctx.stroke();
+      var p = mx + (mapS / GRID) * i;
+      var q = my + (mapS / GRID) * i;
+      ctx.beginPath(); ctx.moveTo(p, my); ctx.lineTo(p, my + mapS); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(mx, q); ctx.lineTo(mx + mapS, q); ctx.stroke();
     }
     ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-    ctx.strokeRect(M, M, mapS, mapS);
+    ctx.strokeRect(mx, my, mapS, mapS);
 
-    // подписи: буквы сверху (A–F), цифры слева (1–6) — как в Rust
-    ctx.fillStyle = 'rgba(214,217,212,0.85)';
+    /* подписи: буквы сверху (A–F), цифры слева (1–6) — НА краю карты,
+       полупрозрачной плашкой, чтобы не выходить за экран */
+    var cellS = mapS / GRID;
+    ctx.fillStyle = 'rgba(6,8,7,0.55)';
+    ctx.fillRect(mx, my, mapS, Math.max(16, cellS * 0.22));
+    ctx.fillRect(mx, my, Math.max(16, cellS * 0.22), mapS);
+    ctx.fillStyle = 'rgba(214,217,212,0.9)';
     ctx.font = '600 12px Oswald, Arial Narrow, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     var LETTERS = 'ABCDEF';
+    var lh = Math.max(16, cellS * 0.22) / 2;
     for (var c = 0; c < GRID; c++) {
-      ctx.fillText(LETTERS[c], M + (mapS / GRID) * (c + 0.5), M / 2);
+      ctx.fillText(LETTERS[c], mx + cellS * (c + 0.5), my + lh);
     }
     for (var r = 0; r < GRID; r++) {
-      ctx.fillText(String(r + 1), M / 2, M + (mapS / GRID) * (r + 0.5));
+      ctx.fillText(String(r + 1), mx + lh, my + cellS * (r + 0.5));
     }
+
+    /* компас (север) в углу и штамп BRIX — поля читаются как «морской
+       лист», а не пустые полосы */
+    ctx.save();
+    ctx.translate(vw - 54, 54);
+    ctx.strokeStyle = 'rgba(214,217,212,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(0, 0, 20, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(226,85,61,0.9)';
+    ctx.beginPath(); ctx.moveTo(0, -16); ctx.lineTo(5, 4); ctx.lineTo(-5, 4);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(214,217,212,0.85)';
+    ctx.font = '600 11px Oswald, sans-serif';
+    ctx.fillText('N', 0, 13);
+    ctx.restore();
+    ctx.fillStyle = 'rgba(214,217,212,0.25)';
+    ctx.font = '700 22px Oswald, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('BRIX', 18, vh - 18);
 
     // игрок: маленькая иконка БЕЗ фона, точно под игроком,
     // острым концом ВПЕРЁД по направлению взгляда
     var pos = opts && opts.getPos ? opts.getPos() : null;
     if (pos) {
-      var mx = M + ((pos.x + HALF) / (HALF * 2)) * mapS;
-      var my = M + ((pos.z + HALF) / (HALF * 2)) * mapS;
+      var mmx = mx + ((pos.x + HALF) / (HALF * 2)) * mapS;
+      var mmy = my + ((pos.z + HALF) / (HALF * 2)) * mapS;
       var MW = 15, MH = 26;              // ✅ v0.4.4: заметно меньше (было 22×38)
       if (markerImg) {
         ctx.save();
-        ctx.translate(mx, my);
+        ctx.translate(mmx, mmy);
         // ✅ v0.4.4: якорь — ЦЕНТР иконки (позиция всегда точно под
         // игроком, «на берегу а не в море»), а указывает пин острым
         // концом туда, КУДА СМОТРИТ игрок: вперёд = (-sin yaw, -cos yaw)
@@ -581,7 +623,7 @@ window.BrixMiniMenu = (function () {
       } else {
         // пока иконка не готова — маленькая красная точка
         ctx.fillStyle = '#e2553d';
-        ctx.beginPath(); ctx.arc(mx, my, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(mmx, mmy, 4, 0, Math.PI * 2); ctx.fill();
       }
       // квадрат игрока (C4) + координаты — как в Rust
       sectorEl.textContent = sectorAt(pos.x, pos.z) +

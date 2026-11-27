@@ -101,14 +101,13 @@ window.BrixState = (function () {
       var raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
         var saved = JSON.parse(raw);
-        /* ✅ v0.5.22 СБРОС ПРОГРЕССА (просьба игрока: «пусть у всех
-           будет по 0 часов и 1 уровень»): старые сохранения больше не
-           подмешивают уровень/часы/опыт — все начинают с чистого листа.
-           В мультиплеере настоящий уровень прислает СЕРВЕР (welcome.lvl) */
-        delete saved.level;
-        delete saved.hoursPlayed;
-        delete saved.xp;
-        delete saved.claimedLevels;
+        /* ✅ v0.5.24 ФИКС «ПРОГРЕСС СБРАСЫВАЕТСЯ ПОСЛЕ ПЕРЕЗАХОДА» (было
+           v0.5.22): hydrate УДАЛЯЛ level/xp/claimedLevels из сохранения
+           при КАЖДОЙ загрузке — из-за этого после перезахода уровень
+           снова 1, опыт пропадал, а награда за 1-й уровень «оживала»
+           снова и снова. Теперь локальные цифры — КЭШ сервера: в игре
+           welcome/'xp' перезапишет их авторитетными (сервер), а в меню
+           полка наград показывает последнее известное состояние */
         Object.keys(saved).forEach(function (k) {
           if (k === 'settings') {
             data.settings = Object.assign({}, defaultSettings, saved.settings || {});
@@ -116,6 +115,7 @@ window.BrixState = (function () {
             data[k] = saved[k];
           }
         });
+        if (!Array.isArray(data.claimedLevels)) data.claimedLevels = [];
       }
     } catch (e) { /* битое сохранение — начинаем заново */ }
   }

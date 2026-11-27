@@ -1,10 +1,15 @@
 // ============================================================
 //  brix • js/game/terrain.js
-//  Ландшафт Brixland: остров с горами (ridged-шум + пики),
-//  холмами, озером, пляжами и морем по краям карты.
-//  Высота heightAt используется и геометрией, и физикой
-//  игрока, так что мир и коллизии всегда совпадают.
-//  Полный перенос из lib/game/terrain.ts.
+//  ✅ v0.5.24 АРХИПЕЛАГ ПО СИДУ: карта — не один круглый остров,
+//  а 4-6 островов (главный + 3-5 спутников), между ними — ВОДА.
+//  Каждая вайп-карта получает СВОЙ архипелаг: число островов,
+//  их размер и разброс, высота гор (пиков) и амплитуда холмов
+//  зависят от сида — «рельеф, размер и горы» меняются полностью.
+//  Пустых мест нет: всё вне островов — океан (высота -7).
+//  Высота heightAt используется и геометрией, и физикой игрока,
+//  так что мир и коллизии всегда совпадают.
+//  ЗЕРКАЛО 1:1 на сервере — server.js brixLayout/brixHeightAt
+//  (проверка: node scripts/check-terrain-sync.js <сид>).
 // ============================================================
 window.BrixTerrain = (function () {
   'use strict';
@@ -19,14 +24,14 @@ window.BrixTerrain = (function () {
   // сиды слоёв шума
   var S_HILLS = 1013;
   var S_DETAIL = 2027;
-  var S_MOUNT_MASK = 3041;
-  var S_MOUNT = 4051;
   var S_MOIST = 5059;
   var S_DITHER = 6067;
   // ✅ v0.4.42 переходы между биомами: отдельные сиды на возмущение
   // границ (крупное «гуляние» линии) и пятна (рваные края биомов)
   var S_TRANS = 7079;
   var S_PATCH = 8081;
+  /* ✅ v0.5.24 береговая линия: шум «рваного» края островов */
+  var S_COAST = 10101;
   /* ✅ v0.5.22 ПУСТЫНЯ И АРКТИКА (вайп-мир): крупный шум ТЕМПЕРАТУРЫ
      делит карту на климатические зоны. Включается сервером
      (welcome/status.biomes → window.BRIX_BIOMES = 1) только на
@@ -39,66 +44,107 @@ window.BrixTerrain = (function () {
      озеро, биомы), а не копию BrixLand. 0 — стандартный Brixland */
   function seedOff() { return (window.BRIX_TERRAIN_SEED || 0) * 7919; }
 
-  /** Гауссова «шапка» отдельной горы */
-  function peak(x, z, cx, cz, sigma, amp) {
-    return amp * N.gauss(x, z, cx, cz, sigma);
-  }
-
-  /* ✅ v0.5.23 ПЛАН ЛАНДШАФТА ПО СИДУ (1:1 с server.js brixLayout —
-     МЕНЯТЬ ТОЛЬКО В ОБОИХ ФАЙЛАХ СРАЗУ!): ОЗЕРО и ТРИ ПИКА выбираются
-     детерминированным ПСЧ от сида карты. Каждая вайп-карта — СВОИ озеро,
-     горы и долины (пользователь: «генерация случайная — свой ландшафт,
-     озера»). Сид 0 (BrixLand/BrixPvP) = прежняя карта без изменений.
-     Пик не ставится в озеро; озеро и пики — не ближе 250 м к спавну */
+  /* ✅ v0.5.24 ПЛАН АРХИПЕЛАГА ПО СИДУ (1:1 с server.js brixLayout —
+     МЕНЯТЬ ТОЛЬКО В ОБОИХ ФАЙЛАХ СРАЗУ!): острова {x, z, r, peaks[]},
+     озеро на главном острове и амплитуда холмов. Главный остров
+     (спавн) стоит у центра, 3-5 спутников разбросаны по квадрату
+     карты — у каждой вайп-карты СВОЙ архипелаг: число островов,
+     размер, разброс, высота гор. Всё вне островов — океан. */
   var _layoutSeed = -1, _layout = null;
   function layoutAt() {
     var seed = (window.BRIX_TERRAIN_SEED || 0) | 0;
     if (_layoutSeed === seed && _layout) return _layout;
+    var islands, lake = null, hillAmp;
     if (!seed) {
-      _layout = {
-        lake: { x: 170, z: 150, r: 110 },
-        peaks: [
-          { x: -230, z: -150, r: 95, a: 56 },
-          { x: 255, z: -230, r: 105, a: 64 },
-          { x: -130, z: 255, r: 85, a: 42 }
-        ]
-      };
+      /* соло/режим вкладок без сервера: красивый фиксированный архипелаг */
+      islands = [
+        { x: 0, z: 0, r: 235, peaks: [
+          { x: 40, z: -95, r: 80, a: 62 },
+          { x: -95, z: 60, r: 62, a: 36 }
+        ] },
+        { x: -280, z: -265, r: 130, peaks: [{ x: -270, z: -255, r: 52, a: 46 }] },
+        { x: 285, z: -235, r: 110, peaks: [{ x: 285, z: -235, r: 46, a: 36 }] },
+        { x: 250, z: 290, r: 140, peaks: [{ x: 240, z: 300, r: 58, a: 54 }] },
+        { x: -285, z: 255, r: 95, peaks: [{ x: -285, z: 255, r: 42, a: 30 }] }
+      ];
+      lake = { x: 150, z: 135, r: 70 };
+      hillAmp = 20;
     } else {
+      /* новая карта: детерминированный ПСЧ от сида (одинаковый у сервера) */
       var a = (seed ^ 0x9E3779B9) >>> 0;
       function nxt() {
         a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
         return a / 4294967296;
       }
-      var la = nxt() * Math.PI * 2, ld = 250 + nxt() * 100;
-      var lake = {
-        x: Math.round(Math.cos(la) * ld),
-        z: Math.round(Math.sin(la) * ld),
-        r: Math.round(88 + nxt() * 42)
-      };
-      var peaks = [];
-      for (var i = 0; i < 3; i++) {
-        var px = 0, pz = 0, pr = 0;
-        for (var t = 0; t < 3; t++) {
-          var pa = nxt() * Math.PI * 2, pd = 250 + nxt() * 130;
-          px = Math.round(Math.cos(pa) * pd);
-          pz = Math.round(Math.sin(pa) * pd);
-          pr = Math.round(85 + nxt() * 28);
-          var dlx = px - lake.x, dlz = pz - lake.z;
-          if (Math.sqrt(dlx * dlx + dlz * dlz) > lake.r + pr) break;
-        }
-        peaks.push({ x: px, z: pz, r: pr, a: Math.round(44 + nxt() * 22) });
+      /* главный остров: у центра (±45 м), радиус 195..250 */
+      var mx = Math.round((nxt() - 0.5) * 90);
+      var mz = Math.round((nxt() - 0.5) * 90);
+      var mr = Math.round(195 + nxt() * 55);
+      hillAmp = 12 + Math.round(nxt() * 14);      // амплитуда холмов 12..26
+      var mPeaks = [];
+      /* большая гора (50..74 м) — подальше от плато спавна */
+      var pa = nxt() * Math.PI * 2, pd = mr * (0.55 + nxt() * 0.2);
+      mPeaks.push({
+        x: Math.round(mx + Math.cos(pa) * pd),
+        z: Math.round(mz + Math.sin(pa) * pd),
+        r: Math.round(mr * (0.26 + nxt() * 0.12)), a: Math.round(50 + nxt() * 24)
+      });
+      /* вторая гора поменьше (26..46 м) */
+      var pa2 = nxt() * Math.PI * 2, pd2 = mr * (0.5 + nxt() * 0.2);
+      mPeaks.push({
+        x: Math.round(mx + Math.cos(pa2) * pd2),
+        z: Math.round(mz + Math.sin(pa2) * pd2),
+        r: Math.round(mr * (0.18 + nxt() * 0.1)), a: Math.round(26 + nxt() * 20)
+      });
+      islands = [{ x: mx, z: mz, r: mr, peaks: mPeaks }];
+      /* 3-5 островов-спутников: равномерно по кругу с разбросом,
+         радиус ограничен, чтобы берег не вылезал за край мира */
+      var nIsl = 3 + Math.floor(nxt() * 3);
+      var baseA = nxt() * Math.PI * 2;
+      for (var i = 0; i < nIsl; i++) {
+        var ang = baseA + i * (Math.PI * 2 / nIsl) + (nxt() - 0.5) * 0.7;
+        var dist = 240 + nxt() * 90;              // 240..330 от центра
+        var r = Math.round(90 + nxt() * 65);      // 90..155
+        var lim = 430 - dist;
+        if (r * 1.25 > lim) r = Math.max(70, Math.round(lim / 1.25));
+        var cx = Math.round(Math.cos(ang) * dist);
+        var cz = Math.round(Math.sin(ang) * dist);
+        var pa3 = nxt() * Math.PI * 2, pd3 = r * 0.3 * nxt();
+        islands.push({
+          x: cx, z: cz, r: r,
+          peaks: [{
+            x: Math.round(cx + Math.cos(pa3) * pd3),
+            z: Math.round(cz + Math.sin(pa3) * pd3),
+            r: Math.round(r * (0.3 + nxt() * 0.15)),
+            a: Math.round(28 + nxt() * 30)       // 28..58 м
+          }]
+        });
       }
-      _layout = { lake: lake, peaks: peaks };
+      /* озеро на главном острове (70% карт), вне плато спавна */
+      if (nxt() < 0.7) {
+        var la = nxt() * Math.PI * 2, ld = 150 + nxt() * 40;
+        lake = {
+          x: Math.round(mx + Math.cos(la) * ld),
+          z: Math.round(mz + Math.sin(la) * ld),
+          r: Math.round(55 + nxt() * 30)          // сигма 55..85
+        };
+      }
     }
+    _layout = { islands: islands, lake: lake, hillAmp: hillAmp };
     _layoutSeed = seed;
     return _layout;
   }
-  /** точки озера/пиков текущей карты (road.js и лоадер — для текста) */
+  /** точки островов/озера текущей карты (лоадер — для текста) */
   function layoutInfo() { return layoutAt(); }
 
   /**
    * Высота рельефа в точке мира. Используется и для геометрии,
    * и для физики игрока (высота пола под ногами).
+   * ✅ v0.5.24: АРХИПЕЛАГ — базовая высота океан (-7), каждый остров
+   * поднимает рельеф своей гауссовой маской с РВАНЫМ берегом (шум
+   * S_COAST), внутри — холмы по сиду + свои пики-горы. Плато спавна
+   * на главном острове, озеро тонет в рельефе. Край мира (по квадрату,
+   * не по кругу!) уходит в океан.
    */
   function heightAt(x, z) {
     /* ✅ v0.4.65 ПВП-АРЕНА: плоская локация вместо рельефа — бетонная
@@ -110,41 +156,44 @@ window.BrixTerrain = (function () {
       /* 3.2 — ВЫШЕ уровня моря (2.2), иначе арена «тонет» и на карте вода */
       return N.lerp(3.2 + (N.fbm(x * 0.05, z * 0.05, S_DETAIL + seedOff(), 2) - 0.5) * 0.22, -7, flatEdge);
     }
-    var r = Math.sqrt(x * x + z * z) / WORLD_HALF;
-
-    // плато спавна в центре
-    var spawnBlend = N.smoothstep(0.14, 0.3, r);
-
-    // холмы
-    var hills = (N.fbm(x * 0.012, z * 0.012, S_HILLS + seedOff(), 4) - 0.45) * 30;
-    var detail = (N.fbm(x * 0.05, z * 0.05, S_DETAIL + seedOff(), 3) - 0.5) * 3.5;
-
-    // маска горного кольца у краёв карты
-    var mountMask = N.smoothstep(0.55, 0.82,
-      r + (N.fbm(x * 0.005 + 7.3, z * 0.005 + 2.9, S_MOUNT_MASK + seedOff(), 3) - 0.5) * 0.55);
-    var ridge = Math.pow(N.ridged(x * 0.006, z * 0.006, S_MOUNT + seedOff(), 4), 1.3) * 72;
-
-    // ✅ v0.5.23: пики и озеро — ПО СИДУ карты (layoutAt, 1:1 с сервером)
     var LY = layoutAt();
-    var peaks = 0;
-    for (var pi = 0; pi < LY.peaks.length; pi++) {
-      var P = LY.peaks[pi];
-      peaks += peak(x, z, P.x, P.z, P.r, P.a);
+    var h = -7;                                    // океанское дно
+    for (var i = 0; i < LY.islands.length; i++) {
+      var I = LY.islands[i];
+      var dx = x - I.x, dz = z - I.z;
+      var d = Math.sqrt(dx * dx + dz * dz);
+      if (d > I.r * 1.5) continue;                 // далеко от острова — маска 0
+      /* рваная береговая линия: радиус острова «гуляет» шумом */
+      var wob = (N.fbm(x * 0.02 + 7.7, z * 0.02 + 3.3, S_COAST + seedOff(), 3) - 0.5) * 0.4;
+      var rn = d / I.r + wob;
+      var k = 1 - N.smoothstep(0.6, 1.1, rn);      // 1 в центре острова, 0 за берегом
+      if (k <= 0) continue;
+      /* локальный рельеф острова: холмы (амплитуда по сиду) + деталь */
+      var base = 4.2
+        + (N.fbm(x * 0.012, z * 0.012, S_HILLS + seedOff() + i * 17, 4) - 0.45) * LY.hillAmp
+        + (N.fbm(x * 0.05, z * 0.05, S_DETAIL + seedOff(), 3) - 0.5) * 3.5;
+      /* свои горы-пики (гауссовы шапки) */
+      var pk = 0;
+      for (var pi = 0; pi < I.peaks.length; pi++) {
+        var P = I.peaks[pi];
+        pk += P.a * N.gauss(x, z, P.x, P.z, P.r);
+      }
+      var kh = -7 + (base + pk + 7) * k;
+      if (kh > h) h = kh;                          // острова складываются максимумом
     }
-
-    // котловина озера
-    var lakeG = N.gauss(x, z, LY.lake.x, LY.lake.z, LY.lake.r);
-    var lakeMask = N.smoothstep(0.15, 0.7, lakeG);
-
-    var h = 5 + spawnBlend * (hills + detail) * (1 - lakeMask * 0.85);
-    h += ridge * mountMask;
-    h += peaks * N.smoothstep(0.25, 0.45, r);
-    h -= 18 * lakeG;
-
-    // море за краем карты
-    var edge = N.smoothstep(0.88, 1.02, r);
+    /* плато спавна — ровная площадка в точке (0,0) — центр главного
+       острова всегда накрывает её (радиус ≥ 195 при смещении ±45) */
+    var dm = Math.sqrt(x * x + z * z);
+    if (dm < 95) h = N.lerp(5.4, h, N.smoothstep(30, 58, dm));
+    /* котловина озера — только вне плато спавна */
+    if (LY.lake) {
+      var lakeG = N.gauss(x, z, LY.lake.x, LY.lake.z, LY.lake.r);
+      if (lakeG > 0.01) h -= 16 * lakeG * N.smoothstep(70, 105, dm);
+    }
+    /* край мира — ПО КВАДРАТУ (не по кругу): карта занимает весь
+       экран, угол не «срезается» кругом */
+    var edge = N.smoothstep(0.94, 1.04, Math.max(Math.abs(x), Math.abs(z)) / WORLD_HALF);
     h = N.lerp(h, -7, edge);
-
     return h;
   }
 

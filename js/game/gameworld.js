@@ -58,7 +58,16 @@ window.BrixGameWorld = (function () {
   var T = window.BrixTerrain;
 
   var nextFrame = function () {
-    return new Promise(function (r) { requestAnimationFrame(function () { r(); }); });
+    /* ✅ v0.5.24 ФИКС «ЗАГРУЗКА ЗАВИСАЕТ В ФОНОВОЙ ВКЛАДКЕ»: rAF не
+       тикает, когда вкладка свёрнута/в фоне — вся загрузка мира
+       (террейн, объекты, спавн) замирала «на полшага». Гоняем rAF с
+       таймером: в фоновой вкладке шаг продолжает идти по таймеру */
+    return new Promise(function (r) {
+      var done = false;
+      var fin = function () { if (!done) { done = true; r(); } };
+      requestAnimationFrame(fin);
+      setTimeout(fin, 60);
+    });
   };
   var sleep = function (ms) {
     return new Promise(function (r) { setTimeout(r, ms); });
@@ -2147,15 +2156,23 @@ window.BrixGameWorld = (function () {
     }
 
     /** ✅ v0.4.28: случайная точка на суше (кнопка «СЛУЧАЙНОЕ МЕСТО»).
-        Не в воде (высота суши > 3 м) и не на краю карты */
+        Не в воде (высота суши > 3 м) и не на краю карты.
+        ✅ v0.5.24 ФИКС: раньше семплы летели в ±1300 м при радиусе
+        мира 450 — ~88% попыток были в океане, «случайное место» почти
+        всегда возвращало null и кнопка возрождала на базовой точке.
+        Теперь семплы по ОСТРОВАМ (высота рельефа BrixTerrain), +60
+        попыток, и страховочный возврат на спавн */
     function randomSpawnPt() {
-      for (var i = 0; i < 40; i++) {
-        var x = (Math.random() * 2 - 1) * 1300;
-        var z = (Math.random() * 2 - 1) * 1300;
+      var T = window.BrixTerrain;
+      var HALF = T ? T.WORLD_HALF : 450;
+      for (var i = 0; i < 60; i++) {
+        var x = (Math.random() * 2 - 1) * HALF * 0.92;
+        var z = (Math.random() * 2 - 1) * HALF * 0.92;
         var h = controls._getHeight(x, z, 0);
         if (h > 3.0) return { x: x, z: z, yaw: Math.random() * Math.PI * 2 };
       }
-      return null;
+      /* суша не нашлась (не бывает на архипелаге) — плато спавна */
+      return { x: 0, z: 0, yaw: Math.random() * Math.PI * 2 };
     }
 
     /* ============================================================
@@ -2458,12 +2475,18 @@ window.BrixGameWorld = (function () {
         }
         combatHud.death.classList.add('hidden');
       }
-      /* ✅ v0.4.28: кастомная точка (СЛУЧАЙНОЕ МЕСТО) или обычный спавн */
+      /* ✅ v0.4.28: кастомная точка (СЛУЧАЙНОЕ МЕСТО) или обычный спавн.
+         ✅ v0.5.24 ФИКС «НЕ СПАНИТСЯ»: если ни точки, ни spawnPoint (мир
+         собрался наполовину) — НЕ оставляем игрока лежать: спавним на
+         плато (0,0), управление включаем всегда */
       if (custom && custom.x !== undefined) {
         controls.spawnAt(custom.x, custom.z, custom.yaw || 0);
         controls.enabled = true;
       } else if (spawnPoint) {
         controls.spawnAt(spawnPoint.x, spawnPoint.z, spawnPoint.yaw);
+        controls.enabled = true;
+      } else {
+        controls.spawnAt(0, 0, 0);
         controls.enabled = true;
       }
       aliveSince = Date.now();   // время выживания — заново
@@ -4017,9 +4040,10 @@ window.BrixGameWorld = (function () {
            строят базовый Brixland, как раньше */
         window.BRIX_TERRAIN_SEED = 0;
         window.BRIX_BIOMES = 0;
-        /* ✅ v0.5.23: реалм для разделения бэкапов построек (building.js
-           lsKey) — уточнится после ответа сервера (realm из /status) */
-        window.BRIX_REALM = 'brixland';
+        /* ✅ v0.5.24: реалм для разделения бэкапов построек (building.js
+           lsKey) — уточнится после ответа сервера (realm из /status).
+           Дефолт — вайп-мир (BrixLand удалён) */
+        window.BRIX_REALM = 'brixwipe';
       }
       /* ✅ v0.4.66: арена из ПРОШЛОГО мира не должна «переезжать» —
          сброс (иначе локация/боты невидимы после повторного входа) */
@@ -4716,6 +4740,28 @@ window.BrixGameWorld = (function () {
           setTimeout(function () {
             location.reload();   // полная перезагрузка: новый сид, чистый мир
           }, 1800);
+        });
+
+        /* ✅ v0.5.24 ВАЙП-КИК: отсчёт «SERVER: WIPE SERVER N» дошёл до
+           нуля — сервер ВЫКИНУЛ игрока и делает тех. перерыв (карта
+           генерируется заново). Показываем причину и перезагружаемся
+           в меню: через несколько секунд вход снова открыт */
+        BrixNet.on('wipekick', function (msg) {
+          try {
+            if (window.BrixHud) BrixHud.toast(
+              (msg && msg.m) ? msg.m : 'ВАЙП! Сервер перезапускается', 10);
+          } catch (eK) {}
+          setTimeout(function () {
+            location.reload();   // в меню; сервер к этому моменту откроется
+          }, 2500);
+        });
+
+        /* ✅ v0.5.24 АДМИН «НА СПАВН» (op 'spawn'): сервер подтвердил —
+           телепортируемся на плато спавна и включаем управление */
+        BrixNet.on('spawnme', function (msg) {
+          var sx = (msg && typeof msg.x === 'number') ? msg.x : 0;
+          var sz = (msg && typeof msg.z === 'number') ? msg.z : 0;
+          doRespawn({ x: sx, z: sz, yaw: controls.yaw });
         });
 
         /* ✅ v0.5.22 ОБРАТНЫЙ ОТСЧЁТ ВАЙПА: /status дал wipeIn —

@@ -25,67 +25,110 @@ window.BrixRewards = (function () {
   }
 
   var CSS = [
-    '#bxrPanel{width:min(420px,94vw);max-height:min(580px,80vh);display:none;flex-direction:column;',
-    'background:linear-gradient(165deg,rgba(30,25,18,.97),rgba(18,15,11,.97));',
-    'border:1px solid rgba(224,163,60,.4);border-radius:10px;',
-    'box-shadow:0 18px 60px rgba(0,0,0,.65);overflow:hidden;',
-    'font-family:Oswald,Roboto Condensed,sans-serif;-webkit-user-select:none;user-select:none}',
-    '#bxrPanel.bxr-on{display:flex}',
-    /* модаль меню: по центру экрана с затемнением */
+    /* ✅ v0.5.24 ПОЛНЫЙ РЕДИЗАЙН ПОЛКИ — стиль игры (Rust-палитра
+       css/base.css): тёмный металл с диагональной штриховкой и
+       заклёпками, ржаво-красный акцент (--rust), костяной текст,
+       Oswald-стенсил в заголовках. Старая золотисто-бежевая полка
+       выглядела чужеродной */
     '#bxrWrap{position:fixed;inset:0;z-index:150;display:none;place-items:center;',
-    'background:rgba(5,7,6,.62);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}',
+    'background:rgba(4,6,5,.7);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px)}',
     '#bxrWrap.bxr-on{display:grid}',
-    '#bxrHead{display:flex;align-items:center;justify-content:space-between;',
-    'padding:14px 16px 10px;border-bottom:1px solid rgba(224,163,60,.22)}',
-    '#bxrHead h3{margin:0;font-family:Oswald,sans-serif;font-weight:600;font-size:16px;',
-    'letter-spacing:.1em;color:#f2ead6;text-transform:uppercase}',
-    '#bxrClose{background:none;border:1px solid rgba(242,234,214,.3);border-radius:4px;',
-    'color:#f2ead6;width:28px;height:28px;cursor:pointer;font-size:14px;line-height:1}',
-    '#bxrClose:hover{border-color:#e0a33c;color:#e0a33c}',
-    /* прогресс */
-    '#bxrProg{padding:12px 16px 14px;border-bottom:1px solid rgba(224,163,60,.16)}',
-    '#bxrLvlRow{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px}',
-    '#bxrLvl{font-family:Oswald,sans-serif;font-weight:700;font-size:22px;color:#e0a33c;',
-    'letter-spacing:.06em}',
-    '#bxrNext{font:13px/1.3 Roboto Condensed,sans-serif;color:rgba(242,234,214,.8)}',
-    '#bxrBar{height:10px;border-radius:5px;background:rgba(0,0,0,.55);',
-    'border:1px solid rgba(242,234,214,.18);overflow:hidden;position:relative}',
-    '#bxrBarFill{height:100%;width:0;border-radius:5px;',
-    'background:linear-gradient(90deg,#a86a1e,#e0a33c 60%,#ffd97a);',
-    'box-shadow:0 0 10px rgba(224,163,60,.55);transition:width .45s cubic-bezier(.2,.8,.2,1)}',
-    '#bxrBarTxt{margin-top:6px;font:12px/1.4 Roboto Condensed,sans-serif;',
-    'color:rgba(242,234,214,.75);letter-spacing:.02em}',
-    /* список наград */
-    '#bxrList{overflow-y:auto;padding:8px 12px 14px;flex:1}',
-    '#bxrList::-webkit-scrollbar{width:8px}',
-    '#bxrList::-webkit-scrollbar-thumb{background:rgba(224,163,60,.4);border-radius:4px}',
-    '#bxrList::-webkit-scrollbar-track{background:rgba(0,0,0,.3)}',
-    '.bxr-row{display:flex;align-items:center;gap:10px;padding:8px 6px;',
-    'border-bottom:1px solid rgba(242,234,214,.08)}',
-    '.bxr-row:last-child{border-bottom:none}',
-    '.bxr-lvl{font-family:Oswald,sans-serif;font-weight:700;font-size:14px;color:#f2ead6;',
-    'width:86px;flex-shrink:0;letter-spacing:.04em}',
-    '.bxr-prize{flex:1;display:flex;align-items:center;gap:8px;',
-    'font:14px/1.3 Roboto Condensed,sans-serif;color:rgba(242,234,214,.9)}',
-    '.bxr-coin{width:20px;height:20px;border-radius:50%;flex-shrink:0;',
-    'background:radial-gradient(circle at 35% 30%,#ffd97a,#e0a33c 55%,#a86a1e);',
-    'border:2px solid #6d4413;box-shadow:0 1px 4px rgba(0,0,0,.5)}',
-    '.bxr-claim{background:linear-gradient(180deg,#e0a33c,#c9852a);border:none;border-radius:4px;',
-    'color:#1b1408;font-family:Oswald,sans-serif;font-weight:700;font-size:11px;',
-    'letter-spacing:.08em;padding:7px 12px;cursor:pointer;flex-shrink:0}',
-    '.bxr-claim:active{filter:brightness(.9)}',
-    '.bxr-claim.bxr-done{background:rgba(94,151,71,.25);color:#9fd084;cursor:default;',
-    'border:1px solid rgba(94,151,71,.5)}',
-    '.bxr-claim.bxr-locked{background:rgba(242,234,214,.1);color:rgba(242,234,214,.45);',
-    'cursor:default;border:1px solid rgba(242,234,214,.15)}',
-    '.bxr-cap{padding:10px 16px 14px;font:12px/1.4 Roboto Condensed,sans-serif;',
-    'color:rgba(242,234,214,.55);border-top:1px solid rgba(224,163,60,.16)}',
+    '#bxrPanel{width:min(640px,96vw);max-height:min(680px,88vh);display:none;flex-direction:column;',
+    'background:repeating-linear-gradient(115deg,#171b19 0 22px,#141817 22px 44px),#141817;',
+    'border:1px solid #2c3330;border-radius:6px;overflow:hidden;',
+    'box-shadow:0 24px 80px rgba(0,0,0,.75),inset 0 1px 0 rgba(255,255,255,.05);',
+    'font-family:Roboto Condensed,Oswald,sans-serif;-webkit-user-select:none;user-select:none}',
+    '#bxrPanel.bxr-on{display:flex}',
+    /* шапка: ржаво-красная полоса + стенсил-заголовок + заклёпки */
+    '#bxrHead{display:flex;align-items:center;justify-content:space-between;gap:10px;',
+    'padding:0 16px;height:52px;position:relative;',
+    'background:linear-gradient(180deg,#8f2d1f,#6e2115 70%,#571a10);',
+    'border-bottom:2px solid #3a130b;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 3px 10px rgba(0,0,0,.4)}',
+    '#bxrHead h3{margin:0;font-family:Oswald,sans-serif;font-weight:600;font-size:17px;',
+    'letter-spacing:.16em;color:#f4ede0;text-transform:uppercase;',
+    'text-shadow:0 2px 0 rgba(0,0,0,.45)}',
+    '#bxrHead .bxr-rivet{position:absolute;width:6px;height:6px;border-radius:50%;',
+    'background:radial-gradient(circle at 35% 30%,#7d837d,#3a3f3c 70%);',
+    'box-shadow:0 1px 1px rgba(0,0,0,.6)}',
+    '#bxrClose{background:rgba(10,12,11,.55);border:1px solid rgba(242,234,214,.28);border-radius:4px;',
+    'color:#f2ead6;width:30px;height:30px;cursor:pointer;font-size:14px;line-height:1;',
+    'transition:border-color .12s,color .12s}',
+    '#bxrClose:hover{border-color:var(--rust,#cd412f);color:#ff9d84}',
+    /* блок уровня: большая цифра в металлической плашке + прогресс */
+    '#bxrProg{padding:14px 16px 16px;border-bottom:1px solid #262c29;',
+    'background:linear-gradient(180deg,#1a1e1c,#161a18);display:flex;gap:14px;align-items:center}',
+    '#bxrLvlBox{flex-shrink:0;width:84px;height:84px;border-radius:6px;position:relative;',
+    'background:linear-gradient(160deg,#232826,#181c1a);',
+    'border:1px solid #343a37;box-shadow:inset 0 2px 0 rgba(255,255,255,.06),0 4px 12px rgba(0,0,0,.4);',
+    'display:flex;flex-direction:column;align-items:center;justify-content:center}',
+    '#bxrLvl{font-family:Oswald,sans-serif;font-weight:700;font-size:34px;line-height:1;',
+    'color:#f4ede0;text-shadow:0 2px 0 rgba(0,0,0,.5)}',
+    '#bxrLvlBox .bxr-cap{font:600 9px/1 Oswald,sans-serif;letter-spacing:.22em;',
+    'color:#8b938f;margin-top:5px;text-transform:uppercase}',
+    '#bxrProgMain{flex:1;min-width:0}',
+    '#bxrLvlRow{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:9px;gap:8px}',
+    '#bxrNext{font:600 12px/1.3 Oswald,sans-serif;color:#d8a25a;letter-spacing:.08em;',
+    'text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '#bxrCoins{font:600 12px/1.3 Oswald,sans-serif;color:#d6d9d4;letter-spacing:.06em;',
+    'display:flex;align-items:center;gap:6px;flex-shrink:0}',
+    '#bxrBar{height:14px;border-radius:3px;background:#0b0d0c;',
+    'border:1px solid #2c3330;overflow:hidden;position:relative;',
+    'box-shadow:inset 0 2px 5px rgba(0,0,0,.6)}',
+    '#bxrBarFill{height:100%;width:0;border-radius:2px;',
+    'background:linear-gradient(180deg,#e2553d,#a73421 60%,#7d2416);',
+    'box-shadow:inset 0 1px 0 rgba(255,255,255,.25);',
+    'transition:width .45s cubic-bezier(.2,.8,.2,1)}',
+    '#bxrBarTicks{position:absolute;inset:0;display:flex;pointer-events:none}',
+    '#bxrBarTicks i{flex:1;border-right:1px solid rgba(11,13,12,.55)}',
+    '#bxrBarTicks i:last-child{border-right:none}',
+    '#bxrBarTxt{margin-top:8px;font:12px/1.4 Roboto Condensed,sans-serif;',
+    'color:rgba(214,217,212,.8);letter-spacing:.03em}',
+    /* список наград: строки-карточки */
+    '#bxrList{overflow-y:auto;padding:10px 12px 12px;flex:1}',
+    '#bxrList::-webkit-scrollbar{width:10px}',
+    '#bxrList::-webkit-scrollbar-thumb{background:#3a413d;border-radius:5px;',
+    'border:2px solid #161a18}',
+    '#bxrList::-webkit-scrollbar-track{background:#101312}',
+    '.bxr-row{display:flex;align-items:center;gap:12px;padding:9px 10px;margin-bottom:6px;',
+    'background:linear-gradient(180deg,#1d2220,#171b19);',
+    'border:1px solid #2a302d;border-left:3px solid #3a413d;border-radius:4px;',
+    'transition:border-color .12s,background .12s}',
+    '.bxr-row.bxr-cur{border-left-color:var(--rust,#cd412f);',
+    'background:linear-gradient(180deg,#242a27,#1a1e1c)}',
+    '.bxr-row.bxr-row-done{opacity:.62}',
+    '.bxr-row.bxr-row-locked{opacity:.5}',
+    '.bxr-lvl{font-family:Oswald,sans-serif;font-weight:700;font-size:13px;color:#d6d9d4;',
+    'width:78px;flex-shrink:0;letter-spacing:.08em;display:flex;align-items:center;gap:7px}',
+    '.bxr-tag{background:#262c29;border:1px solid #3a413d;border-radius:3px;',
+    'padding:3px 7px;box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}',
+    '.bxr-prize{flex:1;display:flex;align-items:center;gap:9px;min-width:0;',
+    'font:14px/1.3 Roboto Condensed,sans-serif;color:rgba(214,217,212,.92)}',
+    '.bxr-coin{width:22px;height:22px;border-radius:50%;flex-shrink:0;',
+    '.bxr-coin-sm{width:15px;height:15px;border-width:1.5px}',
+    'background:radial-gradient(circle at 35% 28%,#f0d289,#d8a25a 52%,#8f6527);',
+    'border:2px solid #5c421a;box-shadow:0 1px 4px rgba(0,0,0,.55)}',
+    '.bxr-claim{background:linear-gradient(180deg,#e2553d,#b03a24 55%,#8a2b1a);',
+    'border:1px solid #6e2115;border-radius:4px;color:#fff;',
+    'font-family:Oswald,sans-serif;font-weight:700;font-size:12px;',
+    'letter-spacing:.1em;padding:9px 16px;cursor:pointer;flex-shrink:0;',
+    'box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 2px 6px rgba(0,0,0,.4);',
+    'text-transform:uppercase;transition:filter .12s,transform .06s}',
+    '.bxr-claim:hover{filter:brightness(1.12)}',
+    '.bxr-claim:active{filter:brightness(.92);transform:translateY(1px)}',
+    '.bxr-claim.bxr-done{background:#1f2a1c;color:#9fd084;cursor:default;',
+    'border:1px solid #34482e;box-shadow:none',
+    '.bxr-claim.bxr-locked{background:#222624;color:rgba(214,217,212,.4);',
+    'cursor:default;border:1px solid #2a302d;box-shadow:none}',
+    '.bxr-cap{padding:11px 16px 13px;font:12px/1.4 Roboto Condensed,sans-serif;',
+    'color:rgba(214,217,212,.55);border-top:1px solid #262c29;',
+    'background:linear-gradient(180deg,#161a18,#141817)}',
     /* тост опыта в игре — маленькая строка в правом нижнем углу */
     '#bxrToast{position:fixed;right:calc(16px + env(safe-area-inset-right));',
     'bottom:calc(16px + env(safe-area-inset-bottom));z-index:63;display:none;',
-    'background:rgba(18,20,19,.88);border:1px solid rgba(224,163,60,.5);border-radius:5px;',
-    'color:#ffd97a;font:13px/1.4 Roboto Condensed,sans-serif;padding:8px 12px;',
-    'box-shadow:0 4px 14px rgba(0,0,0,.5);letter-spacing:.02em;',
+    'background:rgba(14,16,15,.9);border:1px solid var(--rust,#cd412f);border-radius:4px;',
+    'border-left:3px solid var(--rust,#cd412f);',
+    'color:#ffd9c9;font:13px/1.4 Roboto Condensed,sans-serif;padding:9px 13px;',
+    'box-shadow:0 4px 16px rgba(0,0,0,.55);letter-spacing:.02em;',
     'font-family:Roboto Condensed,Oswald,sans-serif}',
     'body.brix-touch-ui #bxrToast{bottom:calc(120px + env(safe-area-inset-bottom))}'
   ].join('\n');
@@ -98,22 +141,36 @@ window.BrixRewards = (function () {
     st.textContent = CSS;
     document.head.appendChild(st);
 
-    /* подложка + панель (открывается ИЗ МЕНЮ) */
+    /* подложка + панель (открывается ИЗ МЕНЮ) — ✅ v0.5.24 новая
+       разметка под редизайн: шапка с заклёпками, блок уровня с
+       крупной цифрой и шкалой с насечками, список карточек-строк */
     var wrap = document.createElement('div');
     wrap.id = 'bxrWrap';
     wrap.innerHTML =
       '<div id="bxrPanel">' +
         '<div id="bxrHead">' +
           '<h3>' + esc(t('rw.title')) + '</h3>' +
+          '<span class="bxr-rivet" style="left:8px;top:8px"></span>' +
+          '<span class="bxr-rivet" style="left:8px;bottom:8px"></span>' +
+          '<span class="bxr-rivet" style="right:52px;top:8px"></span>' +
+          '<span class="bxr-rivet" style="right:52px;bottom:8px"></span>' +
           '<button id="bxrClose">&#10005;</button>' +
         '</div>' +
         '<div id="bxrProg">' +
-          '<div id="bxrLvlRow">' +
-            '<span id="bxrLvl"></span>' +
-            '<span id="bxrNext"></span>' +
+          '<div id="bxrLvlBox">' +
+            '<div id="bxrLvl"></div>' +
+            '<div class="bxr-cap">' + esc(t('rw.levelShort')) + '</div>' +
           '</div>' +
-          '<div id="bxrBar"><div id="bxrBarFill"></div></div>' +
-          '<div id="bxrBarTxt"></div>' +
+          '<div id="bxrProgMain">' +
+            '<div id="bxrLvlRow">' +
+              '<span id="bxrNext"></span>' +
+              '<span id="bxrCoins"><span class="bxr-coin bxr-coin-sm"></span><span id="bxrCoinsN"></span></span>' +
+            '</div>' +
+            '<div id="bxrBar"><div id="bxrBarFill"></div>' +
+              '<div id="bxrBarTicks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>' +
+            '</div>' +
+            '<div id="bxrBarTxt"></div>' +
+          '</div>' +
         '</div>' +
         '<div id="bxrList"></div>' +
         '<div class="bxr-cap">' + esc(t('rw.reward')) + '</div>' +
@@ -192,16 +249,18 @@ window.BrixRewards = (function () {
     var need = window.BrixState ? BrixState.xpNeeded(lvl) : 300 * lvl;
     var isMax = lvl >= max;
 
-    document.getElementById('bxrLvl').textContent = t('rw.level', { n: lvl });
+    document.getElementById('bxrLvl').textContent = lvl;
     document.getElementById('bxrNext').textContent = isMax ? t('rw.max') : t('rw.next', { n: lvl + 1 });
+    document.getElementById('bxrCoinsN').textContent = (S.coins || 0) + ' ' + t('rw.coins');
     var k = isMax ? 1 : Math.max(0, Math.min(1, xp / need));
     document.getElementById('bxrBarFill').style.width = (k * 100).toFixed(1) + '%';
-    /* «250 опыту, до 2 уровня осталось 50» — как просил игрок */
+    /* «250 опыта, до 2 уровня осталось 50» — как просил игрок */
     document.getElementById('bxrBarTxt').textContent = isMax
       ? xp + ' / —'
-      : xp + ' / ' + need + '  ·  ' + (need - xp) + ' до ' + (lvl + 1) + ' уровня';
+      : xp + ' / ' + need + '  ·  ' + (need - xp) + ' ' + t('rw.left') + ' ' + (lvl + 1);
 
-    /* список уровней: от 1 до level+10 (но не меньше 20 строк) */
+    /* список уровней: от 1 до level+10 (но не меньше 20 строк) —
+       ✅ v0.5.24: строки-карточки с тегом уровня, монетой и кнопкой */
     var listEl = document.getElementById('bxrList');
     if (!listEl) return;
     var upto = Math.min(max, Math.max(lvl + 10, 20));
@@ -209,12 +268,17 @@ window.BrixRewards = (function () {
     var reward = window.BrixState ? BrixState.levelReward(1) : 50;
     var html = '';
     for (var L = 1; L <= upto; L++) {
-      var state2, cls;
-      if (claimed2.indexOf(L) !== -1) { state2 = t('rw.claimed'); cls = 'bxr-done'; }
-      else if (L <= lvl) { state2 = t('rw.claim', { n: reward }); cls = ''; }
-      else { state2 = t('rw.locked', { n: L }); cls = 'bxr-locked'; }
-      html += '<div class="bxr-row">' +
-        '<span class="bxr-lvl">' + esc(t('rw.level', { n: L })) + '</span>' +
+      var state2, cls, rowCls = 'bxr-row';
+      if (claimed2.indexOf(L) !== -1) {
+        state2 = t('rw.claimed'); cls = 'bxr-done'; rowCls += ' bxr-row-done';
+      } else if (L <= lvl) {
+        state2 = t('rw.claim', { n: reward }); cls = '';
+        if (L === lvl) rowCls += ' bxr-cur';
+      } else {
+        state2 = t('rw.locked', { n: L }); cls = 'bxr-locked'; rowCls += ' bxr-row-locked';
+      }
+      html += '<div class="' + rowCls + '">' +
+        '<span class="bxr-lvl"><span class="bxr-tag">' + esc(t('rw.level', { n: L })) + '</span></span>' +
         '<span class="bxr-prize"><span class="bxr-coin"></span>' + reward + '</span>' +
         '<button class="bxr-claim ' + cls + '" data-lvl="' + L + '"' +
           (cls ? ' disabled' : '') + '>' + esc(state2) + '</button>' +
@@ -226,7 +290,7 @@ window.BrixRewards = (function () {
         var L2 = b.getAttribute('data-lvl') | 0;
         if (window.BrixState && BrixState.claimLevelReward(L2)) {
           try { menuAudio.buy(); } catch (e0) {}
-          try { if (window.BrixHud) BrixHud.toast('+' + reward + ' монет', 3); } catch (e1) {}
+          try { if (window.BrixHud) BrixHud.toast('+' + reward + ' ' + t('rw.coins'), 3); } catch (e1) {}
         }
         paint();
       };

@@ -62,7 +62,7 @@ function serverHeightFn(seed) {
     TERRAIN_SEED: seed,
     SEED_MULT: 7919,
     COLD_WORLD_HALF: 450,
-    S_HILLS: 1013, S_DETAIL: 2027, S_MOUNT_MASK: 3041, S_MOUNT: 4051,
+    S_HILLS: 1013, S_DETAIL: 2027, S_COAST: 10101,   /* v0.5.24: сид рваного берега */
     _layoutFor: -1, _layout: null,
     srvSeedOff: function () { return sandbox.TERRAIN_SEED * sandbox.SEED_MULT; }
   };

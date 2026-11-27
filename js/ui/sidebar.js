@@ -87,11 +87,12 @@ window.BrixSidebar = (function () {
       li.appendChild(btn);
       ul.appendChild(li);
     });
-    /* бейджу наград нужен золотой стиль — один раз добавим css */
+    /* ✅ v0.5.24: бейджу наград — стиль игры (ржаво-красный, как
+       кнопки btn-rust-primary), полка тоже перерисована в эту палитру */
     if (!document.getElementById('bxrBadgeStyle')) {
       var stl = document.createElement('style');
       stl.id = 'bxrBadgeStyle';
-      stl.textContent = '.mini-badge.bxr-badge{background:linear-gradient(180deg,#e0a33c,#c9852a);color:#1b1408;border-color:#6d4413}';
+      stl.textContent = '.mini-badge.bxr-badge{background:linear-gradient(180deg,#e2553d,#b03a24);color:#fff;border-color:#6e2115;box-shadow:inset 0 1px 0 rgba(255,255,255,.22)}';
       document.head.appendChild(stl);
     }
   }

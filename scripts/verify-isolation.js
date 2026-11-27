@@ -42,13 +42,17 @@ function readJson(p) {
 
 /* ---------- A. папки реалмов ---------- */
 section('A. Папки данных реалмов');
-const REALMS = ['brixland', 'brixpvp', 'brixwipe'];
+/* ✅ v0.5.24: BrixLand УДАЛЁН — осталось ДВА реалма. У brixpvp арена
+   без чекблоков: world-файлы появятся после первого сохранения */
+const REALMS = ['brixpvp', 'brixwipe'];
 REALMS.forEach((r) => {
   const dir = path.join(ROOT, 'data', r);
   const files = ['players.json', 'social.json', 'world-objs.json', 'world-epoch.json'];
   const missing = files.filter((f) => !fs.existsSync(path.join(dir, f)));
-  check('реалм ' + r + ': своя папка с файлами', missing.length === 0,
-    missing.length ? 'нет: ' + missing.join(', ') : 'все 4 файла на месте');
+  const optional = (r === 'brixpvp');
+  check('реалм ' + r + ': своя папка с файлами', optional || missing.length === 0,
+    missing.length ? (optional ? 'создадутся при первом сохранении: ' + missing.join(', ')
+      : 'нет: ' + missing.join(', ')) : 'все 4 файла на месте');
 });
 
 /* ---------- B. psave только из своего реалма ---------- */
@@ -84,7 +88,8 @@ section('C. Бэкап построек (дома) — свой ключ у ка
       .every((m, i, arr) => true) && src.indexOf("localStorage.getItem(lsKey())") !== -1);
   const gw = fs.readFileSync(path.join(ROOT, 'js/game/gameworld.js'), 'utf8');
   check('gameworld.js: BRIX_REALM ставится при входе в мир',
-    gw.indexOf("window.BRIX_REALM = 'brixland'") !== -1 &&
+    (gw.indexOf("window.BRIX_REALM = 'brixwipe'") !== -1 ||
+     gw.indexOf("window.BRIX_REALM = String(gateInfo.realm)") !== -1) &&
     gw.indexOf("window.BRIX_REALM = String(gateInfo.realm)") !== -1);
 }
 
@@ -108,17 +113,44 @@ section('E. Чекблоки и лут — свои на каждом серве
     src.indexOf('buildCheckblockLayout(OBJ_SEED + srvSeedOff())') !== -1);
   check('server.js: чекблоки обязаны быть на суше (brixHeightAt > 2.8)',
     src.indexOf('if (h < 2.8 || h > 44) continue;') !== -1);
-  const cb = {}, cs = {};
-  REALMS.forEach((r) => {
-    const d = readJson(path.join(ROOT, 'data', r, 'world-objs.json')) || {};
-    cs[r] = d.cseed;
-    cb[r] = (d.cb || []).map((c) => c.x + ',' + c.z);
-  });
-  check('brixland/brixwipe: сиды раскладки РАЗЛИЧАЮТСЯ',
-    cs.brixland !== cs.brixwipe, 'cseed ' + cs.brixland + ' ≠ ' + cs.brixwipe);
-  const overlap = cb.brixland.filter((p) => cb.brixwipe.indexOf(p) !== -1);
-  check('brixland/brixwipe: позиции чекблоков не совпадают', overlap.length === 0,
-    overlap.length ? 'совпало: ' + overlap.slice(0, 3).join('; ') : '0 совпадений из ' + cb.brixland.length);
+  const dW = readJson(path.join(ROOT, 'data', 'brixwipe', 'world-objs.json')) || {};
+  check('brixwipe: раскладка чекблоков записана под сид карты',
+    typeof dW.cseed === 'number' && (dW.cb || []).length > 0,
+    'cseed ' + dW.cseed + ', чекблоков ' + ((dW.cb || []).length));
+  /* ✅ v0.5.24: чекблоки обязаны попадать на ОСТРОВА архипелага (не в
+     океан) — проверяем той же высотой, что и сервер (сид карты из
+     wipe.json: cseed = OBJ_SEED + seed*7919) */
+  try {
+    const wj = readJson(path.join(ROOT, 'data', 'brixwipe', 'wipe.json')) || {};
+    const seed = Number(wj.seed) || 0;
+    const vm = require('vm');
+    const src = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
+    const grab = (name) => {
+      const re = new RegExp('function ' + name + '\\s*\\(', 'g');
+      const m = re.exec(src);
+      let i = src.indexOf('{', m.index), depth = 0, j = i;
+      for (; j < src.length; j++) {
+        if (src[j] === '{') depth++;
+        else if (src[j] === '}') { depth--; if (!depth) break; }
+      }
+      return src.slice(m.index, j + 1);
+    };
+    const parts = ['brixHash2', 'brixValueNoise', 'brixFbm', 'brixRidged',
+      'brixGauss', 'brixSmoothstep', 'brixLerp', 'brixLayout', 'brixHeightAt']
+      .map(grab).join('\n');
+    const sandbox = { TERRAIN_SEED: seed, SEED_MULT: 7919,
+      COLD_WORLD_HALF: 450, S_HILLS: 1013, S_DETAIL: 2027, S_COAST: 10101,
+      _layoutFor: -1, _layout: null,
+      srvSeedOff: function () { return sandbox.TERRAIN_SEED * sandbox.SEED_MULT; } };
+    const ctx = vm.createContext(sandbox);
+    vm.runInContext(parts + '\nthis._h = brixHeightAt;', ctx);
+    const hAt = sandbox._h;
+    const onLand = (dW.cb || []).filter((c) => hAt(c.x, c.z) > 2.2).length;
+    check('чекблоки стоят на СУШЕ (острова архипелага)', onLand === (dW.cb || []).length,
+      onLand + ' из ' + (dW.cb || []).length + ' (сид ' + seed + ')');
+  } catch (e) {
+    check('чекблоки стоят на СУШЕ (острова архипелага)', false, e.message);
+  }
 }
 
 /* ---------- F. лозы: свои + синхрон сервер/клиент ---------- */
@@ -137,9 +169,9 @@ section('F. Лозы с тыквами — свои у реалмов и син�
     const d = readJson(path.join(ROOT, 'data', r, 'world-objs.json')) || {};
     vines[r] = (d.vines || []).length;
   });
-  check('лозы есть у brixland и brixwipe (на арене их нет)',
-    vines.brixland > 0 && vines.brixwipe > 0 && vines.brixpvp === 0,
-    'brixland ' + vines.brixland + ' / brixwipe ' + vines.brixwipe + ' / brixpvp ' + vines.brixpvp);
+  check('лозы есть у вайп-мира (на арене их нет)',
+    vines.brixwipe > 0 && vines.brixpvp === 0,
+    'brixwipe ' + vines.brixwipe + ' / brixpvp ' + vines.brixpvp);
 }
 
 /* ---------- G. живые сервера ---------- */
@@ -148,9 +180,8 @@ if (process.argv.indexOf('--no-live') === -1) {
   const { spawn } = require('child_process');
   // тестовые порты: не мешаем боевым серверам пользователя
   const TEST = [
-    { realm: 'brixland', port: 18787, name: 'BRIX • BrixLand' },
     { realm: 'brixpvp', port: 18788, name: 'BRIX • BrixPvP' },
-    { realm: 'brixwipe', port: 18789, name: 'BRIX • BrixWipe' },
+    { realm: 'brixwipe', port: 18789, name: 'BRIX • Генерация' },
     { realm: 'menu', port: 18780, name: 'BRIX • Меню' }
   ];
   const get = (port) => new Promise((ok) => {
@@ -187,7 +218,6 @@ if (process.argv.indexOf('--no-live') === -1) {
         d ? d.name : 'НЕТ ОТВЕТА');
     }
     check('каждый реалм отдаёт СВОЙ realm',
-      up[18787] && up[18787].realm === 'brixland' &&
       up[18788] && up[18788].realm === 'brixpvp' &&
       up[18789] && up[18789].realm === 'brixwipe' &&
       up[18780] && up[18780].realm === 'menu');
@@ -196,8 +226,8 @@ if (process.argv.indexOf('--no-live') === -1) {
       typeof up[18789].wipeIn === 'number' && up[18789].wipeIn > 0,
       up[18789] ? 'seed ' + up[18789].seed + ', до вайпа ' +
         Math.round(up[18789].wipeIn / 3600000) + ' ч' : '');
-    check('у BrixLand/BrixPvP сид 0 (прежние карты без изменений)',
-      up[18787] && !up[18787].seed && up[18788] && !up[18788].seed);
+    check('у BrixPvP сид 0 (арена — плоская локация)',
+      up[18788] && !up[18788].seed);
     check('меню — не игровой сервер (menu:1, без подключения)',
       up[18780] && up[18780].menu === 1);
     // убрать тестовые серверы

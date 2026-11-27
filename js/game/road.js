@@ -54,7 +54,10 @@ window.BrixRoad = (function () {
   function makeWps() {
     var T = window.BrixTerrain;
     var seed = (window.BRIX_TERRAIN_SEED || 0) | 0;
-    if (!seed || !T) return WP;
+    /* ✅ v0.5.24: путь генерируется на ЛЮБОЙ карте — рельеф стал
+       архипелагом, старый фиксированный WP (сид 0) проходил бы по
+       океану. WP остаётся только как аварийный путь без BrixTerrain */
+    if (!T) return WP;
     var a = (seed ^ 0x68BC21EB) >>> 0;
     function nxt() {
       a = (Math.imul(a, 1664525) + 1013904223) >>> 0;

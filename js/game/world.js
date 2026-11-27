@@ -30,7 +30,13 @@ window.BrixWorld = (function () {
   function seedOffW() { return ((window.BRIX_TERRAIN_SEED || 0) | 0) * 7919; }
 
   var nextFrame = function () {
-    return new Promise(function (r) { requestAnimationFrame(function () { r(); }); });
+    /* ✅ v0.5.24: гонка rAF/таймер — загрузка не замирает в фоновой вкладке */
+    return new Promise(function (r) {
+      var done = false;
+      var fin = function () { if (!done) { done = true; r(); } };
+      requestAnimationFrame(fin);
+      setTimeout(fin, 60);
+    });
   };
 
   /** Пологий ли склон в точке (приблизительный градиент высоты) */
@@ -537,7 +543,9 @@ window.BrixWorld = (function () {
 
     /* ---- 1. деревья: расстановка ---- */
     var trees = [];
-    var treeTries = window.BRIX_PVP ? 1600 : 3200;   // арена: «не лес»
+    /* ✅ v0.5.24: попыток больше — архипелаг даёт ~26% суши (было ~45%):
+       цель 340 деревьев достигается и на карте из островов */
+    var treeTries = window.BRIX_PVP ? 1600 : 6500;   // арена: «не лес»
     for (i = 0; i < treeTries && trees.length < (window.BRIX_PVP ? 150 : 340); i++) {
       var x = (rng() - 0.5) * T.WORLD_SIZE * 0.94;
       var z = (rng() - 0.5) * T.WORLD_SIZE * 0.94;
@@ -555,8 +563,13 @@ window.BrixWorld = (function () {
       /* ✅ v0.5.22: в ПУСТЫНЕ ели не растут — там кактусы (ниже);
          в арктике ёлки остаются, но получают снежный оттенок (ниже) */
       if (T.climateAt && T.climateAt(x, z) === 'desert') continue;
+      /* ✅ v0.5.24 ФИКС «ЛЕТАЮЩИЕ ДЕРЕВЬЯ»: h — ГЛАДКАЯ heightAt, а меш
+         земли — сетка ~3.5 м с линейной интерполяцией; на буграх дерево
+         по heightAt ВИСЕЛО над отрисованной землёй. Ставим по сетке
+         рендера (meshHeightAt, как руда) и утапливаем ствол на 0.35 м */
       trees.push({
-        x: x, z: z, y: h,
+        x: x, z: z,
+        y: (T.meshHeightAt ? T.meshHeightAt(x, z) : h) - 0.35,
         scale: 0.8 + rng() * 0.8,
         rot: rng() * Math.PI * 2
       });
@@ -706,9 +719,11 @@ window.BrixWorld = (function () {
     // ЛОМАЕМЫЕ жилы. Размещение как у камней: больше в горах и на склонах;
     // железо — среднегорье, сера — высокие горы, камень — везде.
     var oreCfg = [
-      { type: 'stone',  count: 110, tries: 2000, hMin: 2.6,  hMax: 46, slope: 0.55, base: 0.62 },
-      { type: 'iron',   count: 60,  tries: 1800, hMin: 10,   hMax: 46, slope: 0.30, base: 0.74 },
-      { type: 'sulfur', count: 60,  tries: 1800, hMin: 16,   hMax: 48, slope: 0.30, base: 0.86 }
+      /* ✅ v0.5.24: попыток больше — суша архипелага ~26%, цель по
+         числу руд должна достигаться и на островах */
+      { type: 'stone',  count: 110, tries: 4200, hMin: 2.6,  hMax: 46, slope: 0.55, base: 0.62 },
+      { type: 'iron',   count: 60,  tries: 3800, hMin: 10,   hMax: 46, slope: 0.30, base: 0.74 },
+      { type: 'sulfur', count: 60,  tries: 3800, hMin: 16,   hMax: 48, slope: 0.30, base: 0.86 }
     ];
     var oreNodes = {};    // type → records[]
     var oreTargets = [];  // [{mesh, type}] для raycast в gameworld
@@ -1110,10 +1125,12 @@ window.BrixWorld = (function () {
       var m = new THREE.Mesh(geo, mat);
       var a = (i / 4) * Math.PI * 2 + rng();
       var d = 2.5 + rng() * 2;
+      var cax = campCX + Math.cos(a) * d, caz = campCZ + Math.sin(a) * d;
       m.position.set(
-        campCX + Math.cos(a) * d,
-        T.heightAt(campCX + Math.cos(a) * d, campCZ + Math.sin(a) * d) + s / 2,
-        campCZ + Math.sin(a) * d
+        cax,
+        /* ✅ v0.5.24: по сетке рендера (как руда/деревья) — не летают */
+        (T.meshHeightAt ? T.meshHeightAt(cax, caz) : T.heightAt(cax, caz)) + s / 2 - 0.08,
+        caz
       );
       m.rotation.y = rng() * Math.PI;
       m.castShadow = true;

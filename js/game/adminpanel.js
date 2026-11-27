@@ -414,8 +414,55 @@ window.BrixAdmin = (function () {
     };
     body.appendChild(airBtn);
     body.appendChild(el('div', 'bap-note',
-      'Самолёт сбросит 1–3 аирдропа с отличным лутом. Он и так прилетает ' +
-      'каждые 30 минут — кнопка для нетерпеливых.'));
+      'Самолёт сбросит 1–3 аирдропа с отличным лутом (первый ящик — С C4, ' +
+      'позиция пишется в чат). Он и так прилетает каждые 30 минут — ' +
+      'кнопка для нетерпеливых.'));
+
+    /* ---------- ✅ v0.5.24 ВАЙП СЕРВЕРА ПО КНОПКЕ (60 СЕКУНД) ----------
+       Просьба игрока: «чтобы админы могли сами делать вайп — не сразу,
+       а нажать ВАЙП СЕРВЕРА и чат пишет, что вайп будет через 60 сек».
+       Двухшаговое подтверждение — случайный клик не запустит вайп */
+    var wipBtn = el('button', 'bap-btn bap-btn-danger font-h', '💥 ВАЙП СЕРВЕРА (ЧЕРЕЗ 60 СЕК)');
+    var wipArm = null;
+    wipBtn.style.marginTop = '8px';
+    wipBtn.onclick = function () {
+      if (window.menuAudio) menuAudio.click();
+      if (!wipArm) {
+        wipArm = setTimeout(function () {
+          wipArm = null;
+          wipBtn.textContent = '💥 ВАЙП СЕРВЕРА (ЧЕРЕЗ 60 СЕК)';
+          wipBtn.classList.remove('armed');
+        }, 3000);
+        wipBtn.textContent = 'ТОЧНО? НАЖМИ ЕЩЁ РАЗ';
+        wipBtn.classList.add('armed');
+        return;
+      }
+      clearTimeout(wipArm); wipArm = null;
+      wipBtn.textContent = '💥 ВАЙП СЕРВЕРА (ЧЕРЕЗ 60 СЕК)';
+      wipBtn.classList.remove('armed');
+      sendOp('serverwipe');
+      toast(ru('Wipe countdown started…', 'Отсчёт вайпа запущен: 60 секунд…'), 4);
+    };
+    body.appendChild(wipBtn);
+    body.appendChild(el('div', 'bap-note',
+      'Чат объявит отсчёт «SERVER: WIPE SERVER 60…», потом ВСЕХ выбросит ' +
+      'с сервера, карта перегенерируется (архипелаг по новому сиду) и ' +
+      'через несколько секунд вход снова откроется. Работает на сервере «Генерация».'));
+
+    /* ---------- ✅ v0.5.24 НА СПАВН (мгновенно) ----------
+       Просьба игрока: «даже у админов в админ-панели не спавнится» —
+       кнопка оживляет и ставит на ровное плато спавна (0:0) */
+    var spBtn = el('button', 'bap-btn font-h', '🚩 НА СПАВН (ВОЗРОДИТЬСЯ)');
+    spBtn.style.marginTop = '8px';
+    spBtn.onclick = function () {
+      if (window.menuAudio) menuAudio.click();
+      sendOp('spawn');
+      toast(ru('Respawning at spawn…', 'Возрождаюсь на спавне…'), 3);
+    };
+    body.appendChild(spBtn);
+    body.appendChild(el('div', 'bap-note',
+      'Мгновенный респавн на плато спавна (центр главного острова): ' +
+      'полное здоровье, мороз сброшен. Выручает, если застрял или «не заспавнился».'));
 
     /* ---------- 4. ТЕЛЕПОРТ ---------- */
     body.appendChild(secTitle('ТЕЛЕПОРТ ПО КООРДИНАТАМ'));
