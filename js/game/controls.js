@@ -63,7 +63,11 @@ window.BrixControls = (function () {
     this.enabled = false;
     this.onPointerLockLost = null;
     this._colliders = [];    // ✅ v0.2.9: цилиндры деревьев и камней
-    this._boxes = [];        // ✅ v0.4.7: AABB стен/потолков/палуб построек
+    this._boxes = [];        // ✅ v0.4.7: AABB ПОСТОЯННЫЕ (маяк/амбары/город — addBoxColliders)
+    this._auxBoxes = [];     /* ✅ v0.7.0: AABB СМЕННЫЕ (стены построек — setBoxColliders).
+        Раньше setBoxColliders ЗАМЕНЯЛ весь список и СТИРАЛ коллайдеры амбаров
+        и города (жалоба владельца: «у амбара нет коллайдера»). Теперь два
+        списка: addBoxColliders копит в _boxes, setBoxColliders меняет только _auxBoxes */
 
     this._dom = dom;
     this._keys = new Set();
@@ -169,17 +173,20 @@ window.BrixControls = (function () {
      без радиуса): стоя РЯДОМ с лестницей встать можно, ПОД ней — нет.
      Ступенька сверху (feet + 0.55 ≥ maxY) — не мешает */
   FpsController.prototype.cannotStand = function () {
-    var bs = this._boxes;
-    if (!bs || !bs.length) return false;
     var feet = this.position.y - this.eyeH;
     var head = EYE_HEIGHT + HEAD_MARGIN;
     var x = this.position.x, z = this.position.z;
-    for (var i = 0; i < bs.length; i++) {
-      var b = bs[i];
-      if (b.active === false || !b.headBlock) continue;
-      if (feet + 0.55 >= b.maxY) continue;    // ступенька — сверху не мешает
-      if (feet + head <= b.minY) continue;    // низ выше головы — проход
-      if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) return true;
+    var lists = [this._boxes, this._auxBoxes];   /* ✅ v0.7.0: оба списка */
+    for (var li = 0; li < 2; li++) {
+      var bs = lists[li];
+      if (!bs || !bs.length) continue;
+      for (var i = 0; i < bs.length; i++) {
+        var b = bs[i];
+        if (b.active === false || !b.headBlock) continue;
+        if (feet + 0.55 >= b.maxY) continue;    // ступенька — сверху не мешает
+        if (feet + head <= b.minY) continue;    // низ выше головы — проход
+        if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) return true;
+      }
     }
     return false;
   };
@@ -240,67 +247,72 @@ window.BrixControls = (function () {
    *   - иначе круг игрока (радиус 0.35) не должен пересекать бокс.
    */
   FpsController.prototype.setBoxColliders = function (list) {
-    this._boxes = list || [];
+    /* ✅ v0.7.0: меняет ТОЛЬКО сменный список (_auxBoxes — стены построек),
+       постоянные (_boxes — маяк/амбары/город) не трогает */
+    this._auxBoxes = list || [];
   };
 
   /** ✅ v0.4.7: перекрывает ли какой-то активный бокс точку (x, z)
       на высоте ног feet (круг игрока радиусом PLAYER_RADIUS) */
   FpsController.prototype._boxBlocked = function (x, z, feet) {
-    var bs = this._boxes;
-    if (!bs || !bs.length) return false;
     var r2 = PLAYER_RADIUS * PLAYER_RADIUS;
     var head = this._headH();
-    for (var i = 0; i < bs.length; i++) {
-      var b = bs[i];
-      if (b.active === false) continue;
-      if (feet + 0.55 >= b.maxY) continue;         // ступенька — зайдём сверху
-      if (b.headBlock) {
-        /* ✅ v0.4.46: под лестницей — только присед: стоя голова
-           упирается в низ бокса (стена), в приседе низ выше головы —
-           проход (вместо старого правила «ниже колен») */
-        if (feet + head <= b.minY) continue;       // присел — голова проходит
-      } else {
-        if (feet + 0.25 < b.minY) continue;        // бокс выше колен — под ним проход
+    var lists = [this._boxes, this._auxBoxes];   /* ✅ v0.7.0: оба списка */
+    for (var li = 0; li < 2; li++) {
+      var bs = lists[li];
+      if (!bs || !bs.length) continue;
+      for (var i = 0; i < bs.length; i++) {
+        var b = bs[i];
+        if (b.active === false) continue;
+        if (feet + 0.55 >= b.maxY) continue;         // ступенька — зайдём сверху
+        if (b.headBlock) {
+          if (feet + head <= b.minY) continue;       // присел — голова проходит
+        } else {
+          if (feet + 0.25 < b.minY) continue;        // бокс выше колен — под ним проход
+        }
+        var cx = x < b.minX ? b.minX : (x > b.maxX ? b.maxX : x);   // ближайшая точка бокса
+        var cz = z < b.minZ ? b.minZ : (z > b.maxZ ? b.maxZ : z);
+        var dx = x - cx, dz = z - cz;
+        if (dx * dx + dz * dz < r2) return true;
       }
-      var cx = x < b.minX ? b.minX : (x > b.maxX ? b.maxX : x);   // ближайшая точка бокса
-      var cz = z < b.minZ ? b.minZ : (z > b.maxZ ? b.maxZ : z);
-      var dx = x - cx, dz = z - cz;
-      if (dx * dx + dz * dz < r2) return true;
     }
     return false;
   };
 
   FpsController.prototype._resolveBoxes = function () {
-    var bs = this._boxes;
-    if (!bs || !bs.length) return;
     var feet = this.position.y - this.eyeH;
     var head = this._headH();
-    for (var i = 0; i < bs.length; i++) {
-      var b = bs[i];
-      if (b.active === false) continue;
-      // ✅ верх бокса в пределах ступеньки (0.55) — не блокируем:
-      // groundAt поднимет игрока, он ЗАЙДЁТ сверху (угол фундамента
-      // на склоне, палуба чуть выше земли) — как Rust
-      if (feet + 0.55 >= b.maxY) continue;
-      // ✅ v0.4.46: headBlock (лестница) — присел: голова ниже низа бокса,
-      // не выталкиваем; встал — выталкивает из-под лестницы
-      if (b.headBlock) {
-        if (feet + head <= b.minY) continue;
-      } else {
-        if (feet + 0.25 < b.minY) continue;        // бокс целиком ниже ног
+    var lists = [this._boxes, this._auxBoxes];   /* ✅ v0.7.0: оба списка */
+    for (var li = 0; li < 2; li++) {
+      var bs = lists[li];
+      if (!bs || !bs.length) continue;
+      for (var i = 0; i < bs.length; i++) {
+        var b = bs[i];
+        if (b.active === false) continue;
+        // ✅ верх бокса в пределах ступеньки (0.55) — не блокируем:
+        // groundAt поднимет игрока, он ЗАЙДЁТ сверху (угол фундамента
+        // на склоне, палуба чуть выше земли) — как в Rust
+        if (feet + 0.55 >= b.maxY) continue;
+        // ✅ v0.4.46: headBlock (лестница) — присел: голова ниже низа бокса,
+        // не выталкиваем; встал — выталкивает из-под лестницы
+        if (b.headBlock) {
+          if (feet + head <= b.minY) continue;
+        } else {
+          if (feet + 0.25 < b.minY) continue;        // бокс целиком ниже ног
+        }
+        var minX = b.minX - PLAYER_RADIUS, maxX = b.maxX + PLAYER_RADIUS;
+        var minZ = b.minZ - PLAYER_RADIUS, maxZ = b.maxZ + PLAYER_RADIUS;
+        if (this.position.x <= minX || this.position.x >= maxX ||
+            this.position.z <= minZ || this.position.z >= maxZ) continue;
+        // проникновения по каждой оси — выталкиваем по меньшей
+        var pxL = this.position.x - minX, pxR = maxX - this.position.x;
+        var pzL = this.position.z - minZ, pzR = maxZ - this.position.z;
+        var m = Math.min(pxL, pxR, pzL, pzR);
+        if (m === pxL) this.position.x = minX;
+        else if (m === pxR) this.position.x = maxX;
+        else if (m === pzL) this.position.z = minZ;
+        else this.position.z = maxZ;
       }
-      var minX = b.minX - PLAYER_RADIUS, maxX = b.maxX + PLAYER_RADIUS;
-      var minZ = b.minZ - PLAYER_RADIUS, maxZ = b.maxZ + PLAYER_RADIUS;
-      if (this.position.x <= minX || this.position.x >= maxX ||
-          this.position.z <= minZ || this.position.z >= maxZ) continue;
-      // проникновения по каждой оси — выталкиваем по меньшей
-      var pxL = this.position.x - minX, pxR = maxX - this.position.x;
-      var pzL = this.position.z - minZ, pzR = maxZ - this.position.z;
-      var m = Math.min(pxL, pxR, pzL, pzR);
-      if (m === pxL) this.position.x = minX;
-      else if (m === pxR) this.position.x = maxX;
-      else if (m === pzL) this.position.z = minZ;
-      else this.position.z = maxZ;
     }
   };
 
@@ -570,20 +582,26 @@ window.BrixControls = (function () {
          ставим глаза чуть ниже потолка, подъём гаснет, игрок падает
          обратно. Пересечение (а не «голова внутри бокса») — чтобы при
          просадке FPS крупный шаг кадра не перепрыгивал потолок целиком */
-      if (this._vy > 0 && this._boxes && this._boxes.length) {
+      if (this._vy > 0) {
         var prevHead = prevY + 0.12;
         var newHead = this.position.y + 0.12;
-        for (var bi = 0; bi < this._boxes.length; bi++) {
-          var bb = this._boxes[bi];
-          if (bb.active === false) continue;
-          if (prevHead > bb.minY || newHead < bb.minY) continue;  // не пересёк низ
-          var hx = this.position.x;
-          var hz = this.position.z;
-          if (hx < bb.minX - PLAYER_RADIUS || hx > bb.maxX + PLAYER_RADIUS ||
-              hz < bb.minZ - PLAYER_RADIUS || hz > bb.maxZ + PLAYER_RADIUS) continue;
-          this.position.y = bb.minY - 0.12;
-          this._vy = 0;
-          break;
+        /* ✅ v0.7.0: проверяем ОБА списка боксов (постоянные + сменные) */
+        var boxLists = [this._boxes, this._auxBoxes];
+        for (var bli = 0; bli < 2 && this._vy > 0; bli++) {
+          var bl = boxLists[bli];
+          if (!bl || !bl.length) continue;
+          for (var bi = 0; bi < bl.length; bi++) {
+            var bb = bl[bi];
+            if (bb.active === false) continue;
+            if (prevHead > bb.minY || newHead < bb.minY) continue;  // не пересёк низ
+            var hx = this.position.x;
+            var hz = this.position.z;
+            if (hx < bb.minX - PLAYER_RADIUS || hx > bb.maxX + PLAYER_RADIUS ||
+                hz < bb.minZ - PLAYER_RADIUS || hz > bb.maxZ + PLAYER_RADIUS) continue;
+            this.position.y = bb.minY - 0.12;
+            this._vy = 0;
+            break;
+          }
         }
       }
       if (this.position.y <= ground) {

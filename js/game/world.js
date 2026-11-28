@@ -142,24 +142,60 @@ window.BrixWorld = (function () {
     stars.frustumCulled = false;
     mesh.add(stars);
 
-    /* мягкая текстура облака (canvas-градиент, рваные края) */
+    /* ✅ v0.7.0 текстура облака — из файла города «МИРНЫЙ»
+       (cloudCanvas 1:1: 16 пышных клубов + теневой слой снизу).
+       Старая «пята» из 5 пятен заменена на пышные облака города */
     function cloudTexture() {
       var c = document.createElement('canvas');
-      c.width = c.height = 128;
+      c.width = 256; c.height = 160;
       var g = c.getContext('2d');
-      var blobs = [[64, 64, 60, 0.8], [40, 58, 34, 0.55], [88, 60, 30, 0.5],
-        [56, 42, 26, 0.42], [76, 80, 28, 0.4]];
-      for (var bi = 0; bi < blobs.length; bi++) {
-        var b = blobs[bi];
-        var grd = g.createRadialGradient(b[0], b[1], 4, b[0], b[1], b[2]);
-        grd.addColorStop(0, 'rgba(255,255,255,' + b[3] + ')');
-        grd.addColorStop(1, 'rgba(255,255,255,0)');
+      var rr2 = function (a, b) { return a + srng() * (b - a); };
+      for (var i = 0; i < 16; i++) {
+        var x = 50 + rr2(0, 156), y = 58 + rr2(0, 52), r = 22 + rr2(0, 30);
+        var grd = g.createRadialGradient(x, y - r * .25, r * .1, x, y, r);
+        grd.addColorStop(0, 'rgba(255,255,255,.95)');
+        grd.addColorStop(.65, 'rgba(248,248,250,.55)');
+        grd.addColorStop(1, 'rgba(240,240,245,0)');
         g.fillStyle = grd;
-        g.fillRect(0, 0, 128, 128);
+        g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+      }
+      for (var j = 0; j < 7; j++) {
+        var x2 = 60 + rr2(0, 136), y2 = 104 + rr2(0, 20), r2 = 18 + rr2(0, 18);
+        var g2s = g.createRadialGradient(x2, y2, 1, x2, y2, r2);
+        g2s.addColorStop(0, 'rgba(190,198,212,.4)');
+        g2s.addColorStop(1, 'rgba(190,198,212,0)');
+        g.fillStyle = g2s;
+        g.beginPath(); g.arc(x2, y2, r2, 0, 7); g.fill();
       }
       return new THREE.CanvasTexture(c);
     }
     var cloudTex = cloudTexture();
+
+    /* ✅ v0.7.0 ПТИЦЫ из файла города «МИРНЫЙ»: 3 силуэта-галочки
+       (birdCanvas 1:1), кружат высоко над игроком, машут крыльями
+       (scale.y пульс). Обновляются в tick(camera) ниже */
+    var birds = [];
+    (function makeBirds() {
+      var bc = document.createElement('canvas');
+      bc.width = 64; bc.height = 32;
+      var bg = bc.getContext('2d');
+      bg.strokeStyle = 'rgba(25,22,20,.9)'; bg.lineWidth = 3.4; bg.lineCap = 'round';
+      bg.beginPath(); bg.moveTo(6, 22); bg.quadraticCurveTo(20, 6, 32, 18);
+      bg.quadraticCurveTo(44, 6, 58, 22); bg.stroke();
+      var birdTex = new THREE.CanvasTexture(bc);
+      for (var i = 0; i < 3; i++) {
+        var s = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: birdTex, fog: true, transparent: true, opacity: .85
+        }));
+        s.scale.set(2.2, 1.1, 1);
+        s.userData = {
+          a: srng() * 7, rad: 60 + srng() * 50, h: 50 + srng() * 30,
+          sp: .05 + srng() * .05, fl: srng() * 7
+        };
+        mesh.add(s);          /* птицы — дети небосвода (он ходит за камерой) */
+        birds.push(s);
+      }
+    })();
 
     /* ✅ v0.4.52 дневные облака — И В ЯСНУЮ ПОГОДУ их теперь 20 (было
        12), заметнее и мягче; закат/рассвет красит их в золото,
@@ -240,6 +276,19 @@ window.BrixWorld = (function () {
           if (c2.position.x > T.WORLD_SIZE * 0.95) c2.position.x = -T.WORLD_SIZE * 0.95;
         }
         stars.rotation.y += 0.00016;   // звёздное небо медленно плывёт
+        /* ✅ v0.7.0 птицы из файла города: кружат над игроком,
+           машут крыльями (пульс scale.y) — как в «МИРНОМ» */
+        var tB = performance.now() * 0.001;
+        for (i2 = 0; i2 < birds.length; i2++) {
+          var brd = birds[i2], u = brd.userData;
+          u.a += u.sp * 0.016; u.fl += 0.016 * 9;
+          brd.position.set(
+            Math.cos(u.a) * u.rad,
+            u.h + Math.sin(tB * 0.5 + u.rad) * 2,
+            Math.sin(u.a) * u.rad
+          );
+          brd.scale.y = 1.1 * (0.55 + 0.45 * Math.abs(Math.sin(u.fl)));
+        }
       },
       /* ✅ v0.4.51: сюда каждый кадр пишет BrixEnvironment */
       updateEnv: function (e) {
@@ -564,6 +613,10 @@ window.BrixWorld = (function () {
       if (h < 3.5 || h > 42 || slopeAt(x, z) > 0.45) continue;
       // ✅ v0.4.38: деревья не растут НА грунтовой дороге (коридор 3.4 м)
       if (window.BrixRoad && BrixRoad.near(x, z, 3.4)) continue;
+      /* ✅ v0.6.0 АМБАРЫ: под плитой и в проходах деревьев нет */
+      if (window.BrixBarn && BrixBarn.blocks(x, z)) continue;
+      /* ✅ v0.7.0 ГОРОД: в стенах «МИРНОГО» деревья не растут */
+      if (window.BrixCity && BrixCity.blocks(x, z)) continue;
       /* ✅ v0.5.22: в ПУСТЫНЕ ели не растут — там кактусы (ниже);
          в арктике ёлки остаются, но получают снежный оттенок (ниже) */
       if (T.climateAt && T.climateAt(x, z) === 'desert') continue;
@@ -679,6 +732,10 @@ window.BrixWorld = (function () {
         var ch2 = T.heightAt(cx2, cz2);
         if (ch2 < 2.6 || ch2 > 40 || slopeAt(cx2, cz2) > 0.42) continue;
         if (window.BrixRoad && BrixRoad.near(cx2, cz2, 3.0)) continue;
+        /* ✅ v0.6.0 АМБАРЫ: кактусы не растут под плитой */
+        if (window.BrixBarn && BrixBarn.blocks(cx2, cz2)) continue;
+        /* ✅ v0.7.0 ГОРОД: кактусы не растут в стенах «МИРНОГО» */
+        if (window.BrixCity && BrixCity.blocks(cx2, cz2)) continue;
         cactusRecs.push({
           x: cx2, y: T.meshHeightAt ? T.meshHeightAt(cx2, cz2) : ch2, z: cz2,
           scale: 0.85 + rng() * 0.55,
@@ -719,6 +776,106 @@ window.BrixWorld = (function () {
       await nextFrame();
     }
 
+    /* ---- 1c-bis. ✅ v0.7.0 КУСТЫ ПУСТЫНИ (перенос из файла города
+       «МИРНЫЙ», bushCanvas 1:1): сухие ветвистые кусты растут ПО ВСЕЙ
+       ПУСТЫНЕ (climateAt === 'desert'), кактусов мало — кусты заполняют
+       биом. Без коллайдеров (куст можно раздвинуть, как в городе) ---- */
+    if (!window.BRIX_PVP && window.BRIX_BIOMES) {
+      var dBushCv = document.createElement('canvas');
+      dBushCv.width = 160; dBushCv.height = 160;
+      (function (ctx) {
+        var brng = N.makeRng(90210);
+        var brr = function (a, b) { return a + brng() * (b - a); };
+        var bri = function (a, b) { return Math.floor(brr(a, b + 1)); };
+        var branch = function (x, y, ang, len, depth) {
+          if (depth <= 0 || len < 4) return;
+          var nx = x + Math.cos(ang) * len, ny = y + Math.sin(ang) * len;
+          ctx.strokeStyle = 'rgba(' + bri(120, 150) + ',' + bri(105, 128) + ',' + bri(75, 95) + ',.95)';
+          ctx.lineWidth = depth * .8; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(nx, ny); ctx.stroke();
+          if (depth <= 2) {
+            ctx.fillStyle = 'rgba(' + bri(140, 170) + ',' + bri(140, 160) + ',' + bri(80, 105) + ',.8)';
+            ctx.beginPath(); ctx.ellipse(nx, ny, brr(2, 4.5), brr(1.4, 3), ang, 0, 7); ctx.fill();
+          }
+          branch(nx, ny, ang + brr(.2, .7), len * brr(.6, .8), depth - 1);
+          branch(nx, ny, ang - brr(.2, .7), len * brr(.6, .8), depth - 1);
+        };
+        for (var i = 0; i < 7; i++) branch(80 + brr(-14, 14), 158, -Math.PI / 2 + brr(-.5, .5), brr(26, 44), 5);
+      })(dBushCv.getContext('2d'));
+      var dBushTex = new THREE.CanvasTexture(dBushCv);
+      var dBushMat = new THREE.MeshStandardMaterial({
+        map: dBushTex, alphaTest: .35, side: THREE.DoubleSide, roughness: 1, vertexColors: true
+      });
+      var dBushGeos = [], dBushCols = [];
+      var dCol = new THREE.Color();
+      var dPlaced = 0;
+      for (var dbi = 0; dbi < 22000 && dPlaced < 240; dbi++) {
+        var dbx = (rng() - 0.5) * T.WORLD_SIZE * 0.9;
+        var dbz = (rng() - 0.5) * T.WORLD_SIZE * 0.9;
+        if (!T.climateAt || T.climateAt(dbx, dbz) !== 'desert') continue;
+        var dbh = T.heightAt(dbx, dbz);
+        if (dbh < 2.6 || dbh > 40 || slopeAt(dbx, dbz) > 0.5) continue;
+        if (window.BrixRoad && BrixRoad.near(dbx, dbz, 3.0)) continue;
+        if (window.BrixBarn && BrixBarn.blocks(dbx, dbz)) continue;
+        if (window.BrixCity && BrixCity.blocks(dbx, dbz, 2)) continue;
+        var sc1 = 0.7 + rng() * 1.1;
+        var pg1 = new THREE.PlaneGeometry(1.5 * sc1, 1.4 * sc1);
+        dummy.position.set(dbx, (T.meshHeightAt ? T.meshHeightAt(dbx, dbz) : dbh) + 0.7 * sc1, dbz);
+        dummy.rotation.set(0, rng() * Math.PI * 2, 0);
+        dummy.scale.setScalar(1); dummy.updateMatrix();
+        pg1.applyMatrix4(dummy.matrix);
+        var pg2 = new THREE.PlaneGeometry(1.5 * sc1, 1.4 * sc1);
+        dummy.rotation.set(0, rng() * Math.PI * 2, 0); dummy.updateMatrix();
+        pg2.applyMatrix4(dummy.matrix);
+        dCol.setHSL(.1, 0.2 + rng() * 0.15, 0.35 + rng() * 0.15);
+        [pg1, pg2].forEach(function (pgg) {
+          var cnt = pgg.attributes.position.count, arr = new Float32Array(cnt * 3);
+          for (var vi = 0; vi < cnt; vi++) {
+            arr[vi * 3] = dCol.r; arr[vi * 3 + 1] = dCol.g; arr[vi * 3 + 2] = dCol.b;
+          }
+          pgg.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+        });
+        dBushGeos.push(pg1); dBushGeos.push(pg2);
+        dPlaced++;
+      }
+      if (dBushGeos.length) {
+        /* слияние с вершинными цветами (кактусы рядом не сливаются) */
+        var vcount2 = 0, icount2 = 0;
+        for (var dg = 0; dg < dBushGeos.length; dg++) {
+          vcount2 += dBushGeos[dg].attributes.position.count;
+          icount2 += dBushGeos[dg].index.count;
+        }
+        var dPos = new Float32Array(vcount2 * 3), dNor = new Float32Array(vcount2 * 3);
+        var dUv = new Float32Array(vcount2 * 2), dColArr = new Float32Array(vcount2 * 3);
+        var dIdx = vcount2 > 65535 ? new Uint32Array(icount2) : new Uint16Array(icount2);
+        var dvo = 0, dio = 0;
+        for (var dg2 = 0; dg2 < dBushGeos.length; dg2++) {
+          var dgg = dBushGeos[dg2];
+          dPos.set(dgg.attributes.position.array, dvo * 3);
+          dNor.set(dgg.attributes.normal.array, dvo * 3);
+          dUv.set(dgg.attributes.uv.array, dvo * 2);
+          dColArr.set(dgg.attributes.color.array, dvo * 3);
+          var dgidx = dgg.index.array;
+          for (var dk = 0; dk < dgidx.length; dk++) dIdx[dio + dk] = dgidx[dk] + dvo;
+          dio += dgidx.length; dvo += dgg.attributes.position.count;
+          dgg.dispose();
+        }
+        var dBushGeo = new THREE.BufferGeometry();
+        dBushGeo.setAttribute('position', new THREE.BufferAttribute(dPos, 3));
+        dBushGeo.setAttribute('normal', new THREE.BufferAttribute(dNor, 3));
+        dBushGeo.setAttribute('uv', new THREE.BufferAttribute(dUv, 2));
+        dBushGeo.setAttribute('color', new THREE.BufferAttribute(dColArr, 3));
+        dBushGeo.setIndex(new THREE.BufferAttribute(dIdx, 1));
+        var dBushMesh = new THREE.Mesh(dBushGeo, dBushMat);
+        dBushMesh.receiveShadow = true;
+        scene.add(dBushMesh);
+        decorDisposables.push(dBushMesh);
+        window.__brixDesertBushes = dPlaced;
+        console.log('[BrixWorld] пустыня: кустов ' + dPlaced);
+      }
+      await yieldProgress(0.552);
+      await nextFrame();
+    }
+
     /* ---- 2. ✅ РУДНЫЕ ЖИЛЫ (киркой): камень / железо / сера ---- */
     // v0.2.5: кусты и декоративные камни убраны — остались только
     // ЛОМАЕМЫЕ жилы. Размещение как у камней: больше в горах и на склонах;
@@ -753,6 +910,10 @@ window.BrixWorld = (function () {
         var sl = slopeAt(ox, oz);
         if (oh < cfg.hMin || oh > cfg.hMax) continue;
         if (sl > cfg.slope) continue;
+        /* ✅ v0.6.0 АМБАРЫ: руда не торчит из плиты и стен */
+        if (window.BrixBarn && BrixBarn.blocks(ox, oz, 2)) continue;
+        /* ✅ v0.7.0 ГОРОД: руды в стенах «МИРНОГО» нет */
+        if (window.BrixCity && BrixCity.blocks(ox, oz, 2)) continue;
         // в горах чаще, на равнине реже
         if (sl < 0.18 && rng() > 0.35) continue;
         // ✅ v0.2.9: ОПУСКАЕМ РУДУ ВНИЗ.
@@ -951,6 +1112,10 @@ window.BrixWorld = (function () {
         if (slopeAt(gx, gz) > 0.38) continue;
         // ✅ v0.4.38: кустики травы не лезут на грунтовую дорогу (2.8 м)
         if (window.BrixRoad && BrixRoad.near(gx, gz, 2.8)) continue;
+        /* ✅ v0.6.0 АМБАРЫ: трава не прорастает сквозь бетонную плиту */
+        if (window.BrixBarn && BrixBarn.blocks(gx, gz, 1)) continue;
+        /* ✅ v0.7.0 ГОРОД: трава не прорастает сквозь асфальт «МИРНОГО» */
+        if (window.BrixCity && BrixCity.blocks(gx, gz, 1)) continue;
         var patch = N.fbm(gx * 0.02 + 31, gz * 0.02 + 117, 6199, 3);
         if (patch < 0.42) continue;                          // куртины, а не равномерный ковёр
         grassList.push({

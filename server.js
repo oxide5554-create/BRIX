@@ -683,6 +683,10 @@ const COLD_WORLD_HALF = 1000;        /* WORLD_SIZE 2000 / 2 (terrain.js).
    «кольца» нет — у каждого острова СВОИ пики по сиду */
 const S_HILLS = 1013, S_DETAIL = 2027, S_COAST = 10101;
 let _layoutFor = -1, _layout = null; // кэш brixLayout() для текущего сида
+let _bpFor = -1, _bpCache = null;    /* ✅ v0.6.0: кэш площадок амбаров (brixBarnPads) —
+   объявлен НАВЕРХУ: brixHeightAt зовётся при генерации мира РАНЬШЕ строки пада */
+let _cityFor = -1, _cityCache = null, _cityDone = false; /* ✅ v0.7.0: кэш площадки города
+   (brixCityPad) — тоже НАВЕРХУ: brixHeightAt зовётся раньше её объявления */
 
 /* ============================================================
    ✅ v0.5.0 БОТЫ «ПОЛИГОНА» (только реалм brixpvp): авторитетный
@@ -4140,8 +4144,11 @@ function brixLayout() {
 /* ✅ v0.5.24 АРХИПЕЛАГ (копия heightAt из js/game/terrain.js, 1:1):
    океан (-7) + острова гауссовыми масками с рваным берегом (S_COAST),
    внутри — холмы по сиду + свои пики. Плато спавна в (0,0), озеро
-   тонет в рельефе, край мира ПО КВАДРАТУ уходит в океан */
-function brixHeightAt(x, z) {
+   тонет в рельефе, край мира ПО КВАДРАТУ уходит в океан.
+   ✅ v0.6.0: ядро вынесено в brixHeightCore (БЕЗ площадок амбаров),
+   brixHeightAt = brixHeightCore + площадки под амбары (brixBarnPads —
+   копия 1:1 с barnPads в js/game/terrain.js — МЕНЯТЬ В ОБОИХ!) */
+function brixHeightCore(x, z) {
   const LY = brixLayout();
   let h = -7;                                   // океанское дно
   for (let i = 0; i < LY.islands.length; i++) {
@@ -4182,6 +4189,156 @@ function brixHeightAt(x, z) {
     Math.max(Math.abs(x), Math.abs(z)) / COLD_WORLD_HALF);
   h = brixLerp(h, -7, edge);
   return h;
+}
+
+/* ============================================================
+   ✅ v0.6.0 АМБАРЫ: 2 ровные площадки под амбары (перенос из игры
+   GLM) — В ФОРМУЛЕ РЕЛЬЕФА, как плато спавна. КОПИЯ 1:1 С
+   js/game/terrain.js (barnPads) — МЕНЯТЬ В ОБОИХ ФАЙЛАХ СРАЗУ!
+   Место: суша (центр и всё пятно 40×40 выше воды), перепад пятна
+   ≤ 9 м (предпочтительно ≤ 4), от спавна ≥ 110 м, между амбарами
+   ≥ 160 м. Площадка 68×68 м плоская (плита амбара 38×30 целиком
+   внутри), смешение 21..34 м по ЧЕБЫШЁВСКОЙ метрике. Высота —
+   естественная высота ЦЕНТРА (без пада).
+   ============================================================ */
+function brixBarnPads() {
+  const seed = TERRAIN_SEED | 0;
+  if (_bpFor === seed && _bpCache) return _bpCache;
+  _bpCache = []; _bpFor = seed;
+  if (REALM === 'brixpvp') return _bpCache;      // арена — плоская локация
+  const LY = brixLayout();
+  const WATER = 2.2;                             // = WATER_LEVEL в terrain.js
+  let a = (seed ^ 0x5BD1E995) >>> 0;
+  const nxt = () => {
+    a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
+    return a / 4294967296;
+  };
+  const pads = [];
+  let best = null, bestFlat = 1e9;
+  for (let t = 0; t < 6000 && pads.length < 2; t++) {
+    const x = Math.round((nxt() - 0.5) * 2 * (COLD_WORLD_HALF - 80));
+    const z = Math.round((nxt() - 0.5) * 2 * (COLD_WORLD_HALF - 80));
+    const y = brixHeightCore(x, z);
+    if (y < WATER + 1.6 || y > 42) continue;
+    let hi = y, lo = y, bad = false;
+    for (let i = -4; i <= 4 && !bad; i++) {
+      for (let j = -4; j <= 4; j++) {
+        const hh = brixHeightCore(x + i * 5, z + j * 5);
+        if (hh < WATER + 0.8) { bad = true; break; }
+        if (hh > hi) hi = hh;
+        if (hh < lo) lo = hh;
+      }
+    }
+    if (bad || hi - lo > 9) continue;            // не на обрыве
+    if (LY.spawn) {
+      const dsx = x - LY.spawn.x, dsz = z - LY.spawn.z;
+      if (dsx * dsx + dsz * dsz < 110 * 110) continue;
+    }
+    let dup = false;
+    for (let k = 0; k < pads.length; k++) {
+      const dpx = x - pads[k].x, dpz = z - pads[k].z;
+      if (dpx * dpx + dpz * dpz < 160 * 160) { dup = true; break; }
+    }
+    if (dup) continue;
+    const flat = hi - lo;
+    if (flat <= 4) {                             // отличное место — берём сразу
+      pads.push({ x: x, z: z, y: y });
+      best = null; bestFlat = 1e9;
+    } else if (flat < bestFlat) {                // запасное — самое ровное
+      bestFlat = flat; best = { x: x, z: z, y: y };
+    }
+  }
+  if (pads.length < 2 && best) pads.push(best);
+  _bpCache = pads;
+  return _bpCache;
+}
+
+/** высота рельефа с площадками амбаров (лозы/чекблоки/физика сервера) */
+function brixHeightAt(x, z) {
+  let h = brixHeightCore(x, z);
+  const pads = brixBarnPads();
+  for (let i = 0; i < pads.length; i++) {
+    const B = pads[i];
+    const d = Math.max(Math.abs(x - B.x), Math.abs(z - B.z));
+    if (d < 34) h = brixLerp(B.y, h, brixSmoothstep(21, 34, d));
+  }
+  /* ✅ v0.7.0 ГОРОД «МИРНЫЙ»: одна ровная площадка под город
+     (brixCityPad — копия 1:1 с cityPad в js/game/terrain.js —
+     МЕНЯТЬ В ОБОИХ ФАЙЛАХ СРАЗУ!). Плоское пятно 96 м, смешение
+     96..126 м по ЧЕБЫШЁВСКОЙ метрике */
+  const cp = brixCityPad();
+  if (cp) {
+    const dc = Math.max(Math.abs(x - cp.x), Math.abs(z - cp.z));
+    if (dc < 126) h = brixLerp(cp.y, h, brixSmoothstep(96, 126, dc));
+  }
+  return h;
+}
+
+/* ============================================================
+   ✅ v0.7.0 ГОРОД «МИРНЫЙ»: ОДНА площадка под город, и ТОЛЬКО в
+   ЛЕСНОМ (умеренном) биоме — не пустыня (t >= 0.62) и не арктика
+   (t <= 0.36). КОПИЯ 1:1 С js/game/terrain.js (cityPad) — МЕНЯТЬ
+   В ОБОИХ ФАЙЛАХ СРАЗУ! Климат — по формуле температуры
+   (brixTempAt = tempAt), БЕЗ флага биомов — формула одинаковая у
+   сервера и клиента, синхронизация рельефа не рвётся.
+   ============================================================ */
+function brixCityPad() {
+  const seed = TERRAIN_SEED | 0;
+  if (_cityFor === seed && _cityDone) return _cityCache;   // кэш даже «не нашли»
+  _cityFor = seed;
+  _cityDone = true;
+  _cityCache = null;
+  if (REALM === 'brixpvp') return _cityCache;    // арена — плоская локация
+  const LY = brixLayout();
+  const WATER = 2.2;                             // = WATER_LEVEL в terrain.js
+  const HALF = COLD_WORLD_HALF;                  // = WORLD_HALF в terrain.js
+  let a = (seed ^ 0x1F2E3D4C) >>> 0;
+  const nxt = () => {
+    a = (Math.imul(a, 1664525) + 1013904223) >>> 0;
+    return a / 4294967296;
+  };
+  let best = null, bestFlat = 1e9;
+  for (let t = 0; t < 9000 && !best; t++) {
+    const x = Math.round((nxt() - 0.5) * 2 * (HALF - 130));
+    const z = Math.round((nxt() - 0.5) * 2 * (HALF - 130));
+    const y = brixHeightCore(x, z);
+    if (y < WATER + 1.6 || y > 38) continue;
+    /* климат: только ЛЕСНОЙ (умеренный) биом — центр и 4 угла стены */
+    let climateOK = true;
+    for (let ci = 0; ci < 5 && climateOK; ci++) {
+      const cxx = x + (ci === 0 ? 0 : (ci === 1 ? 70 : ci === 2 ? -70 : 0));
+      const czz = z + (ci === 0 ? 0 : (ci === 1 ? 0 : ci === 2 ? 70 : -70));
+      const tt = brixTempAt(cxx, czz);
+      if (tt >= 0.62 || tt <= 0.36) climateOK = false;   // пустыня/арктика
+    }
+    if (!climateOK) continue;
+    /* рельеф: сетка 7×7 с шагом 32 м — вся суша, перепад ≤ 14 м */
+    let hi = y, lo = y, bad = false;
+    for (let i2 = -3; i2 <= 3 && !bad; i2++) {
+      for (let j2 = -3; j2 <= 3; j2++) {
+        const hh = brixHeightCore(x + i2 * 32, z + j2 * 32);
+        if (hh < WATER + 0.8) { bad = true; break; }
+        if (hh > hi) hi = hh;
+        if (hh < lo) lo = hh;
+      }
+    }
+    if (bad || hi - lo > 14) continue;
+    if (LY.spawn) {
+      const dsx = x - LY.spawn.x, dsz = z - LY.spawn.z;
+      if (dsx * dsx + dsz * dsz < 140 * 140) continue;
+    }
+    const bp = brixBarnPads();
+    for (let k = 0; k < bp.length; k++) {
+      const dpx = x - bp[k].x, dpz = z - bp[k].z;
+      if (dpx * dpx + dpz * dpz < 200 * 200) { bad = true; break; }
+    }
+    if (bad) continue;
+    const flat = hi - lo;
+    if (flat <= 6) best = { x: x, z: z, y: y };    // отличное место — берём
+    else if (flat < bestFlat) { bestFlat = flat; best = { x: x, z: z, y: y }; }
+  }
+  _cityCache = best;
+  return _cityCache;
 }
 
 /* ✅ v0.5.21 ТЫКВЕННЫЕ ЛОЗЫ: init здесь — шум объявлен ВЫШЕ, worldObjs

@@ -309,6 +309,17 @@ window.BrixGameWorld = (function () {
         var lf = BrixLighthouse.floorAt(x, z, feetY);
         if (lf !== null && lf > h) h = lf;
       }
+      /* ✅ v0.6.0 АМБАРЫ: по плите, ящикам, контейнерам, офису и
+         балкону можно ХОДИТЬ (BrixBarn.floorAt — контракт маяка) */
+      if (window.BrixBarn && BrixBarn.isReady()) {
+        var bf3 = BrixBarn.floorAt(x, z, feetY);
+        if (bf3 !== null && bf3 > h) h = bf3;
+      }
+      /* ✅ v0.7.0 ГОРОД: по ящикам/паллетам/барьерам «МИРНОГО» можно ЗАЙТИ */
+      if (window.BrixCity && BrixCity.isReady()) {
+        var cf3 = BrixCity.floorAt(x, z, feetY);
+        if (cf3 !== null && cf3 > h) h = cf3;
+      }
       /* ✅ v0.4.65 ПВП-АРЕНА: по платформе, ступеням, ящикам и бункерам
          арены можно ХОДИТЬ (BrixArena.floorAt считает свои солиды) */
       if (window.BrixArena && BrixArena.isBuilt()) {
@@ -1185,6 +1196,11 @@ window.BrixGameWorld = (function () {
                сервер — авторитет: 'vineTake' → 'vineUpd', отказ — 'vineDeny') */
             e.preventDefault();
             BrixVines.take(BrixVines.nearest(camera.position, 4.2));
+          } else if (window.BrixCity && BrixCity.isReady() && BrixCity.vendNear(controls.position, 3.0)) {
+            /* ✅ v0.7.0 ГОРОД: F у АВТОМАТА — окно магазина
+               (оружие / тыквы-шприцы-патроны, оплата ломом) */
+            e.preventDefault();
+            BrixCity.openShop(BrixCity.vendNear(controls.position, 3.0));
           } else if (window.BrixCorpses && window.BrixCorpses.aimed) {
             var aimDir = new THREE.Vector3();
             camera.getWorldDirection(aimDir);
@@ -4243,6 +4259,13 @@ window.BrixGameWorld = (function () {
           if (window.BrixArena) BrixArena.build(scene);
           if (window.BrixFx) BrixFx.setScene(scene);       // ✅ v0.5.5: дыры/пыль/вспышки
         } else {
+          /* ✅ v0.6.0 АМБАРЫ: места под них ПЛАНИРУЕМ ДО растительности —
+             buildDecor спросит BrixBarn.blocks() и не сажает деревья/
+             руду/траву/кактусы под плитой */
+          try { if (window.BrixBarn) BrixBarn.plan(); } catch (eBPlan) {}
+          /* ✅ v0.7.0 ГОРОД: место под «МИРНЫЙ» тоже планируем заранее —
+             buildDecor спросит BrixCity.blocks() (лесной биом, 1 город) */
+          try { if (window.BrixCity) BrixCity.plan(); } catch (eCPlan) {}
           decor = await BrixWorld.buildDecor(scene, yieldStage('load.step.flora', 53, 30));
           if (window.BrixFx) BrixFx.setScene(scene);       // ✅ v0.5.5: и в BrixLand тоже
         }
@@ -4260,6 +4283,47 @@ window.BrixGameWorld = (function () {
             console.log('[BrixWorld] грунтовая дорога построена: точек ' + BrixRoad.points().length);
           } catch (eRoad) {
             console.warn('[BrixWorld] дорога не построилась (не критично):', eRoad && eRoad.message);
+          }
+        }
+
+        /* ✅ v0.6.0 АМБАРЫ (перенос из игры GLM): 2 амбара на процедурной
+           карте по сиду, с коллизиями (AABB → controls) и ходьбой по
+           плите/ящикам/контейнерам (floorAt — в groundAt выше).
+           Иконки на карте (M) рисует minimenu.js по BrixBarn.list() */
+        if (window.BrixBarn && !pvpMode) {
+          try {
+            var barnSys = BrixBarn.build(scene);
+            if (barnSys && barnSys.isReady()) {
+              /* стены/ящики/контейнеры — блокируют; их верх — пол (floorAt) */
+              if (controls.addBoxColliders && barnSys.boxes.length) {
+                controls.addBoxColliders(barnSys.boxes);
+              }
+              disposables.push({ dispose: function () { BrixBarn.dispose(); } });
+            }
+            console.log('[BrixWorld] амбары построены: ' + (window.__brixBarns ? window.__brixBarns.length : 0) + ' шт');
+          } catch (eBarn) {
+            console.warn('[BrixWorld] амбары не построились (не критично):', eBarn && eBarn.message);
+          }
+        }
+
+        /* ✅ v0.7.0 ГОРОД «МИРНЫЙ» (перенос из файла владельца): ОДИН на
+           карту, в лесном биоме. Коллизии AABB → controls, ходьба по
+           ящикам/паллетам (floorAt — в groundAt выше). Автоматы: F —
+           окно магазина (оружие / тыквы-шприцы-патроны). Иконка на
+           карте (M) рисует minimenu.js по BrixCity.list() */
+        if (window.BrixCity && !pvpMode) {
+          try {
+            var citySys = BrixCity.build(scene);
+            if (citySys && citySys.isReady()) {
+              if (controls.addBoxColliders && citySys.boxes.length) {
+                controls.addBoxColliders(citySys.boxes);
+              }
+              disposables.push({ dispose: function () { BrixCity.dispose(); } });
+            }
+          } catch (eCity) {
+            window.__cityErr = eCity;
+            console.warn('[BrixWorld] город не построился (не критично):',
+              eCity && eCity.message, '\n', eCity && eCity.stack);
           }
         }
 
@@ -4874,6 +4938,12 @@ window.BrixGameWorld = (function () {
           if (chAim) {
             hintEl.style.display = 'block';
             hintEl.textContent = '[F] — ' + BrixState.t('hint.openChest');
+          } else if (window.BrixCity && BrixCity.isReady() && !BrixCity.isShopOpen() &&
+                     BrixCity.vendNear(controls.position, 3.0)) {
+            /* ✅ v0.7.0 ГОРОД: подсказка у автомата */
+            var vn = BrixCity.vendNear(controls.position, 3.0);
+            hintEl.style.display = 'block';
+            hintEl.textContent = '[F] — АВТОМАТ «' + (vn.title || vn.name) + '»';
           } else {
             /* ✅ v0.4.43: подсказка у трупа — приоритет над ящиками */
             var corpNear = (window.BrixCorpses)

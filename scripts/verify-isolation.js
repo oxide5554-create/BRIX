@@ -136,11 +136,16 @@ section('E. Чекблоки и лут — свои на каждом серве
       return src.slice(m.index, j + 1);
     };
     const parts = ['brixHash2', 'brixValueNoise', 'brixFbm', 'brixRidged',
-      'brixGauss', 'brixSmoothstep', 'brixLerp', 'brixLayout', 'brixHeightAt']
+      'brixGauss', 'brixSmoothstep', 'brixLerp', 'brixLayout', 'brixHeightCore',
+      'brixBarnPads', 'brixTempAt', 'brixCityPad', 'brixHeightAt']
       .map(grab).join('\n');
+    /* ✅ фикс: COLD_WORLD_HALF было 450 (до v0.5.25) — чекблоки у краёв
+       островов «тонули» в фиктивном океане. В server.js значение 1000 */
     const sandbox = { TERRAIN_SEED: seed, SEED_MULT: 7919,
-      COLD_WORLD_HALF: 450, S_HILLS: 1013, S_DETAIL: 2027, S_COAST: 10101,
+      COLD_WORLD_HALF: 1000, REALM: 'brixwipe', S_HILLS: 1013, S_DETAIL: 2027, S_COAST: 10101,
       _layoutFor: -1, _layout: null,
+      _bpFor: -1, _bpCache: null,                    /* ✅ v0.6.0: кэш пада амбаров */
+      _cityFor: -1, _cityCache: null, _cityDone: false, /* ✅ v0.7.0: кэш пада города */
       srvSeedOff: function () { return sandbox.TERRAIN_SEED * sandbox.SEED_MULT; } };
     const ctx = vm.createContext(sandbox);
     vm.runInContext(parts + '\nthis._h = brixHeightAt;', ctx);

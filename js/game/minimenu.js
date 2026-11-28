@@ -674,6 +674,79 @@ window.BrixMiniMenu = (function () {
       ctx.fillText(String(r + 1), Math.max(0, mx) + lh, sy);
     }
 
+    /* ✅ v0.6.0 АМБАРЫ: локации из GLM на процедурной карте — красный
+       ангар с крышей + подпись «АМБАР». Рисуются всегда поверх рельефа,
+       едут вместе с картой при перетаскивании и зуме */
+    if (window.BrixBarn && BrixBarn.list) {
+      var barns = BrixBarn.list();
+      for (var bi = 0; bi < barns.length; bi++) {
+        var bp = barns[bi];
+        var bpx = mx + ((bp.x + HALF) / (HALF * 2)) * mapS;
+        var bpz = my + ((bp.z + HALF) / (HALF * 2)) * mapS;
+        if (bpx < -30 || bpx > vw + 30 || bpz < -30 || bpz > vh + 30) continue;
+        ctx.save();
+        ctx.translate(bpx, bpz);
+        ctx.shadowColor = 'rgba(0,0,0,0.55)';
+        ctx.shadowBlur = 3;
+        /* корпус ангара */
+        ctx.fillStyle = '#a8352a';
+        ctx.fillRect(-7, -2.5, 14, 8.5);
+        /* двускатная крыша */
+        ctx.fillStyle = '#7e2019';
+        ctx.beginPath();
+        ctx.moveTo(-8.5, -2.5); ctx.lineTo(0, -9); ctx.lineTo(8.5, -2.5);
+        ctx.closePath(); ctx.fill();
+        /* ворота */
+        ctx.fillStyle = 'rgba(24,15,11,0.9)';
+        ctx.fillRect(-2.4, 1.2, 4.8, 4.8);
+        ctx.restore();
+        /* подпись */
+        ctx.fillStyle = 'rgba(255,240,224,0.95)';
+        ctx.font = '600 10px Oswald, Arial Narrow, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText('АМБАР', bpx, bpz + 8);
+      }
+    }
+
+    /* ✅ v0.7.0 ГОРОД «МИРНЫЙ»: локация из файла владельца на
+       процедурной карте — серые многоэтажки + подпись «ГОРОД».
+       Рисуется всегда поверх рельефа, едет с картой при зуме */
+    if (window.BrixCity && BrixCity.list) {
+      var cities = BrixCity.list();
+      for (var cti = 0; cti < cities.length; cti++) {
+        var cp = cities[cti];
+        var cpx = mx + ((cp.x + HALF) / (HALF * 2)) * mapS;
+        var cpz = my + ((cp.z + HALF) / (HALF * 2)) * mapS;
+        if (cpx < -30 || cpx > vw + 30 || cpz < -30 || cpz > vh + 30) continue;
+        ctx.save();
+        ctx.translate(cpx, cpz);
+        ctx.shadowColor = 'rgba(0,0,0,0.55)';
+        ctx.shadowBlur = 3;
+        /* три дома-башни */
+        ctx.fillStyle = '#8f8a80';
+        ctx.fillRect(-9, -4, 6, 10);
+        ctx.fillStyle = '#a39d92';
+        ctx.fillRect(-2, -8, 7, 14);
+        ctx.fillStyle = '#7d786f';
+        ctx.fillRect(6, -1, 5, 7);
+        /* окна (жёлтые точки) */
+        ctx.fillStyle = 'rgba(255,214,120,0.9)';
+        ctx.fillRect(-7.4, -2, 1.2, 1.4);
+        ctx.fillRect(-4.8, 1, 1.2, 1.4);
+        ctx.fillRect(0, -5.6, 1.3, 1.5);
+        ctx.fillRect(3, -2, 1.3, 1.5);
+        ctx.fillRect(0, 1, 1.3, 1.5);
+        ctx.restore();
+        /* подпись */
+        ctx.fillStyle = 'rgba(255,240,224,0.95)';
+        ctx.font = '600 10px Oswald, Arial Narrow, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText('ГОРОД', cpx, cpz + 10);
+      }
+    }
+
     /* компас (север) в углу и штамп BRIX — поля читаются как «морской
        лист», а не пустые полосы */
     ctx.save();

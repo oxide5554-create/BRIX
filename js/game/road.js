@@ -88,6 +88,26 @@ window.BrixRoad = (function () {
           Math.abs(T.heightAt(nx + 4, nz) - T.heightAt(nx - 4, nz)),
           Math.abs(T.heightAt(nx, nz + 4) - T.heightAt(nx, nz - 4))) / 8;
         if (sl > 0.5) continue;                      // не пропасть
+        /* ✅ v0.6.0 АМБАРЫ: грунтовка объезжает площадки амбаров
+           (иначе лента дороги ляжет поверх бетонной плиты) */
+        var blockedByBarn = false;
+        if (T.barnPads) {
+          var padsR = T.barnPads();
+          for (var bp2 = 0; bp2 < padsR.length; bp2++) {
+            var bdx = nx - padsR[bp2].x, bdz = nz - padsR[bp2].z;
+            if (bdx * bdx + bdz * bdz < 42 * 42) { blockedByBarn = true; break; }
+          }
+        }
+        if (blockedByBarn) continue;
+        /* ✅ v0.7.0 ГОРОД: дорога объезжает и стены «МИРНОГО»
+           (город 124×114 м — радиус обхода 110 м от центра) */
+        if (T.cityPad) {
+          var cpR = T.cityPad();
+          if (cpR) {
+            var cdx = nx - cpR.x, cdz = nz - cpR.z;
+            if (cdx * cdx + cdz * cdz < 110 * 110) continue;
+          }
+        }
         cx = Math.round(nx); cz = Math.round(nz);
         ang = na;
         ok = true;
